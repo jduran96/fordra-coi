@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.4);
+  --border: rgba(255, 255, 255, 0.08);
+  --card: rgba(255, 255, 255, 0.02);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --font: 'Inter', -apple-system, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
