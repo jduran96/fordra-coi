@@ -28,7 +28,7 @@ interface VerifyResult {
   agent_questions: string[];
 }
 
-type Step = 'upload' | 'analyze' | 'draft' | 'contact' | 'report';
+type Step = 'upload' | 'analyze' | 'draft' | 'contact' | 'finalize' | 'report';
 type CallPhase = 'idle' | 'calling' | 'connected' | 'ended' | 'loading' | 'complete';
 
 interface InsuranceOption {
@@ -38,9 +38,15 @@ interface InsuranceOption {
   phone: string;
 }
 
+interface InputDiscrepancy {
+  label: string;
+  userValue: string;
+  ocrValue: string;
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
-const NAV_LABELS = ['Upload', 'Analyze', 'Draft', 'Contact', 'Report'];
-const STEP_KEYS: Step[] = ['upload', 'analyze', 'draft', 'contact', 'report'];
+const NAV_LABELS = ['Upload', 'Analyze', 'Draft', 'Contact', 'Update', 'Report'];
+const STEP_KEYS: Step[] = ['upload', 'analyze', 'draft', 'contact', 'finalize', 'report'];
 
 const PROCESSING_MSGS = [
   'Reading documents...',
@@ -89,9 +95,29 @@ function getExtraCoverageTerms(coverages: COICoverage[]): string {
   return coverages.map(c => c.raw_notes).filter(Boolean).join(' ').trim();
 }
 
+function TranscriptView({ raw }: { raw: string }) {
+  const lines = raw
+    .replace(/^agent:/gim, 'AI:')
+    .replace(/^user:/gim, 'Insurance Rep:')
+    .split('\n');
+  return (
+    <div style={{ fontSize: 12, color: C.txt2, fontFamily: C.sans, lineHeight: 1.8 }}>
+      {lines.map((line, i) => {
+        const m = line.match(/^(AI|Insurance Rep):(.*)/);
+        if (m) return (
+          <div key={i}>
+            <span style={{ fontWeight: 700, textDecoration: 'underline', color: C.txt }}>{m[1]}:</span>
+            {m[2]}
+          </div>
+        );
+        return <div key={i}>{line || '\u00A0'}</div>;
+      })}
+    </div>
+  );
+}
+
 function shortTitle(coverageType: string): string {
-  const words = coverageType.trim().split(/\s+/);
-  return words.slice(0, 3).join(' ');
+  return coverageType.split(/\s*\/\s*/)[0].trim().replace(/[,;:&|]+$/, '').trim();
 }
 
 function getDraftSubtitle(g: GapAnalysis): string {
@@ -107,7 +133,7 @@ function getDraftSubtitle(g: GapAnalysis): string {
 function buildInsuranceOptions(coi: COIExtracted): InsuranceOption[] {
   const state = coi.named_insured_state?.toUpperCase().trim() || 'TX';
   const [city1, city2] = CITY_PAIRS[state] ?? ['Houston', 'Dallas'];
-  const base = getPrimaryInsurer(coi.coverages) || 'Insurance Company';
+  const base = coi.producer || coi.insurance_company || getPrimaryInsurer(coi.coverages) || 'Insurance Company';
   const e = CONTACT_EMAIL;
   const p = CONTACT_PHONE;
   return [
@@ -119,60 +145,25 @@ function buildInsuranceOptions(coi: COIExtracted): InsuranceOption[] {
   ];
 }
 
-// ─── Sand Timer ────────────────────────────────────────────────────────────────
-function SandTimer() {
+// ─── Scanning Doc ──────────────────────────────────────────────────────────────
+function ScanningDoc() {
   const color = C.circle;
   return (
-    <svg viewBox="0 0 44 66" width="76" height="114" style={{ overflow: 'visible', display: 'block' }}>
-      <style>{`
-        @keyframes fdr-sand-t {
-          0%,5%    { }
-          42%,58%  { }
-          95%,100% { }
-        }
-      `}</style>
-
-      {/* Top sand — shrinks from full triangle to sliver */}
-      <polygon fill={color} opacity="0.62">
-        <animate
-          attributeName="points"
-          values="4,4 40,4 22,31 22,31; 21,30 23,30 22,31 22,31; 21,30 23,30 22,31 22,31; 4,4 40,4 22,31 22,31"
-          keyTimes="0; 0.42; 0.58; 1"
-          dur="5s" repeatCount="indefinite"
-          calcMode="spline"
-          keySplines="0.42 0 0.58 1; 0 0 1 1; 0.42 0 0.58 1"
-        />
-      </polygon>
-
-      {/* Bottom sand — grows from sliver to full triangle */}
-      <polygon fill={color} opacity="0.62">
-        <animate
-          attributeName="points"
-          values="22,35 22,35 22,35; 4,62 40,62 22,35; 4,62 40,62 22,35; 22,35 22,35 22,35"
-          keyTimes="0; 0.42; 0.58; 1"
-          dur="5s" repeatCount="indefinite"
-          calcMode="spline"
-          keySplines="0.42 0 0.58 1; 0 0 1 1; 0.42 0 0.58 1"
-        />
-      </polygon>
-
-      {/* Falling grain */}
-      <circle cx="22" r="2" fill={color} opacity="0.85">
-        <animate attributeName="cy"
-          values="29;37;29" dur="0.7s" repeatCount="indefinite" />
-        <animate attributeName="opacity"
-          values="0.85;0.85;0;0;0.85"
-          keyTimes="0;0.38;0.44;0.56;0.62"
-          dur="5s" repeatCount="indefinite" />
-      </circle>
-
-      {/* Glass outline (rendered on top of sand) */}
-      <polygon
-        points="2,2 42,2 22,31 42,64 2,64 22,35"
-        fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round"
-      />
-      <line x1="2" y1="2"  x2="42" y2="2"  stroke={color} strokeWidth="4" strokeLinecap="round" />
-      <line x1="2" y1="64" x2="42" y2="64" stroke={color} strokeWidth="4" strokeLinecap="round" />
+    <svg viewBox="0 0 48 60" width="64" height="80" style={{ display: 'block', overflow: 'visible' }}>
+      <rect x="3" y="3" width="42" height="54" rx="3" fill="none" stroke={color} strokeWidth="1.8" opacity="0.25" />
+      <polyline points="33,3 41,11 33,11 33,3" fill="none" stroke={color} strokeWidth="1.5" opacity="0.25" />
+      <line x1="9" y1="20" x2="39" y2="20" stroke={color} strokeWidth="1.5" opacity="0.13" strokeLinecap="round" />
+      <line x1="9" y1="28" x2="39" y2="28" stroke={color} strokeWidth="1.5" opacity="0.13" strokeLinecap="round" />
+      <line x1="9" y1="36" x2="29" y2="36" stroke={color} strokeWidth="1.5" opacity="0.13" strokeLinecap="round" />
+      <line x1="9" y1="44" x2="34" y2="44" stroke={color} strokeWidth="1.5" opacity="0.13" strokeLinecap="round" />
+      <rect x="3" width="42" height="2" rx="1" fill={color}>
+        <animate attributeName="y" values="3;57;3" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1" />
+        <animate attributeName="opacity" values="0;0.75;0.75;0.75;0" keyTimes="0;0.06;0.5;0.92;1" dur="2s" repeatCount="indefinite" />
+      </rect>
+      <rect x="3" width="42" height="6" rx="2" fill={color} opacity="0">
+        <animate attributeName="y" values="3;55;3" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1" />
+        <animate attributeName="opacity" values="0;0.12;0.12;0.12;0" keyTimes="0;0.06;0.5;0.92;1" dur="2s" repeatCount="indefinite" />
+      </rect>
     </svg>
   );
 }
@@ -378,7 +369,7 @@ function COIDetailsSection({ coi }: { coi: COIExtracted }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
         <div>
           <FieldLabel>Insurance company</FieldLabel>
-          <p style={{ fontSize: 14, color: C.txt, fontFamily: C.sans }}>{insurer || '—'}</p>
+          <p style={{ fontSize: 14, color: C.txt, fontFamily: C.sans }}>{coi.producer || coi.insurance_company || insurer || '—'}</p>
         </div>
         <div>
           <FieldLabel>Coverage dates</FieldLabel>
@@ -391,6 +382,7 @@ function COIDetailsSection({ coi }: { coi: COIExtracted }) {
         {coi.coverages.map((cv, i) => (
           <li key={i} style={{ fontSize: 13, color: C.txt2, lineHeight: 1.5, fontFamily: C.sans }}>
             <strong style={{ color: C.txt }}>{cv.type}</strong>
+            {cv.insurer && ` · ${cv.insurer}`}
             {cv.each_occurrence_limit && ` · Occ: ${cv.each_occurrence_limit}`}
             {cv.aggregate_limit && ` · Agg: ${cv.aggregate_limit}`}
           </li>
@@ -408,14 +400,15 @@ function COIDetailsSection({ coi }: { coi: COIExtracted }) {
 }
 
 // ─── Requirement check section ─────────────────────────────────────────────────
-function RequirementCheckSection({ items }: { items: GapItem[] }) {
+function RequirementCheckSection({ items, nameCheckItem }: { items: GapItem[]; nameCheckItem?: GapItem }) {
+  const allItems = nameCheckItem ? [nameCheckItem, ...items] : items;
   return (
     <Card>
       <FieldLabel>Requirement Check</FieldLabel>
-      {items.map((item, i) => (
+      {allItems.map((item, i) => (
         <div key={i} style={{
           padding: '16px 0',
-          borderBottom: i < items.length - 1 ? `1px solid ${C.border}` : 'none',
+          borderBottom: i < allItems.length - 1 ? `1px solid ${C.border}` : 'none',
           display: 'flex', gap: 16, alignItems: 'flex-start',
         }}>
           <div style={{ flex: 1 }}>
@@ -423,9 +416,6 @@ function RequirementCheckSection({ items }: { items: GapItem[] }) {
               {shortTitle(item.requirement.coverage_type)}
             </p>
             <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.65, fontFamily: C.sans }}>
-              {item.requirement.minimum_limit
-                ? `Requires ${item.requirement.minimum_limit} in ${item.requirement.coverage_type} coverage. `
-                : `${item.requirement.coverage_type} coverage is required. `}
               {item.evidence}
             </p>
           </div>
@@ -446,12 +436,11 @@ function QuestionsSection({ questions, onContact }: { questions: string[]; onCon
         <p style={{ fontSize: 13, color: C.txt2, marginBottom: 20, lineHeight: 1.65, fontFamily: C.sans }}>
           The following items need to be confirmed with an agent.
         </p>
-        <ol style={{ paddingLeft: 18, margin: '0 0 24px', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+        <ol style={{ paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
           {questions.map((q, i) => (
             <li key={i} style={{ fontSize: 14, color: C.txt, lineHeight: 1.6, fontFamily: C.sans }}>{q}</li>
           ))}
         </ol>
-        <PrimaryBtn onClick={onContact}>Use AI to Contact Insurer</PrimaryBtn>
       </Card>
     </>
   );
@@ -461,18 +450,29 @@ function QuestionsSection({ questions, onContact }: { questions: string[]; onCon
 function SummaryStats({ total, discrepancies, missing }: {
   total: number; discrepancies: number; missing: number;
 }) {
+  function statColors(n: number, activeColor: string) {
+    const color = n === 0 ? C.success : activeColor;
+    return {
+      color,
+      bg:     `color-mix(in oklch, ${color} 10%, ${C.surface})`,
+      border: `color-mix(in oklch, ${color} 28%, transparent)`,
+    };
+  }
+  const req  = { color: C.txt,     bg: `color-mix(in oklch, ${C.txt} 6%, ${C.surface})`,  border: `color-mix(in oklch, ${C.txt} 15%, transparent)` };
+  const disc = statColors(discrepancies, C.error);
+  const miss = statColors(missing, C.circle);
   const stats = [
-    { n: total,         label: 'Requirements', color: C.txt    },
-    { n: discrepancies, label: 'Discrepancies', color: C.error  },
-    { n: missing,       label: 'Missing',       color: C.circle },
+    { n: total,         label: 'Requirements', ...req  },
+    { n: discrepancies, label: 'Discrepancies', ...disc },
+    { n: missing,       label: 'Missing',       ...miss },
   ];
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 32 }}>
       {stats.map(s => (
         <div key={s.label} style={{
           padding: '20px 16px', textAlign: 'center' as const,
-          background: `color-mix(in oklch, ${s.color} 9%, ${C.surface})`,
-          border: `1px solid color-mix(in oklch, ${s.color} 25%, transparent)`,
+          background: s.bg,
+          border: `1px solid ${s.border}`,
           borderRadius: 12,
         }}>
           <p style={{
@@ -500,15 +500,25 @@ function ReportContent({
   reportItems,
   isFinal,
   onContact,
+  nameCheckItem,
+  narrativeSummary,
+  callAnswers,
+  transcript,
 }: {
   result: VerifyResult;
   reportItems: GapItem[];
   isFinal: boolean;
   onContact?: () => void;
+  nameCheckItem?: GapItem;
+  narrativeSummary?: string;
+  callAnswers?: Record<string, string> | null;
+  transcript?: string | null;
 }) {
   const { requirements: reqs, coi_extracted: coi, agent_questions: qs } = result;
-  const disc = reportItems.filter(i => i.status === 'not_met').length;
-  const miss = reportItems.filter(i => i.status === 'uncertain').length;
+  const disc = reportItems.filter(i => i.status === 'not_met').length
+    + (nameCheckItem?.status === 'not_met' ? 1 : 0);
+  const miss = reportItems.filter(i => i.status === 'uncertain').length
+    + (nameCheckItem?.status === 'uncertain' ? 1 : 0);
 
   const subtitle = isFinal
     ? (() => {
@@ -521,23 +531,82 @@ function ReportContent({
 
   return (
     <div>
-      <h1 style={{
-        fontFamily: C.serif, fontSize: 38, fontWeight: 400,
-        letterSpacing: '-0.02em', color: C.txt, marginBottom: 6,
-      }}>
-        {isFinal ? 'Final Report' : 'Preliminary Report'}
-      </h1>
+      {/* Header row — title left, export right (final only) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+        <h1 style={{
+          fontFamily: C.serif, fontSize: 38, fontWeight: 400,
+          letterSpacing: '-0.02em', color: C.txt,
+        }}>
+          {isFinal ? 'Final Report' : 'Preliminary Report'}
+        </h1>
+        {isFinal && (
+          <button
+            onClick={() => window.print()}
+            className="no-print"
+            style={{
+              marginTop: 8,
+              fontSize: 13, fontWeight: 600, fontFamily: C.sans,
+              padding: '7px 16px', borderRadius: 6,
+              border: `1.5px solid ${C.border}`,
+              background: C.surface, color: C.txt2,
+              cursor: 'pointer',
+            }}
+          >
+            Export PDF
+          </button>
+        )}
+      </div>
       <p style={{ fontSize: 15, color: C.txt2, fontFamily: C.sans, marginBottom: 32 }}>
         {subtitle}
       </p>
 
       <SummaryStats total={reqs.length} discrepancies={disc} missing={miss} />
 
+      {narrativeSummary && (
+        <Card style={{ marginTop: 8 }}>
+          <FieldLabel>Summary</FieldLabel>
+          <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.7, fontFamily: C.sans }}>
+            {narrativeSummary}
+          </p>
+        </Card>
+      )}
+
       <SectionLabel>Carrier COI Details</SectionLabel>
       <COIDetailsSection coi={coi} />
 
       <SectionLabel>Requirement Check</SectionLabel>
-      <RequirementCheckSection items={reportItems} />
+      <RequirementCheckSection items={reportItems} nameCheckItem={nameCheckItem} />
+
+      {isFinal && (callAnswers || transcript) && (
+        <>
+          <SectionLabel>Call Transcript</SectionLabel>
+          <Card>
+            {callAnswers && Object.keys(callAnswers).length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <FieldLabel>Q&amp;A Summary</FieldLabel>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+                  {Object.entries(callAnswers).map(([q, a], i) => (
+                    <div key={i}>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: C.txt, fontFamily: C.sans, marginBottom: 3 }}>
+                        {i + 1}. {q}
+                      </p>
+                      <p style={{ fontSize: 13, color: C.txt2, fontFamily: C.sans, lineHeight: 1.55 }}>
+                        {a || 'Not addressed in call.'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {transcript && (
+              <>
+                <FieldLabel>Full transcript</FieldLabel>
+                <TranscriptView raw={transcript} />
+              </>
+            )}
+          </Card>
+        </>
+      )}
 
       {!isFinal && onContact && qs.length > 0 && (
         <QuestionsSection questions={qs} onContact={onContact} />
@@ -555,14 +624,15 @@ function CarrierCard({
   const [hov, setHov] = useState(false);
   return (
     <div style={{
-      border: `1.5px solid ${selected ? C.circle : hov ? C.borderStrong : C.border}`,
+      border: `1.5px solid ${selected ? C.success : hov ? C.borderStrong : C.border}`,
       borderRadius: 10, padding: '20px 22px',
-      background: selected ? 'oklch(52% 0.17 38 / 0.06)' : hov ? C.surfaceHover : C.surface,
+      background: selected ? `color-mix(in oklch, ${C.success} 8%, ${C.surface})` : hov ? C.surfaceHover : C.surface,
       transition: 'all 110ms cubic-bezier(0.16, 1, 0.3, 1)',
-      flex: '1 1 0', minWidth: 0,
+      flex: '1 1 0', minWidth: 0, cursor: 'pointer',
     }}
+    onClick={onSelect}
     onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
-      <p style={{ fontSize: 14, fontWeight: 700, color: selected ? C.circle : C.txt, fontFamily: C.sans, marginBottom: 4 }}>
+      <p style={{ fontSize: 14, fontWeight: 700, color: selected ? C.success : C.txt, fontFamily: C.sans, marginBottom: 4 }}>
         {option.name}
       </p>
       <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, marginBottom: 4 }}>{option.address}</p>
@@ -573,13 +643,13 @@ function CarrierCard({
         <span style={{ color: C.txt3, textDecoration: 'underline', cursor: 'text' }}>{option.phone}</span>
       </p>
       <button
-        onClick={onSelect}
+        onClick={e => { e.stopPropagation(); onSelect(); }}
         style={{
           fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.01em',
           padding: '5px 14px', borderRadius: 4, cursor: 'pointer',
-          border: `1px solid ${selected ? C.circle : C.border}`,
-          background: selected ? 'oklch(52% 0.17 38 / 0.12)' : 'transparent',
-          color: selected ? C.circle : C.txt2,
+          border: `1px solid ${selected ? C.success : C.border}`,
+          background: selected ? `color-mix(in oklch, ${C.success} 15%, ${C.surface})` : 'transparent',
+          color: selected ? C.success : C.txt2,
           transition: 'all 110ms',
         }}
       >
@@ -591,7 +661,7 @@ function CarrierCard({
 
 // ─── Call progress section ─────────────────────────────────────────────────────
 function CallProgressSection({
-  callPhase, callId, transcript, callAnswers, questions,
+  callPhase, callId, transcript, callAnswers, questions, phone,
   onTryAnother, onGenerateReport, generatingReport,
 }: {
   callPhase: CallPhase;
@@ -599,6 +669,7 @@ function CallProgressSection({
   transcript: string | null;
   callAnswers: Record<string, string> | null;
   questions: string[];
+  phone: string;
   onTryAnother: () => void;
   onGenerateReport: () => void;
   generatingReport: boolean;
@@ -618,7 +689,7 @@ function CallProgressSection({
       {/* Status row */}
       <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12, marginBottom: 24 }}>
         <CallStatusRow
-          label={`Calling ${CONTACT_PHONE}`}
+          label={`Calling ${phone}`}
           done={callPhase !== 'idle'}
           active={callPhase === 'calling'}
           icon="📞"
@@ -648,7 +719,7 @@ function CallProgressSection({
         <>
           {callAnswers && Object.keys(callAnswers).length > 0 && (
             <Card style={{ marginBottom: 16, borderColor: `color-mix(in oklch, ${C.success} 30%, ${C.border})` }}>
-              <FieldLabel>Answers from agent</FieldLabel>
+              <FieldLabel>Q&amp;A Summary</FieldLabel>
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
                 {questions.map((q, i) => (
                   <div key={i}>
@@ -666,12 +737,7 @@ function CallProgressSection({
 
           <Card>
             <FieldLabel>Call transcript</FieldLabel>
-            <pre style={{
-              fontSize: 12, color: C.txt2, fontFamily: C.sans,
-              whiteSpace: 'pre-wrap' as const, lineHeight: 1.7, margin: 0,
-            }}>
-              {transcript}
-            </pre>
+            <TranscriptView raw={transcript} />
           </Card>
 
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
@@ -747,13 +813,59 @@ function useAnimatedDots(active: boolean) {
   return dots;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function checkInputDiscrepancies(
+  coi: COIExtracted,
+  inputs: { carrierCompany: string },
+): InputDiscrepancy[] {
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const discrepancies: InputDiscrepancy[] = [];
+
+  if (inputs.carrierCompany.trim() && coi.named_insured) {
+    if (normalize(inputs.carrierCompany) !== normalize(coi.named_insured)) {
+      discrepancies.push({
+        label: 'Carrier company name',
+        userValue: inputs.carrierCompany.trim(),
+        ocrValue: coi.named_insured,
+      });
+    }
+  }
+
+  return discrepancies;
+}
+
+function buildPolicyContext(coi: COIExtracted): string {
+  const lines: string[] = [];
+  if (coi.named_insured)     lines.push(`Policyholder: ${coi.named_insured}`);
+  if (coi.insurance_company) lines.push(`Insurance company: ${coi.insurance_company}`);
+  if (coi.insurance_company_address) lines.push(`Insurer address: ${coi.insurance_company_address}`);
+  if (coi.insurance_company_phone)   lines.push(`Insurer phone: ${coi.insurance_company_phone}`);
+  if (coi.insurance_company_email)   lines.push(`Insurer email: ${coi.insurance_company_email}`);
+  if (coi.certificate_holder) lines.push(`Certificate holder: ${coi.certificate_holder}`);
+  if (coi.additional_insured) lines.push(`Additional insured: ${coi.additional_insured}`);
+  coi.coverages.forEach(cv => {
+    const parts = [cv.type];
+    if (cv.policy_number) parts.push(`policy #${cv.policy_number}`);
+    if (cv.insurer) parts.push(`insured by ${cv.insurer}`);
+    if (cv.effective_date && cv.expiration_date) parts.push(`${cv.effective_date}–${cv.expiration_date}`);
+    if (cv.each_occurrence_limit) parts.push(`occ: ${cv.each_occurrence_limit}`);
+    if (cv.aggregate_limit) parts.push(`agg: ${cv.aggregate_limit}`);
+    if (cv.conditions_and_exceptions) parts.push(`conditions: ${cv.conditions_and_exceptions}`);
+    lines.push(parts.join(', '));
+  });
+  return lines.join('\n');
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function AppClient() {
   const [step, setStep]           = useState<Step>('upload');
   const [reqFile, setReqFile]     = useState<File | null>(null);
   const [coiFile, setCoiFile]     = useState<File | null>(null);
-  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
-  const [finalReport, setFinalReport]   = useState<FinalReport | null>(null);
+  const [verifierCompany, setVerifierCompany] = useState('');
+  const [carrierCompany, setCarrierCompany]   = useState('');
+  const [verifyResult, setVerifyResult]           = useState<VerifyResult | null>(null);
+  const [finalReport, setFinalReport]             = useState<FinalReport | null>(null);
+  const [inputDiscrepancies, setInputDiscrepancies] = useState<InputDiscrepancy[]>([]);
   const [msgIdx, setMsgIdx]       = useState(0);
   const [error, setError]         = useState('');
   const [runHover, setRunHover]   = useState(false);
@@ -761,7 +873,8 @@ export default function AppClient() {
   // Contact page state
   const [selectedOption, setSelectedOption]   = useState<number | null>(null);
   const [carouselStart, setCarouselStart]     = useState(0);
-  const [showCarrierSelect, setShowCarrierSelect] = useState(true);
+  const [editableQuestions, setEditableQuestions] = useState<string[]>([]);
+  const [callPhone, setCallPhone]               = useState(CONTACT_PHONE);
   const [callPhase, setCallPhase]             = useState<CallPhase>('idle');
   const [callId, setCallId]                   = useState<string | null>(null);
   const [transcript, setTranscript]           = useState<string | null>(null);
@@ -769,6 +882,11 @@ export default function AppClient() {
   const [generatingReport, setGeneratingReport] = useState(false);
 
   const stepIdx = STEP_KEYS.indexOf(step);
+
+  // Sync editable questions when verification result arrives
+  useEffect(() => {
+    if (verifyResult) setEditableQuestions(verifyResult.agent_questions);
+  }, [verifyResult]);
 
   // ── Verify ──
   async function runVerification() {
@@ -784,13 +902,20 @@ export default function AppClient() {
       const fd = new FormData();
       fd.append('requirements_file', reqFile);
       fd.append('coi_file', coiFile);
-      const res  = await fetch('/api/verify', { method: 'POST', body: fd });
+      const res = await fetch('/api/verify', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error ?? `Server error ${res.status}. Please try again.`);
+        setStep('upload');
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? 'Something went wrong.'); setStep('upload'); return; }
       setVerifyResult(data);
+      setInputDiscrepancies(checkInputDiscrepancies(data.coi_extracted, { carrierCompany }));
       setStep('draft');
-    } catch {
-      setError('Network error. Please try again.');
+    } catch (err) {
+      console.error('[runVerification]', err);
+      setError(err instanceof Error ? err.message : 'Unexpected error. Check the browser console.');
       setStep('upload');
     } finally {
       clearInterval(interval);
@@ -800,37 +925,39 @@ export default function AppClient() {
   // ── Initiate call ──
   async function startCall() {
     if (!verifyResult || selectedOption === null) return;
-    setShowCarrierSelect(false);
     setCallPhase('calling');
 
     try {
+      const coi = verifyResult.coi_extracted;
       const res  = await fetch('/api/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone:        DEMO_PHONE,
-          agent_name:   buildInsuranceOptions(verifyResult.coi_extracted)[selectedOption].name,
-          carrier_name: verifyResult.coi_extracted.named_insured || 'the carrier',
-          questions:    verifyResult.agent_questions,
+          phone:             callPhone.replace(/\D/g, ''),
+          verifier_company:  verifierCompany.trim(),
+          carrier_company:   carrierCompany.trim(),
+          insurance_company: coi.producer || coi.insurance_company || getPrimaryInsurer(coi.coverages),
+          policy_holder:     coi.named_insured,
+          questions:         editableQuestions.filter(q => q.trim()),
+          policy_context:    buildPolicyContext(coi),
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setCallPhase('idle'); setShowCarrierSelect(true); setError(data.error ?? 'Call failed.'); return; }
+      if (!res.ok) { setCallPhase('idle'); setError(data.error ?? 'Call failed.'); return; }
       setCallId(data.call_id);
-      // Simulate call progress
+      // Simulate visual progress
       setTimeout(() => setCallPhase('connected'), 3500);
       setTimeout(() => setCallPhase('ended'), 12000);
       setTimeout(() => setCallPhase('loading'), 12500);
     } catch {
       setCallPhase('idle');
-      setShowCarrierSelect(true);
       setError('Network error starting call.');
     }
   }
 
-  // Poll for transcript when loading
+  // Poll for transcript as soon as call is initiated
   useEffect(() => {
-    if (callPhase !== 'loading' || !callId) return;
+    if (!callId || callPhase === 'idle' || callPhase === 'complete') return;
     let done = false;
 
     async function poll() {
@@ -840,12 +967,11 @@ export default function AppClient() {
         if (data.transcript && !done) {
           done = true;
           setTranscript(data.transcript);
-          // Parse transcript for answers
-          if (verifyResult?.agent_questions.length) {
+          if (editableQuestions.length) {
             const pRes = await fetch('/api/parse-transcript', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ transcript: data.transcript, questions: verifyResult.agent_questions }),
+              body: JSON.stringify({ transcript: data.transcript, questions: editableQuestions }),
             });
             const pData = await pRes.json();
             setCallAnswers(pData.answers ?? {});
@@ -855,25 +981,26 @@ export default function AppClient() {
       } catch { /* keep polling */ }
     }
 
-    // Poll every 8s, fallback to mock after 40s
+    // Poll every 8s; fallback after 3 minutes
     const interval = setInterval(poll, 8000);
     poll();
 
     const fallback = setTimeout(() => {
       if (!done) {
         done = true;
-        setTranscript('[Transcript not yet available. The call may still be processing. Please check back shortly or generate your report with the current analysis.]');
+        setTranscript('[Transcript not yet available. The call may still be processing — try generating your report with the current analysis.]');
         setCallAnswers({});
         setCallPhase('complete');
       }
-    }, 40000);
+    }, 180000);
 
     return () => { clearInterval(interval); clearTimeout(fallback); };
-  }, [callPhase, callId, verifyResult]);
+  }, [callId, callPhase, editableQuestions]);
 
   // ── Generate final report ──
   async function generateFinalReport() {
     if (!verifyResult) return;
+    setStep('finalize');
     setGeneratingReport(true);
     try {
       const res = await fetch('/api/final-report', {
@@ -887,7 +1014,6 @@ export default function AppClient() {
       const data = await res.json();
       if (res.ok) setFinalReport(data);
       else {
-        // Fallback: use original gap analysis as final report
         const g = verifyResult.gap_analysis;
         setFinalReport({ met: g.met, not_met: g.not_met, uncertain: g.uncertain, narrative_summary: '' });
       }
@@ -932,17 +1058,17 @@ export default function AppClient() {
   function reset() {
     setStep('upload');
     setReqFile(null); setCoiFile(null);
-    setVerifyResult(null); setFinalReport(null);
+    setVerifyResult(null); setFinalReport(null); setInputDiscrepancies([]);
+    setVerifierCompany(''); setCarrierCompany('');
     setMsgIdx(0); setError('');
     setSelectedOption(null); setCarouselStart(0);
-    setShowCarrierSelect(true);
+    setEditableQuestions([]); setCallPhone(CONTACT_PHONE);
     setCallPhase('idle'); setCallId(null);
     setTranscript(null); setCallAnswers(null);
     setGeneratingReport(false);
   }
 
   function tryAnother() {
-    setShowCarrierSelect(true);
     setCallPhase('idle');
     setSelectedOption(null);
     setCallId(null);
@@ -950,7 +1076,7 @@ export default function AppClient() {
     setCallAnswers(null);
   }
 
-  const canRun = !!reqFile && !!coiFile;
+  const canRun = !!reqFile && !!coiFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
   const insuranceOptions = verifyResult ? buildInsuranceOptions(verifyResult.coi_extracted) : [];
   const visibleOptions = insuranceOptions.slice(carouselStart, carouselStart + 2);
 
@@ -967,6 +1093,11 @@ export default function AppClient() {
       <style>{`
         @keyframes fdr-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes fdr-spin   { to{transform:rotate(360deg)} }
+        @media print {
+          nav, .no-print { display: none !important; }
+          body { background: white !important; }
+          #fordra-report { padding: 24px; }
+        }
       `}</style>
 
       {/* ── Nav ── */}
@@ -1018,18 +1149,52 @@ export default function AppClient() {
         {step === 'upload' && (
           <div>
             <h1 style={{
-              fontFamily: C.serif, fontSize: 36, fontWeight: 400,
-              letterSpacing: '-0.02em', color: C.txt, marginBottom: 32, lineHeight: 1.2,
+              fontFamily: C.serif, fontSize: 32, fontWeight: 400,
+              letterSpacing: '-0.02em', color: C.txt, marginBottom: 10, lineHeight: 1, whiteSpace: 'nowrap' as const,
             }}>
-              Upload your requirements<br />and a carrier&apos;s COI
+              Upload documents to verify
             </h1>
+            <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, marginBottom: 32 }}>
+              We need legal entity details, your insurance requirements, and the carrier&apos;s COI.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+              {[
+                { label: 'Your company name', value: verifierCompany, onChange: setVerifierCompany, placeholder: 'e.g. Fordra Financial' },
+                { label: 'Carrier company name', value: carrierCompany, onChange: setCarrierCompany, placeholder: 'e.g. Sunrise Trucking LLC' },
+              ].map(({ label, value, onChange, placeholder }) => (
+                <div key={label}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                    textTransform: 'uppercase' as const, color: C.txt3,
+                    marginBottom: 8, display: 'block', fontFamily: C.sans,
+                  }}>
+                    {label}
+                  </span>
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                    placeholder={placeholder}
+                    style={{
+                      width: '100%', boxSizing: 'border-box' as const,
+                      padding: '11px 14px', fontSize: 14, fontFamily: C.sans,
+                      borderRadius: 8, border: `1.5px solid ${value.trim() ? C.success : C.border}`,
+                      background: value.trim() ? `color-mix(in oklch, ${C.success} 5%, ${C.surface})` : C.surface,
+                      color: C.txt, outline: 'none',
+                      transition: 'border-color 150ms, background 150ms',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 20, marginBottom: 32 }}>
               <DropZone
                 boxTitle="Your requirements"
-                hint="PDF, JPG, PNG, or TXT — list of required coverages and limits"
+                hint="PDF, DOCX, JPG, PNG, or TXT — list of required coverages and limits"
                 file={reqFile}
-                accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"
+                accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 onChange={setReqFile}
               />
               <DropZone
@@ -1077,7 +1242,7 @@ export default function AppClient() {
             </p>
 
             <div style={{ display: 'inline-flex', flexDirection: 'column' as const, alignItems: 'center', gap: 12 }}>
-              <SandTimer />
+              <ScanningDoc />
               <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, letterSpacing: '0.01em' }}>
                 (&lt;1 minute)
               </p>
@@ -1094,26 +1259,37 @@ export default function AppClient() {
 
         {/* ── Page 3: Draft ── */}
         {step === 'draft' && verifyResult && (
-          <div>
+          <div style={{ paddingBottom: 80 }}>
             {error && (
               <p style={{ fontSize: 13, color: C.error, marginBottom: 16, fontFamily: C.sans }}>{error}</p>
             )}
 
-            <ReportContent
-              result={verifyResult}
-              reportItems={draftItems}
-              isFinal={false}
-              onContact={() => setStep('contact')}
-            />
+            {(() => {
+              const d = inputDiscrepancies.find(x => x.label === 'Carrier company name');
+              const nameCheckItem: GapItem | undefined = verifyResult ? (() => {
+                if (d) return {
+                  requirement: { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null },
+                  status: 'not_met' as const,
+                  evidence: `You entered "${d.userValue}" but the COI lists "${d.ocrValue}" as the policyholder.`,
+                };
+                if (carrierCompany.trim() && verifyResult.coi_extracted.named_insured) return {
+                  requirement: { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null },
+                  status: 'met' as const,
+                  evidence: `Carrier name matches the named insured on the COI.`,
+                };
+                return undefined;
+              })() : undefined;
 
-            <div style={{ marginTop: 24 }}>
-              <SecondaryBtn
-                onClick={generateReportDirect}
-                style={{ opacity: generatingReport ? 0.6 : 1 }}
-              >
-                {generatingReport ? 'Generating...' : 'Skip to full report →'}
-              </SecondaryBtn>
-            </div>
+              return (
+                <ReportContent
+                  result={verifyResult}
+                  reportItems={draftItems}
+                  isFinal={false}
+                  onContact={() => setStep('contact')}
+                  nameCheckItem={nameCheckItem}
+                />
+              );
+            })()}
           </div>
         )}
 
@@ -1124,18 +1300,14 @@ export default function AppClient() {
               fontFamily: C.serif, fontSize: 38, fontWeight: 400,
               letterSpacing: '-0.02em', color: C.txt, marginBottom: 32,
             }}>
-              Resolve Questions
+              Contact Insurer
             </h1>
 
-            {/* Carrier selection */}
-            {showCarrierSelect && (
+            {/* Phase 1: Insurer selection (full) */}
+            {selectedOption === null && callPhase === 'idle' && (
               <Card>
-                <FieldLabel>Confirm insurance company details</FieldLabel>
-                <p style={{ fontSize: 13, color: C.txt2, marginBottom: 20, lineHeight: 1.65, fontFamily: C.sans }}>
-                  Select which office Fordra should contact to resolve outstanding items.
-                </p>
+                <FieldLabel>Select Insurance Company to Contact</FieldLabel>
 
-                {/* Carousel */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'stretch' }}>
                   {visibleOptions.map((opt, vi) => {
                     const globalIdx = carouselStart + vi;
@@ -1150,9 +1322,8 @@ export default function AppClient() {
                   })}
                 </div>
 
-                {/* Carousel navigation */}
                 {insuranceOptions.length > 2 && (
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                     <button
                       onClick={() => setCarouselStart(s => Math.max(0, s - 1))}
                       disabled={carouselStart === 0}
@@ -1163,9 +1334,7 @@ export default function AppClient() {
                         cursor: carouselStart === 0 ? 'not-allowed' : 'pointer',
                         fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
-                    >
-                      ‹
-                    </button>
+                    >‹</button>
                     <button
                       onClick={() => setCarouselStart(s => Math.min(insuranceOptions.length - 2, s + 1))}
                       disabled={carouselStart >= insuranceOptions.length - 2}
@@ -1176,37 +1345,124 @@ export default function AppClient() {
                         cursor: carouselStart >= insuranceOptions.length - 2 ? 'not-allowed' : 'pointer',
                         fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
-                    >
-                      ›
-                    </button>
+                    >›</button>
                     <span style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, alignSelf: 'center', paddingLeft: 4 }}>
                       {carouselStart + 1}–{Math.min(carouselStart + 2, insuranceOptions.length)} of {insuranceOptions.length}
                     </span>
                   </div>
                 )}
-
-                <PrimaryBtn
-                  onClick={startCall}
-                  disabled={selectedOption === null}
-                >
-                  Start AI Call
-                </PrimaryBtn>
-
-                {error && (
-                  <p style={{ fontSize: 12, color: C.error, marginTop: 10, fontFamily: C.sans }}>{error}</p>
-                )}
               </Card>
             )}
 
-            {/* Call progress */}
+            {/* Phase 2: Selected insurer (compact) + editable questions */}
+            {selectedOption !== null && callPhase === 'idle' && (
+              <>
+                {/* Compact insurer row */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '14px 20px', borderRadius: 10, marginBottom: 16,
+                  border: `1.5px solid ${C.success}`,
+                  background: `color-mix(in oklch, ${C.success} 6%, ${C.surface})`,
+                }}>
+                  <div>
+                    <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: C.success, marginBottom: 3, fontFamily: C.sans }}>
+                      Selected
+                    </p>
+                    <p style={{ fontSize: 15, fontWeight: 600, color: C.txt, fontFamily: C.sans, marginBottom: 2 }}>
+                      {insuranceOptions[selectedOption]?.name}
+                    </p>
+                    <p style={{ fontSize: 13, color: C.txt2, fontFamily: C.sans }}>
+                      {insuranceOptions[selectedOption]?.phone}
+                    </p>
+                  </div>
+                  <SecondaryBtn onClick={() => setSelectedOption(null)}>Change</SecondaryBtn>
+                </div>
+
+                {/* Editable questions */}
+                <Card>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 24 }}>
+                    <div>
+                      <FieldLabel>Questions to ask</FieldLabel>
+                      <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.55, fontFamily: C.sans }}>
+                        Review and edit before the call starts.
+                      </p>
+                    </div>
+                    <div style={{ flexShrink: 0 }}>
+                      <FieldLabel>Phone number</FieldLabel>
+                      <input
+                        type="tel"
+                        value={callPhone}
+                        onChange={e => setCallPhone(e.target.value)}
+                        style={{
+                          padding: '7px 12px', fontSize: 13, fontFamily: C.sans,
+                          borderRadius: 6, border: `1.5px solid ${C.border}`,
+                          background: C.surface, color: C.txt, outline: 'none', width: 160,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: 12 }}>
+                    {editableQuestions.map((q, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, paddingTop: 10, minWidth: 20, textAlign: 'right' as const }}>
+                          {i + 1}.
+                        </span>
+                        <textarea
+                          value={q}
+                          onChange={e => {
+                            const next = [...editableQuestions];
+                            next[i] = e.target.value;
+                            setEditableQuestions(next);
+                          }}
+                          rows={2}
+                          style={{
+                            flex: 1, padding: '8px 12px', fontSize: 13, fontFamily: C.sans,
+                            borderRadius: 6, border: `1.5px solid ${C.border}`,
+                            background: C.surface, color: C.txt, outline: 'none',
+                            resize: 'vertical' as const, lineHeight: 1.5,
+                          }}
+                        />
+                        <button
+                          onClick={() => setEditableQuestions(qs => qs.filter((_, j) => j !== i))}
+                          style={{
+                            padding: '8px 10px', borderRadius: 6, border: `1px solid ${C.border}`,
+                            background: 'transparent', color: C.txt3, cursor: 'pointer',
+                            fontSize: 16, lineHeight: 1, alignSelf: 'flex-start', marginTop: 2,
+                          }}
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setEditableQuestions(qs => [...qs, ''])}
+                    style={{
+                      width: '100%', fontSize: 13, color: C.txt2, fontFamily: C.sans,
+                      cursor: 'pointer', background: 'transparent',
+                      border: `1px dashed ${C.border}`, borderRadius: 6,
+                      padding: '8px 16px', marginBottom: 24,
+                    }}
+                  >
+                    + Add question
+                  </button>
+
+                  {error && <p style={{ fontSize: 12, color: C.error, marginBottom: 12, fontFamily: C.sans }}>{error}</p>}
+                  <PrimaryBtn onClick={startCall}>Start AI Call</PrimaryBtn>
+                </Card>
+              </>
+            )}
+
+            {/* Phase 3: Call in progress / complete */}
             {callPhase !== 'idle' && (
-              <Card style={{ marginTop: showCarrierSelect ? 0 : 0 }}>
+              <Card>
                 <CallProgressSection
                   callPhase={callPhase}
                   callId={callId}
                   transcript={transcript}
                   callAnswers={callAnswers}
-                  questions={verifyResult.agent_questions}
+                  questions={editableQuestions}
+                  phone={callPhone}
                   onTryAnother={tryAnother}
                   onGenerateReport={generateFinalReport}
                   generatingReport={generatingReport}
@@ -1216,27 +1472,58 @@ export default function AppClient() {
           </div>
         )}
 
-        {/* ── Page 5: Report ── */}
+        {/* ── Page 5: Finalize ── */}
+        {step === 'finalize' && (
+          <div style={{ textAlign: 'center' as const, paddingTop: 80 }}>
+            <p style={{
+              fontFamily: C.serif, fontSize: 48, fontStyle: 'italic',
+              fontWeight: 400, color: C.circle, marginBottom: 48, lineHeight: 1,
+            }}>
+              Finalizing&hellip;
+            </p>
+            <div style={{ display: 'inline-flex', flexDirection: 'column' as const, alignItems: 'center', gap: 12 }}>
+              <ScanningDoc />
+              <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, letterSpacing: '0.01em' }}>
+                (&lt;30 seconds)
+              </p>
+            </div>
+            <p style={{ fontSize: 15, color: C.txt2, fontFamily: C.sans, marginTop: 36 }}>
+              Updating analysis with call findings&hellip;
+            </p>
+          </div>
+        )}
+
+        {/* ── Page 6: Report ── */}
         {step === 'report' && verifyResult && finalReport && (
-          <div>
+          <div id="fordra-report">
             <ReportContent
               result={verifyResult}
               reportItems={finalItems}
               isFinal={true}
+              narrativeSummary={finalReport.narrative_summary || undefined}
+              callAnswers={callAnswers}
+              transcript={transcript}
             />
-
-            {finalReport.narrative_summary && (
-              <Card style={{ marginTop: 8 }}>
-                <FieldLabel>Summary</FieldLabel>
-                <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.7, fontFamily: C.sans }}>
-                  {finalReport.narrative_summary}
-                </p>
-              </Card>
-            )}
           </div>
         )}
 
       </div>
+
+      {/* ── Sticky contact bar (draft step) ── */}
+      {step === 'draft' && verifyResult && verifyResult.agent_questions.length > 0 && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 40,
+          padding: '16px 24px',
+          background: `color-mix(in oklch, ${C.paper} 85%, transparent)`,
+          backdropFilter: 'blur(12px)',
+          borderTop: `1px solid ${C.border}`,
+          display: 'flex', justifyContent: 'center',
+        }}>
+          <PrimaryBtn onClick={() => setStep('contact')}>
+            Use AI to Contact Insurer
+          </PrimaryBtn>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mammoth from 'mammoth';
 import {
   extractTextFromFile,
   parseRequirements,
@@ -33,9 +34,13 @@ export async function POST(req: NextRequest) {
     ]);
 
     // Step 1: extract requirements text
+    const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     let reqText: string;
     if (reqFile.type.startsWith('image/') || reqFile.type === 'application/pdf') {
       reqText = await extractTextFromFile(reqBuffer.toString('base64'), reqFile.type);
+    } else if (reqFile.type === DOCX) {
+      const result = await mammoth.extractRawText({ buffer: reqBuffer });
+      reqText = result.value;
     } else {
       reqText = reqBuffer.toString('utf-8');
     }
@@ -50,7 +55,7 @@ export async function POST(req: NextRequest) {
     const gapAnalysis = await analyzeGaps(requirements, coiExtracted);
 
     // Step 4: generate questions for uncertain/unmet items
-    const agentQuestions = await generateAgentQuestions(gapAnalysis);
+    const agentQuestions = await generateAgentQuestions(gapAnalysis, coiExtracted.named_insured);
 
     // Return everything — nothing saved anywhere
     return NextResponse.json({

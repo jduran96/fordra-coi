@@ -15,21 +15,27 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
       phone: string;
-      agent_name?: string;
-      carrier_name: string;
+      verifier_company: string;
+      carrier_company: string;
+      insurance_company: string;
+      policy_holder: string;
       questions: string[];
+      policy_context: string;
     };
 
-    if (!body.phone)     return NextResponse.json({ error: 'phone is required' }, { status: 400 });
-    if (!body.questions?.length) return NextResponse.json({ error: 'questions is required' }, { status: 400 });
+    if (!body.phone)              return NextResponse.json({ error: 'phone is required' }, { status: 400 });
+    if (!body.questions?.length)  return NextResponse.json({ error: 'questions is required' }, { status: 400 });
 
     const questionsList = body.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
 
     const callId = await initiateVerificationCall({
-      toNumber:     toE164(body.phone),
-      carrierName:  body.carrier_name || 'the carrier',
-      agentName:    body.agent_name   || 'the agent',
+      toNumber:         toE164(body.phone),
+      verifierCompany:  body.verifier_company  || 'the verifier',
+      carrierCompany:   body.carrier_company   || 'the carrier',
+      insuranceCompany: body.insurance_company || 'the insurance company',
+      policyHolder:     body.policy_holder     || 'the named insured',
       questionsList,
+      policyContext:    body.policy_context    || '',
     });
 
     return NextResponse.json({ call_id: callId });

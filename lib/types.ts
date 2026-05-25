@@ -20,11 +20,17 @@ export interface COICoverage {
   expiration_date: string;
   each_occurrence_limit: string;
   aggregate_limit: string;
+  conditions_and_exceptions: string;
   raw_notes: string;
 }
 
 export interface COIExtracted {
   named_insured: string;
+  producer: string;
+  insurance_company: string;
+  insurance_company_address: string;
+  insurance_company_phone: string;
+  insurance_company_email: string;
   named_insured_state: string;
   certificate_holder: string;
   additional_insured: string;

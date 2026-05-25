@@ -6,7 +6,11 @@ import type {
   FinalReport,
 } from './types';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!_client) _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _client;
+}
 const MODEL = 'claude-sonnet-4-6';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -27,7 +31,7 @@ async function callClaude(
   messages: Anthropic.MessageParam[],
   maxTokens: number,
 ): Promise<string> {
-  const res = await client.messages.create({
+  const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: maxTokens,
     system,
@@ -109,10 +113,11 @@ export const extractTextFromImage = extractTextFromFile;
 
 export async function parseRequirements(docText: string): Promise<Requirement[]> {
   const system = `You are an insurance requirements analyst for a freight factoring company.
-Extract all insurance coverage requirements from the provided document text.
+Extract ONLY insurance coverage requirements from the provided document text.
+Ignore everything else: FMCSA compliance, DOT numbers, safety ratings, licensing, authority checks, or any non-insurance regulatory items.
 Return ONLY a valid JSON array. No prose, no markdown fences.
 Each element must have: coverage_type (string), minimum_limit (string), notes (string or null).
-Only include requirements explicitly stated in the document. If a field is absent, use null.`;
+Only include insurance requirements explicitly stated in the document. If a field is absent, use null.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -130,11 +135,27 @@ export async function extractCOIFields(
   base64: string,
   mediaType: string,
 ): Promise<COIExtracted> {
-  const system = `You are an expert at reading ACORD 25 Certificates of Insurance.
-Extract every insurance field from the provided COI document image.
+  const system = `You are an expert at reading ACORD 25 Certificates of Insurance with forensic precision.
+Every legal entity name, policy number, and coverage limit must match the document exactly — character for character.
+
+CRITICAL FIELDS — read with extreme care:
+- named_insured: The exact legal name of the policyholder printed in the "Named Insured" box (typically top-left). Include LLC, Inc, Corp, DBA, and any suffixes exactly as written. This is who the policy covers.
+- producer: The agency or brokerage name from the "Producer" box (top-left of form). This is who issued the certificate and is the primary contact for verification calls.
+- insurance_company: The primary insurer name from the lettered insurer boxes (A, B, C…). Do NOT use the producer/broker here.
+- insurance_company_address: Street address of the producer/agent listed on the form. If absent, use the primary insurer's address.
+- insurance_company_phone: Phone number of the producer/agent. Use "" if not found.
+- insurance_company_email: Email of the producer/agent. Use "" if not found.
+- policy_number: Read each alphanumeric character by character. Do not truncate, guess, or normalize. Note ambiguous characters (0 vs O, 1 vs l) in raw_notes.
+- conditions_and_exceptions (per coverage): Types of goods or cargo covered, situations covered, exclusions, sub-limits, endorsements, or any restrictions on the coverage. Copy relevant text verbatim. Use "" if none stated.
+
 Return ONLY a valid JSON object — no prose, no markdown:
 {
   "named_insured": string,
+  "producer": string,
+  "insurance_company": string,
+  "insurance_company_address": string,
+  "insurance_company_phone": string,
+  "insurance_company_email": string,
   "named_insured_state": string,
   "certificate_holder": string,
   "additional_insured": string,
@@ -147,12 +168,13 @@ Return ONLY a valid JSON object — no prose, no markdown:
       "expiration_date": string,
       "each_occurrence_limit": string,
       "aggregate_limit": string,
+      "conditions_and_exceptions": string,
       "raw_notes": string
     }
   ]
 }
-named_insured_state must be the 2-letter US state abbreviation from the named insured's address (e.g. "FL", "TX"). If not present, use "".
-If any other field is illegible or not present, use an empty string "".`;
+named_insured_state: 2-letter US state from named insured's address (e.g. "FL", "TX"). Use "" if not found.
+All other missing or illegible fields: use "". Never guess entity names or policy numbers.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -183,7 +205,7 @@ Classify each insurance requirement as "met", "not_met", or "uncertain".
 - "uncertain": The COI has relevant but ambiguous information, OCR could not confirm, or the requirement depends on endorsements not visible.
 Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...] }
 Each item: { "requirement": <requirement object>, "status": string, "evidence": string }
-evidence must be one sentence describing specifically how the COI meets, conflicts with, or cannot confirm this requirement.`;
+evidence: one plain-English sentence addressed to the person who set the requirements. Use second person: "You require X; the policy shows Y." or "You require X; the policy does not include it." No raw field names, no jargon. Under 25 words.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -197,16 +219,24 @@ evidence must be one sentence describing specifically how the COI meets, conflic
 
 // ─── 5. Generate agent questions ──────────────────────────────────────────────
 
-export async function generateAgentQuestions(gaps: GapAnalysis): Promise<string[]> {
-  if (!gaps.uncertain.length) return [];
+export async function generateAgentQuestions(gaps: GapAnalysis, namedInsured?: string): Promise<string[]> {
+  const mandatory = [
+    `Is the COI for ${namedInsured || 'the carrier'} still active and in force?`,
+    'Can you list all cargo types and situations covered under this policy?',
+  ];
 
-  const system = `You are drafting questions for a phone call with a licensed insurance agent.
+  if (!gaps.uncertain.length) return mandatory;
+
+  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company.
 The goal is to confirm coverage items that could not be determined from the Certificate of Insurance alone.
 Each question must be:
 - 20 words or fewer (fewer is better)
+- Answerable by an insurance company agent (not the trucking company or insured) — do NOT ask about the carrier's operations, equipment, routes, or business practices
+- About insurance coverage, policy terms, endorsements, limits, or effective dates only
 - Specific and answerable with a yes/no or a single concrete value
 - Reference the coverage type or policy by name if known
-Return ONLY a valid JSON array of question strings. Maximum 8 questions. No prose.`;
+Return ONLY a valid JSON array of question strings. Maximum 6 questions. No prose.
+Before returning, review your list: remove any duplicate or near-duplicate questions, remove any question an insurance agent cannot answer, then finalize at most 6 questions.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -215,7 +245,8 @@ Return ONLY a valid JSON array of question strings. Maximum 8 questions. No pros
     },
   ];
 
-  return claudeJSON<string[]>(system, messages, 1024);
+  const generated = await claudeJSON<string[]>(system, messages, 1024);
+  return [...mandatory, ...generated];
 }
 
 // ─── 6. Parse call transcript ─────────────────────────────────────────────────
@@ -249,7 +280,7 @@ export async function generateFinalReport(
   const system = `You are writing a final insurance compliance report for a freight factoring company.
 You have a gap analysis from a COI review and answers obtained from a follow-up call with the insurance agent.
 Update the status of previously uncertain or unmet items using the call answers.
-Write a concise narrative_summary (2–4 sentences) for the factoring company.
+Write a narrative_summary of exactly 2–3 sentences and no more than 30 words total. State only the verdict and the single most important gap or confirmation. No lists, no jargon.
 Return ONLY valid JSON: { "met": [...], "not_met": [...], "uncertain": [...], "narrative_summary": string }
 Each item has the same shape as the input gap items. Update the "evidence" field to reflect the call answers where applicable.`;
 
