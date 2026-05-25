@@ -25,6 +25,7 @@ export interface COICoverage {
 
 export interface COIExtracted {
   named_insured: string;
+  named_insured_state: string;
   certificate_holder: string;
   additional_insured: string;
   coverages: COICoverage[];

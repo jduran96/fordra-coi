@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  extractTextFromImage,
+  extractTextFromFile,
   parseRequirements,
   extractCOIFields,
   analyzeGaps,
@@ -17,8 +17,10 @@ export async function POST(req: NextRequest) {
 
     if (!reqFile) return NextResponse.json({ error: 'requirements_file is required' }, { status: 400 });
     if (!coiFile) return NextResponse.json({ error: 'coi_file is required' }, { status: 400 });
-    if (!coiFile.type.startsWith('image/')) {
-      return NextResponse.json({ error: 'COI must be a JPG or PNG image' }, { status: 400 });
+
+    const coiOk = coiFile.type.startsWith('image/') || coiFile.type === 'application/pdf';
+    if (!coiOk) {
+      return NextResponse.json({ error: 'COI must be a JPG, PNG, or PDF' }, { status: 400 });
     }
 
     // Read both files into memory — no disk, no blob, no DB
@@ -29,8 +31,8 @@ export async function POST(req: NextRequest) {
 
     // Step 1: extract requirements text
     let reqText: string;
-    if (reqFile.type.startsWith('image/')) {
-      reqText = await extractTextFromImage(reqBuffer.toString('base64'), reqFile.type);
+    if (reqFile.type.startsWith('image/') || reqFile.type === 'application/pdf') {
+      reqText = await extractTextFromFile(reqBuffer.toString('base64'), reqFile.type);
     } else {
       reqText = reqBuffer.toString('utf-8');
     }

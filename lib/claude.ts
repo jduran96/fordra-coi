@@ -62,9 +62,31 @@ async function claudeJSON<T>(
   }
 }
 
-// ─── 1. Extract plain text from an image (used for requirements docs) ────────
+// ─── Media helpers ────────────────────────────────────────────────────────────
 
-export async function extractTextFromImage(
+type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+const IMAGE_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+/**
+ * Build a Claude content block for a file.
+ * Images → image block. PDFs → document block (native API support, no conversion).
+ */
+function fileContentBlock(base64: string, mediaType: string): Anthropic.Messages.ContentBlockParam {
+  if (mediaType === 'application/pdf') {
+    return {
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+    } as unknown as Anthropic.Messages.ContentBlockParam;
+  }
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: mediaType as ImageMediaType, data: base64 },
+  };
+}
+
+// ─── 1. Extract plain text from an image or PDF (used for requirements docs) ─
+
+export async function extractTextFromFile(
   base64: string,
   mediaType: string,
 ): Promise<string> {
@@ -72,16 +94,16 @@ export async function extractTextFromImage(
     {
       role: 'user',
       content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: base64 },
-        },
+        fileContentBlock(base64, mediaType),
         { type: 'text', text: 'Extract and return all text from this document exactly as written. No formatting, no summary — just the raw text content.' },
       ],
     },
   ];
   return callClaude('You are a document text extractor.', messages, 2048);
 }
+
+// Keep old name as alias so nothing else breaks
+export const extractTextFromImage = extractTextFromFile;
 
 // ─── 2. Parse insurance requirements ─────────────────────────────────────────
 
@@ -113,6 +135,7 @@ Extract every insurance field from the provided COI document image.
 Return ONLY a valid JSON object — no prose, no markdown:
 {
   "named_insured": string,
+  "named_insured_state": string,
   "certificate_holder": string,
   "additional_insured": string,
   "coverages": [
@@ -128,20 +151,14 @@ Return ONLY a valid JSON object — no prose, no markdown:
     }
   ]
 }
-If a field is illegible or not present, use an empty string "".`;
+named_insured_state must be the 2-letter US state abbreviation from the named insured's address (e.g. "FL", "TX"). If not present, use "".
+If any other field is illegible or not present, use an empty string "".`;
 
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
       content: [
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-            data: base64,
-          },
-        },
+        fileContentBlock(base64, mediaType),
         {
           type: 'text',
           text: 'Extract all fields from this Certificate of Insurance. Return only the JSON object.',
@@ -162,11 +179,11 @@ export async function analyzeGaps(
   const system = `You are a COI compliance analyst for a trucking freight factoring company.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
 - "met": The COI clearly satisfies the requirement with explicit evidence.
-- "not_met": The COI clearly lacks or falls short of the requirement.
-- "uncertain": The COI has relevant but ambiguous information, or may depend on endorsements not shown.
+- "not_met": The COI clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage).
+- "uncertain": The COI has relevant but ambiguous information, OCR could not confirm, or the requirement depends on endorsements not visible.
 Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...] }
 Each item: { "requirement": <requirement object>, "status": string, "evidence": string }
-evidence must be a direct quote from the COI data or a specific explanation of what is missing.`;
+evidence must be one sentence describing specifically how the COI meets, conflicts with, or cannot confirm this requirement.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -181,18 +198,20 @@ evidence must be a direct quote from the COI data or a specific explanation of w
 // ─── 5. Generate agent questions ──────────────────────────────────────────────
 
 export async function generateAgentQuestions(gaps: GapAnalysis): Promise<string[]> {
+  if (!gaps.uncertain.length) return [];
+
   const system = `You are drafting questions for a phone call with a licensed insurance agent.
-The goal is to resolve uncertain or missing coverage items on a Certificate of Insurance.
+The goal is to confirm coverage items that could not be determined from the Certificate of Insurance alone.
 Each question must be:
+- 20 words or fewer (fewer is better)
 - Specific and answerable with a yes/no or a single concrete value
 - Reference the coverage type or policy by name if known
-- Professional in tone
 Return ONLY a valid JSON array of question strings. Maximum 8 questions. No prose.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Uncertain items:\n${JSON.stringify(gaps.uncertain, null, 2)}\n\nNot met items:\n${JSON.stringify(gaps.not_met, null, 2)}\n\nGenerate specific questions to resolve these items.`,
+      content: `Uncertain items that require agent confirmation:\n${JSON.stringify(gaps.uncertain, null, 2)}\n\nGenerate concise questions to resolve these items only.`,
     },
   ];
 
