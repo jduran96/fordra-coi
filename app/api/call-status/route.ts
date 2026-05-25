@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Retell from 'retell-sdk';
+import { requireAuth } from '@/lib/auth';
 
 const client = new Retell({ apiKey: process.env.RETELL_API_KEY! });
 
 export async function GET(req: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   const callId = req.nextUrl.searchParams.get('callId');
   if (!callId) return NextResponse.json({ error: 'callId required' }, { status: 400 });
 

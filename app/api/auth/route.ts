@@ -14,7 +14,6 @@ export async function POST(req: Request) {
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
     path: '/',
   })
   return response

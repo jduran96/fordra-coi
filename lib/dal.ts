@@ -1,23 +1,8 @@
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { redirect } from 'next/navigation'
 
-export const SESSION_COOKIE = 'fordra-session'
+const SESSION_COOKIE = 'fordra-session'
 const PAYLOAD = 'fordra-auth'
-
-export async function signToken(secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(PAYLOAD))
-  const sigHex = Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-  return `${sigHex}.${PAYLOAD}`
-}
 
 async function verifyToken(token: string, secret: string): Promise<boolean> {
   try {
@@ -40,16 +25,11 @@ async function verifyToken(token: string, secret: string): Promise<boolean> {
   }
 }
 
-export async function getSession(): Promise<boolean> {
+export async function verifySession(): Promise<void> {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE)?.value ?? ''
   const secret = process.env.SESSION_SECRET ?? ''
-  if (!secret || !token) return false
-  return verifyToken(token, secret)
-}
-
-export async function requireAuth(): Promise<NextResponse | null> {
-  const authed = await getSession()
-  if (!authed) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  return null
+  if (!token || !secret || !(await verifyToken(token, secret))) {
+    redirect('/')
+  }
 }

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseTranscript } from '@/lib/claude';
+import { requireAuth } from '@/lib/auth';
 
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   try {
     const { transcript, questions } = await req.json() as {
       transcript: string;

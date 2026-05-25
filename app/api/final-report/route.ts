@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateFinalReport } from '@/lib/claude';
 import type { GapAnalysis } from '@/lib/types';
+import { requireAuth } from '@/lib/auth';
 
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   try {
     const { gap_analysis, call_answers } = await req.json() as {
       gap_analysis: GapAnalysis;

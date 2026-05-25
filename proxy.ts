@@ -28,8 +28,8 @@ async function verifyToken(token: string, secret: string): Promise<boolean> {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Always allow login page and auth endpoint through
-  if (pathname === '/login' || pathname.startsWith('/api/auth')) {
+  // Allow password screen and auth endpoint through
+  if (pathname === '/' || pathname.startsWith('/api/auth')) {
     return NextResponse.next()
   }
 
@@ -37,19 +37,16 @@ export async function proxy(request: NextRequest) {
   if (!secret) {
     return pathname.startsWith('/api/')
       ? Response.json({ error: 'Unauthorized' }, { status: 401 })
-      : NextResponse.redirect(new URL('/login', request.url))
+      : NextResponse.redirect(new URL('/', request.url))
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value ?? ''
   const valid = await verifyToken(token, secret)
 
   if (!valid) {
-    if (pathname.startsWith('/api/')) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('next', pathname)
-    return NextResponse.redirect(loginUrl)
+    return pathname.startsWith('/api/')
+      ? Response.json({ error: 'Unauthorized' }, { status: 401 })
+      : NextResponse.redirect(new URL('/', request.url))
   }
 
   return NextResponse.next()

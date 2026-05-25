@@ -6,10 +6,13 @@ import {
   analyzeGaps,
   generateAgentQuestions,
 } from '@/lib/claude';
+import { requireAuth } from '@/lib/auth';
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   try {
     const formData = await req.formData();
     const reqFile = formData.get('requirements_file') as File | null;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initiateVerificationCall } from '@/lib/retell';
+import { requireAuth } from '@/lib/auth';
 
 function toE164(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -9,6 +10,8 @@ function toE164(raw: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   try {
     const body = await req.json() as {
       phone: string;
