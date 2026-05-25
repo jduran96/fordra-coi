@@ -1,0 +1,66 @@
+/* Hallmark · macrostructure: broadsheet · tone: institutional · anchor hue: 80 (warm cream)
+ * theme: custom
+ * vibe: "supply chain authority, compliance trust, editorial precision"
+ * paper: oklch(98.5% 0.004 80) · accent: oklch(13% 0.008 265) navy-black
+ * circle: oklch(52% 0.17 38) terracotta · fonts: DM Serif Display + Inter
+ */
+
+:root {
+  /* ── Color ── */
+  --color-paper:           oklch(98.5% 0.004 80);
+  --color-surface:         oklch(100% 0 0);
+  --color-surface-hover:   oklch(96.5% 0.005 80);
+  --color-border:          oklch(88% 0.008 80);
+  --color-border-strong:   oklch(76% 0.010 80);
+
+  --color-text-primary:    oklch(13% 0.008 265);
+  --color-text-secondary:  oklch(46% 0.012 265);
+  --color-text-tertiary:   oklch(68% 0.008 265);
+
+  --color-accent:          oklch(13% 0.008 265);
+  --color-circle:          oklch(52% 0.17 38);
+
+  --color-error:           oklch(52% 0.20 25);
+  --color-success:         oklch(46% 0.14 155);
+
+  /* ── Typography ── */
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ── Text scale ── */
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 16px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  28px;
+  --text-3xl:  36px;
+  --text-4xl:  46px;
+
+  /* ── Space scale (4pt) ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  /* ── Radii ── */
+  --radius-sm:   6px;
+  --radius-md:   12px;
+  --radius-lg:   18px;
+  --radius-full: 9999px;
+
+  /* ── Motion ── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --dur-fast:    110ms;
+  --dur-base:    200ms;
+  --dur-slow:    380ms;
+}
