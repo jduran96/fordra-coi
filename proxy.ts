@@ -28,17 +28,13 @@ async function verifyToken(token: string, secret: string): Promise<boolean> {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow the auth endpoint through unconditionally
-  if (pathname.startsWith('/api/auth')) {
+  // Always allow login page and auth endpoint through
+  if (pathname === '/login' || pathname.startsWith('/api/auth')) {
     return NextResponse.next()
   }
 
-  const isProtected = pathname.startsWith('/app') || pathname.startsWith('/api/')
-  if (!isProtected) return NextResponse.next()
-
   const secret = process.env.SESSION_SECRET
   if (!secret) {
-    // Misconfigured — fail closed
     return pathname.startsWith('/api/')
       ? Response.json({ error: 'Unauthorized' }, { status: 401 })
       : NextResponse.redirect(new URL('/login', request.url))
@@ -60,5 +56,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/app/:path*', '/api/:path*'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
