@@ -177,13 +177,15 @@ function DropZone({ boxTitle, hint, file, accept, onChange }: {
 
   return (
     <div>
-      <span style={{
-        fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-        textTransform: 'uppercase' as const, color: C.txt3,
-        marginBottom: 8, display: 'block', fontFamily: C.sans,
-      }}>
-        {boxTitle}
-      </span>
+      {boxTitle && (
+        <span style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+          textTransform: 'uppercase' as const, color: C.txt3,
+          marginBottom: 8, display: 'block', fontFamily: C.sans,
+        }}>
+          {boxTitle}
+        </span>
+      )}
 
       {file ? (
         <div style={{
@@ -240,6 +242,153 @@ function DropZone({ boxTitle, hint, file, accept, onChange }: {
         ref={ref} type="file" accept={accept} style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) onChange(f); e.target.value = ''; }}
       />
+    </div>
+  );
+}
+
+// ─── Currency helpers (manual requirements) ──────────────────────────────────
+function formatCurrencyInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  const trimmed = digits.replace(/^0+(?=\d)/, '');
+  return `$${Number(trimmed).toLocaleString('en-US')}`;
+}
+function parseCurrencyAmount(formatted: string): number | null {
+  const digits = formatted.replace(/\D/g, '');
+  if (!digits) return null;
+  return Number(digits);
+}
+
+// ─── ManualRequirementsForm ───────────────────────────────────────────────────
+function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }: {
+  rows: Requirement[];
+  onChange: (next: Requirement[]) => void;
+  notes: string;
+  onNotesChange: (next: string) => void;
+}) {
+  const inputStyle = {
+    width: '100%', boxSizing: 'border-box' as const,
+    padding: '10px 12px', fontSize: 13, fontFamily: C.sans,
+    borderRadius: 6, border: `1.5px solid ${C.border}`,
+    background: C.surface, color: C.txt, outline: 'none',
+    transition: 'border-color 150ms, background 150ms',
+  };
+
+  function updateRow(i: number, patch: Partial<Requirement>) {
+    onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  }
+  function removeRow(i: number) {
+    if (rows.length <= 1) return;
+    onChange(rows.filter((_, idx) => idx !== i));
+  }
+  function addRow() {
+    onChange([...rows, { coverage_type: '', minimum_limit: '', notes: '' }]);
+  }
+
+  return (
+    <div style={{
+      border: `1.5px solid ${C.border}`, borderRadius: 12,
+      padding: 16, background: C.surface,
+      display: 'flex', flexDirection: 'column' as const, gap: 12,
+    }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1.4fr 1.2fr 1.6fr 28px',
+        gap: 8,
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+        textTransform: 'uppercase' as const, color: C.txt3, fontFamily: C.sans,
+      }}>
+        <span>Coverage type</span>
+        <span>Minimum limit</span>
+        <span>Notes</span>
+        <span />
+      </div>
+
+      {rows.map((row, i) => (
+        <div key={i} style={{
+          display: 'grid',
+          gridTemplateColumns: '1.4fr 1.2fr 1.6fr 28px',
+          gap: 8, alignItems: 'center',
+        }}>
+          <input
+            type="text"
+            value={row.coverage_type}
+            onChange={e => updateRow(i, { coverage_type: e.target.value })}
+            placeholder="e.g. Auto Liability"
+            style={inputStyle}
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={row.minimum_limit}
+            onChange={e => updateRow(i, { minimum_limit: formatCurrencyInput(e.target.value) })}
+            placeholder="e.g. $1,000,000"
+            style={inputStyle}
+          />
+          <input
+            type="text"
+            value={row.notes ?? ''}
+            onChange={e => updateRow(i, { notes: e.target.value })}
+            placeholder="Optional"
+            style={inputStyle}
+          />
+          {rows.length > 1 ? (
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              title="Remove row"
+              style={{
+                width: 28, height: 28, padding: 0,
+                borderRadius: 6, border: `1px solid ${C.border}`,
+                background: 'transparent', color: C.txt3,
+                cursor: 'pointer', fontSize: 14, lineHeight: 1,
+                transition: 'all 120ms',
+              }}
+            >
+              ×
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={addRow}
+        style={{
+          alignSelf: 'flex-start',
+          fontSize: 12, fontWeight: 600, fontFamily: C.sans,
+          padding: '6px 12px', borderRadius: 6,
+          border: `1px dashed ${C.border}`, background: 'transparent',
+          color: C.txt2, cursor: 'pointer',
+          transition: 'all 120ms',
+        }}
+      >
+        + Add requirement
+      </button>
+
+      <div style={{ marginTop: 4 }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+          textTransform: 'uppercase' as const, color: C.txt3,
+          fontFamily: C.sans, display: 'block', marginBottom: 6,
+        }}>
+          Additional details (optional)
+        </span>
+        <textarea
+          value={notes}
+          onChange={e => onNotesChange(e.target.value)}
+          placeholder="Anything the fields above didn't capture — extra coverages, conditions, endorsements, etc."
+          rows={3}
+          style={{
+            ...inputStyle,
+            resize: 'vertical' as const,
+            fontFamily: C.sans,
+            minHeight: 64,
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -450,15 +599,16 @@ function QuestionsSection({ questions, onContact }: { questions: string[]; onCon
 function SummaryStats({ total, discrepancies, missing }: {
   total: number; discrepancies: number; missing: number;
 }) {
+  const neutralBg = `color-mix(in oklch, ${C.txt} 6%, ${C.surface})`;
   function statColors(n: number, activeColor: string) {
     const color = n === 0 ? C.success : activeColor;
     return {
       color,
-      bg:     `color-mix(in oklch, ${color} 10%, ${C.surface})`,
+      bg: neutralBg,
       border: `color-mix(in oklch, ${color} 28%, transparent)`,
     };
   }
-  const req  = { color: C.txt,     bg: `color-mix(in oklch, ${C.txt} 6%, ${C.surface})`,  border: `color-mix(in oklch, ${C.txt} 15%, transparent)` };
+  const req  = { color: C.txt, bg: neutralBg, border: `color-mix(in oklch, ${C.txt} 15%, transparent)` };
   const disc = statColors(discrepancies, C.error);
   const miss = statColors(missing, C.circle);
   const stats = [
@@ -626,7 +776,7 @@ function CarrierCard({
     <div style={{
       border: `1.5px solid ${selected ? C.success : hov ? C.borderStrong : C.border}`,
       borderRadius: 10, padding: '20px 22px',
-      background: selected ? `color-mix(in oklch, ${C.success} 8%, ${C.surface})` : hov ? C.surfaceHover : C.surface,
+      background: selected ? C.surfaceHover : hov ? C.surfaceHover : C.surface,
       transition: 'all 110ms cubic-bezier(0.16, 1, 0.3, 1)',
       flex: '1 1 0', minWidth: 0, cursor: 'pointer',
     }}
@@ -740,11 +890,16 @@ function CallProgressSection({
             <TranscriptView raw={transcript} />
           </Card>
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', marginTop: 8 }}>
             <PrimaryBtn onClick={onGenerateReport} disabled={generatingReport}>
-              {generatingReport ? 'Generating...' : 'Generate full report'}
+              {generatingReport ? 'Generating...' : 'Generate Final Report'}
             </PrimaryBtn>
-            <SecondaryBtn onClick={onTryAnother}>Try another Insurance company</SecondaryBtn>
+            <SecondaryBtn
+              onClick={onTryAnother}
+              style={{ padding: '13px 28px', fontSize: 14 }}
+            >
+              Try Another Call
+            </SecondaryBtn>
           </div>
         </>
       )}
@@ -861,6 +1016,11 @@ export default function AppClient() {
   const [step, setStep]           = useState<Step>('upload');
   const [reqFile, setReqFile]     = useState<File | null>(null);
   const [coiFile, setCoiFile]     = useState<File | null>(null);
+  const [reqMode, setReqMode]     = useState<'upload' | 'manual'>('upload');
+  const [manualReqs, setManualReqs] = useState<Requirement[]>([
+    { coverage_type: '', minimum_limit: '', notes: '' },
+  ]);
+  const [manualNotes, setManualNotes] = useState('');
   const [verifierCompany, setVerifierCompany] = useState('');
   const [carrierCompany, setCarrierCompany]   = useState('');
   const [verifyResult, setVerifyResult]           = useState<VerifyResult | null>(null);
@@ -890,7 +1050,20 @@ export default function AppClient() {
 
   // ── Verify ──
   async function runVerification() {
-    if (!reqFile || !coiFile) { setError('Please upload both files.'); return; }
+    if (!coiFile) { setError('Please upload the COI.'); return; }
+    if (reqMode === 'upload' && !reqFile) { setError('Please upload a requirements file.'); return; }
+    const cleanReqs = manualReqs
+      .map(r => ({
+        coverage_type: r.coverage_type.trim(),
+        minimum_limit_amount: parseCurrencyAmount(r.minimum_limit),
+        notes: (r.notes ?? '').trim(),
+      }))
+      .filter(r => r.coverage_type && r.minimum_limit_amount !== null && r.minimum_limit_amount > 0);
+    const trimmedNotes = manualNotes.trim();
+    if (reqMode === 'manual' && cleanReqs.length === 0) {
+      setError('Please add at least one coverage with both a type and a minimum limit.');
+      return;
+    }
     setError('');
     setStep('analyze');
     setMsgIdx(0);
@@ -900,8 +1073,19 @@ export default function AppClient() {
     );
     try {
       const fd = new FormData();
-      fd.append('requirements_file', reqFile);
       fd.append('coi_file', coiFile);
+      if (reqMode === 'upload') {
+        fd.append('requirements_file', reqFile!);
+      } else {
+        fd.append('requirements_json', JSON.stringify({
+          requirements: cleanReqs.map(r => ({
+            coverage_type: r.coverage_type,
+            minimum_limit: r.minimum_limit_amount,
+            notes: r.notes || null,
+          })),
+          additional_notes: trimmedNotes || null,
+        }));
+      }
       const res = await fetch('/api/verify', { method: 'POST', body: fd });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1058,6 +1242,9 @@ export default function AppClient() {
   function reset() {
     setStep('upload');
     setReqFile(null); setCoiFile(null);
+    setReqMode('upload');
+    setManualReqs([{ coverage_type: '', minimum_limit: '', notes: '' }]);
+    setManualNotes('');
     setVerifyResult(null); setFinalReport(null); setInputDiscrepancies([]);
     setVerifierCompany(''); setCarrierCompany('');
     setMsgIdx(0); setError('');
@@ -1076,7 +1263,13 @@ export default function AppClient() {
     setCallAnswers(null);
   }
 
-  const canRun = !!reqFile && !!coiFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
+  const hasValidManualRow = manualReqs.some(r => {
+    if (!r.coverage_type.trim()) return false;
+    const amt = parseCurrencyAmount(r.minimum_limit);
+    return amt !== null && amt > 0;
+  });
+  const reqReady = reqMode === 'upload' ? !!reqFile : hasValidManualRow;
+  const canRun = reqReady && !!coiFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
   const insuranceOptions = verifyResult ? buildInsuranceOptions(verifyResult.coi_extracted) : [];
   const visibleOptions = insuranceOptions.slice(carouselStart, carouselStart + 2);
 
@@ -1190,13 +1383,61 @@ export default function AppClient() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 20, marginBottom: 32 }}>
-              <DropZone
-                boxTitle="Your requirements"
-                hint="PDF, DOCX, JPG, PNG, or TXT — list of required coverages and limits"
-                file={reqFile}
-                accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={setReqFile}
-              />
+              <div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: 8,
+                }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                    textTransform: 'uppercase' as const, color: C.txt3, fontFamily: C.sans,
+                  }}>
+                    Your requirements
+                  </span>
+                  <div style={{
+                    display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2,
+                    border: `1px solid ${C.border}`,
+                  }}>
+                    {([
+                      ['upload', 'Upload file'],
+                      ['manual', 'Enter manually'],
+                    ] as const).map(([m, label]) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setReqMode(m)}
+                        style={{
+                          fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
+                          padding: '4px 10px', borderRadius: 6, border: 'none',
+                          background: reqMode === m ? C.txt : 'transparent',
+                          color: reqMode === m ? C.surface : C.txt3,
+                          cursor: 'pointer', transition: 'all 120ms',
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {reqMode === 'upload' ? (
+                  <DropZone
+                    boxTitle=""
+                    hint="PDF, DOCX, JPG, PNG, or TXT — list of required coverages and limits"
+                    file={reqFile}
+                    accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={setReqFile}
+                  />
+                ) : (
+                  <ManualRequirementsForm
+                    rows={manualReqs}
+                    onChange={setManualReqs}
+                    notes={manualNotes}
+                    onNotesChange={setManualNotes}
+                  />
+                )}
+              </div>
+
               <DropZone
                 boxTitle="Carrier's Certificate of Insurance"
                 hint="PDF, JPG, or PNG scan of the COI (ACORD 25)"
@@ -1362,7 +1603,7 @@ export default function AppClient() {
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '14px 20px', borderRadius: 10, marginBottom: 16,
                   border: `1.5px solid ${C.success}`,
-                  background: `color-mix(in oklch, ${C.success} 6%, ${C.surface})`,
+                  background: C.surfaceHover,
                 }}>
                   <div>
                     <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: C.success, marginBottom: 3, fontFamily: C.sans }}>
