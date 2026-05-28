@@ -21,10 +21,17 @@ const C = {
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+interface Discrepancy {
+  kind: 'carrier_name_mismatch';
+  user_value: string;
+  ocr_value: string;
+}
+
 interface VerifyResult {
   requirements: Requirement[];
   coi_extracted: COIExtracted;
   gap_analysis: GapAnalysis;
+  discrepancies: Discrepancy[];
   agent_questions: string[];
 }
 
@@ -36,12 +43,6 @@ interface InsuranceOption {
   address: string;
   email: string;
   phone: string;
-}
-
-interface InputDiscrepancy {
-  label: string;
-  userValue: string;
-  ocrValue: string;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -191,7 +192,7 @@ function DropZone({ boxTitle, hint, file, accept, onChange }: {
         <div style={{
           border: `1.5px solid ${C.success}`, borderRadius: 12,
           padding: '20px 24px',
-          background: `color-mix(in oklch, ${C.success} 6%, ${C.surface})`,
+          background: C.surfaceHover,
           display: 'flex', alignItems: 'center', gap: 16,
         }}>
           <span style={{ fontSize: 22, color: C.success, lineHeight: 1, fontWeight: 700 }}>✓</span>
@@ -549,8 +550,8 @@ function COIDetailsSection({ coi }: { coi: COIExtracted }) {
 }
 
 // ─── Requirement check section ─────────────────────────────────────────────────
-function RequirementCheckSection({ items, nameCheckItem }: { items: GapItem[]; nameCheckItem?: GapItem }) {
-  const allItems = nameCheckItem ? [nameCheckItem, ...items] : items;
+function RequirementCheckSection({ items }: { items: GapItem[] }) {
+  const allItems = items;
   return (
     <Card>
       <FieldLabel>Requirement Check</FieldLabel>
@@ -647,28 +648,24 @@ function SummaryStats({ total, discrepancies, missing }: {
 // ─── Report content (shared between Draft and Final) ───────────────────────────
 function ReportContent({
   result,
-  reportItems,
+  items,
   isFinal,
   onContact,
-  nameCheckItem,
   narrativeSummary,
   callAnswers,
   transcript,
 }: {
   result: VerifyResult;
-  reportItems: GapItem[];
+  items: GapItem[];
   isFinal: boolean;
   onContact?: () => void;
-  nameCheckItem?: GapItem;
   narrativeSummary?: string;
   callAnswers?: Record<string, string> | null;
   transcript?: string | null;
 }) {
-  const { requirements: reqs, coi_extracted: coi, agent_questions: qs } = result;
-  const disc = reportItems.filter(i => i.status === 'not_met').length
-    + (nameCheckItem?.status === 'not_met' ? 1 : 0);
-  const miss = reportItems.filter(i => i.status === 'uncertain').length
-    + (nameCheckItem?.status === 'uncertain' ? 1 : 0);
+  const { coi_extracted: coi, agent_questions: qs } = result;
+  const disc = items.filter(i => i.status === 'not_met').length;
+  const miss = items.filter(i => i.status === 'uncertain').length;
 
   const subtitle = isFinal
     ? (() => {
@@ -677,7 +674,7 @@ function ReportContent({
         if (miss > 0) return `${miss} item${miss === 1 ? '' : 's'} could not be confirmed`;
         return 'All requirements satisfied';
       })()
-    : getDraftSubtitle({ met: reportItems.filter(i => i.status === 'met'), not_met: reportItems.filter(i => i.status === 'not_met'), uncertain: reportItems.filter(i => i.status === 'uncertain') });
+    : getDraftSubtitle({ met: items.filter(i => i.status === 'met'), not_met: items.filter(i => i.status === 'not_met'), uncertain: items.filter(i => i.status === 'uncertain') });
 
   return (
     <div>
@@ -710,7 +707,7 @@ function ReportContent({
         {subtitle}
       </p>
 
-      <SummaryStats total={reqs.length} discrepancies={disc} missing={miss} />
+      <SummaryStats total={items.length} discrepancies={disc} missing={miss} />
 
       {narrativeSummary && (
         <Card style={{ marginTop: 8 }}>
@@ -725,7 +722,7 @@ function ReportContent({
       <COIDetailsSection coi={coi} />
 
       <SectionLabel>Requirement Check</SectionLabel>
-      <RequirementCheckSection items={reportItems} nameCheckItem={nameCheckItem} />
+      <RequirementCheckSection items={items} />
 
       {isFinal && (callAnswers || transcript) && (
         <>
@@ -969,24 +966,103 @@ function useAnimatedDots(active: boolean) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function checkInputDiscrepancies(
-  coi: COIExtracted,
-  inputs: { carrierCompany: string },
-): InputDiscrepancy[] {
-  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  const discrepancies: InputDiscrepancy[] = [];
+// Single source of truth for discrepancies between user-typed inputs and COI OCR.
+// Add new kinds here, then teach questionsFromDiscrepancies and the report row
+// to render them. Order of agent_questions is defined in enrichVerifyResult.
+type DiscrepancyInputs = { verifierCompany: string; carrierCompany: string };
 
-  if (inputs.carrierCompany.trim() && coi.named_insured) {
-    if (normalize(inputs.carrierCompany) !== normalize(coi.named_insured)) {
-      discrepancies.push({
-        label: 'Carrier company name',
-        userValue: inputs.carrierCompany.trim(),
-        ocrValue: coi.named_insured,
-      });
-    }
+function detectDiscrepancies(coi: COIExtracted, inputs: DiscrepancyInputs): Discrepancy[] {
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const out: Discrepancy[] = [];
+
+  const userCarrier = inputs.carrierCompany.trim();
+  const ocrCarrier = (coi.named_insured ?? '').trim();
+  if (userCarrier && ocrCarrier && normalize(userCarrier) !== normalize(ocrCarrier)) {
+    out.push({ kind: 'carrier_name_mismatch', user_value: userCarrier, ocr_value: ocrCarrier });
   }
 
-  return discrepancies;
+  return out;
+}
+
+function questionsFromDiscrepancies(discrepancies: Discrepancy[]): string[] {
+  return discrepancies.map(d => {
+    switch (d.kind) {
+      case 'carrier_name_mismatch':
+        return `Does this policy also cover a business called ${d.user_value}?`;
+    }
+  });
+}
+
+// Takes the raw /api/verify response and merges discrepancy data into it.
+// Discrepancy questions come first, then gap-analysis questions.
+function enrichVerifyResult(
+  raw: Omit<VerifyResult, 'discrepancies'>,
+  inputs: DiscrepancyInputs,
+): VerifyResult {
+  const discrepancies = detectDiscrepancies(raw.coi_extracted, inputs);
+  return {
+    ...raw,
+    discrepancies,
+    agent_questions: [...questionsFromDiscrepancies(discrepancies), ...raw.agent_questions],
+  };
+}
+
+// Classify a free-text agent answer about name coverage into a check status.
+// Prototype heuristic — replace with a Claude call when a real backend exists.
+function classifyNameAnswer(answer: string): 'met' | 'not_met' | 'uncertain' {
+  const a = answer.toLowerCase().trim();
+  // Sentence-leading affirmation/negation wins over signals later in the answer.
+  if (/^(yes|yeah|yep|correct|that'?s\s+right)\b/.test(a)) return 'met';
+  if (/^(no|nope|negative)\b/.test(a)) return 'not_met';
+  // Otherwise look for explicit coverage phrasing.
+  if (/\b(not\s+covered|not\s+included|does\s+not\s+cover|doesn'?t\s+cover|excluded|is\s+not\s+covered|only\s+covers?)\b/.test(a)) return 'not_met';
+  if (/\b(also\s+covers?|extends?\s+to|both\s+(names?|entities|businesses)|covers?\s+both)\b/.test(a)) return 'met';
+  return 'uncertain';
+}
+
+// Build the synthetic "Matching Policyholder Name" check used in the requirement
+// check list. Returns undefined only when comparison isn't possible (one of
+// the two names is missing). Status flows through: COI mismatch → not_met,
+// then a confirming/denying agent answer can flip to met/uncertain.
+function buildNameCheckItem(
+  carrierCompany: string,
+  coi: COIExtracted,
+  discrepancies: Discrepancy[],
+  callAnswers: Record<string, string> | null | undefined,
+): GapItem | undefined {
+  const userCarrier = carrierCompany.trim();
+  const ocrCarrier = (coi.named_insured ?? '').trim();
+  if (!userCarrier || !ocrCarrier) return undefined;
+
+  const mismatch = discrepancies.find(d => d.kind === 'carrier_name_mismatch');
+  const requirement = { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null };
+
+  if (!mismatch) {
+    return { requirement, status: 'met', evidence: 'Carrier name matches the named insured on the COI.' };
+  }
+
+  const question = questionsFromDiscrepancies([mismatch])[0];
+  const answer = callAnswers?.[question]?.trim();
+  if (answer) {
+    const resolution = classifyNameAnswer(answer);
+    if (resolution === 'met') return {
+      requirement, status: 'met',
+      evidence: `Agent confirmed the policy also covers "${userCarrier}". COI lists "${ocrCarrier}".`,
+    };
+    if (resolution === 'uncertain') return {
+      requirement, status: 'uncertain',
+      evidence: `Agent's answer about coverage for "${userCarrier}" was ambiguous. COI lists "${ocrCarrier}".`,
+    };
+    return {
+      requirement, status: 'not_met',
+      evidence: `Agent confirmed the policy does not cover "${userCarrier}". COI lists "${ocrCarrier}".`,
+    };
+  }
+
+  return {
+    requirement, status: 'not_met',
+    evidence: `You entered "${userCarrier}" but the COI lists "${ocrCarrier}" as the policyholder.`,
+  };
 }
 
 function buildPolicyContext(coi: COIExtracted): string {
@@ -1025,7 +1101,6 @@ export default function AppClient() {
   const [carrierCompany, setCarrierCompany]   = useState('');
   const [verifyResult, setVerifyResult]           = useState<VerifyResult | null>(null);
   const [finalReport, setFinalReport]             = useState<FinalReport | null>(null);
-  const [inputDiscrepancies, setInputDiscrepancies] = useState<InputDiscrepancy[]>([]);
   const [msgIdx, setMsgIdx]       = useState(0);
   const [error, setError]         = useState('');
   const [runHover, setRunHover]   = useState(false);
@@ -1043,7 +1118,7 @@ export default function AppClient() {
 
   const stepIdx = STEP_KEYS.indexOf(step);
 
-  // Sync editable questions when verification result arrives
+  // Sync editable questions when verification result arrives.
   useEffect(() => {
     if (verifyResult) setEditableQuestions(verifyResult.agent_questions);
   }, [verifyResult]);
@@ -1094,8 +1169,8 @@ export default function AppClient() {
         return;
       }
       const data = await res.json();
-      setVerifyResult(data);
-      setInputDiscrepancies(checkInputDiscrepancies(data.coi_extracted, { carrierCompany }));
+      const enriched = enrichVerifyResult(data, { verifierCompany, carrierCompany });
+      setVerifyResult(enriched);
       setStep('draft');
     } catch (err) {
       console.error('[runVerification]', err);
@@ -1119,7 +1194,7 @@ export default function AppClient() {
         body: JSON.stringify({
           phone:             callPhone.replace(/\D/g, ''),
           verifier_company:  verifierCompany.trim(),
-          carrier_company:   carrierCompany.trim(),
+          carrier_company:   coi.named_insured?.trim() || carrierCompany.trim(),
           insurance_company: coi.producer || coi.insurance_company || getPrimaryInsurer(coi.coverages),
           policy_holder:     coi.named_insured,
           questions:         editableQuestions.filter(q => q.trim()),
@@ -1245,7 +1320,7 @@ export default function AppClient() {
     setReqMode('upload');
     setManualReqs([{ coverage_type: '', minimum_limit: '', notes: '' }]);
     setManualNotes('');
-    setVerifyResult(null); setFinalReport(null); setInputDiscrepancies([]);
+    setVerifyResult(null); setFinalReport(null);
     setVerifierCompany(''); setCarrierCompany('');
     setMsgIdx(0); setError('');
     setSelectedOption(null); setCarouselStart(0);
@@ -1273,13 +1348,22 @@ export default function AppClient() {
   const insuranceOptions = verifyResult ? buildInsuranceOptions(verifyResult.coi_extracted) : [];
   const visibleOptions = insuranceOptions.slice(carouselStart, carouselStart + 2);
 
-  // Flatten gap items for report views
-  const draftItems = verifyResult
-    ? [...verifyResult.gap_analysis.met, ...verifyResult.gap_analysis.not_met, ...verifyResult.gap_analysis.uncertain]
-    : [];
-  const finalItems = finalReport
-    ? [...finalReport.met, ...finalReport.not_met, ...finalReport.uncertain]
-    : draftItems;
+  // Single source of truth for the requirement check list shown in both the
+  // draft and final reports. Name check (if applicable) is always item #0;
+  // its status reflects call answers once they're available.
+  const displayedItems: GapItem[] = (() => {
+    if (!verifyResult) return [];
+    const base = finalReport
+      ? [...finalReport.met, ...finalReport.not_met, ...finalReport.uncertain]
+      : [...verifyResult.gap_analysis.met, ...verifyResult.gap_analysis.not_met, ...verifyResult.gap_analysis.uncertain];
+    const nameCheck = buildNameCheckItem(
+      carrierCompany,
+      verifyResult.coi_extracted,
+      verifyResult.discrepancies,
+      callAnswers,
+    );
+    return nameCheck ? [nameCheck, ...base] : base;
+  })();
 
   return (
     <div style={{ minHeight: '100vh', background: C.paper, color: C.txt, fontFamily: C.sans }}>
@@ -1373,7 +1457,7 @@ export default function AppClient() {
                       width: '100%', boxSizing: 'border-box' as const,
                       padding: '11px 14px', fontSize: 14, fontFamily: C.sans,
                       borderRadius: 8, border: `1.5px solid ${value.trim() ? C.success : C.border}`,
-                      background: value.trim() ? `color-mix(in oklch, ${C.success} 5%, ${C.surface})` : C.surface,
+                      background: value.trim() ? C.surfaceHover : C.surface,
                       color: C.txt, outline: 'none',
                       transition: 'border-color 150ms, background 150ms',
                     }}
@@ -1505,32 +1589,12 @@ export default function AppClient() {
               <p style={{ fontSize: 13, color: C.error, marginBottom: 16, fontFamily: C.sans }}>{error}</p>
             )}
 
-            {(() => {
-              const d = inputDiscrepancies.find(x => x.label === 'Carrier company name');
-              const nameCheckItem: GapItem | undefined = verifyResult ? (() => {
-                if (d) return {
-                  requirement: { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null },
-                  status: 'not_met' as const,
-                  evidence: `You entered "${d.userValue}" but the COI lists "${d.ocrValue}" as the policyholder.`,
-                };
-                if (carrierCompany.trim() && verifyResult.coi_extracted.named_insured) return {
-                  requirement: { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null },
-                  status: 'met' as const,
-                  evidence: `Carrier name matches the named insured on the COI.`,
-                };
-                return undefined;
-              })() : undefined;
-
-              return (
-                <ReportContent
-                  result={verifyResult}
-                  reportItems={draftItems}
-                  isFinal={false}
-                  onContact={() => setStep('contact')}
-                  nameCheckItem={nameCheckItem}
-                />
-              );
-            })()}
+            <ReportContent
+              result={verifyResult}
+              items={displayedItems}
+              isFinal={false}
+              onContact={() => setStep('contact')}
+            />
           </div>
         )}
 
@@ -1739,7 +1803,7 @@ export default function AppClient() {
           <div id="fordra-report">
             <ReportContent
               result={verifyResult}
-              reportItems={finalItems}
+              items={displayedItems}
               isFinal={true}
               narrativeSummary={finalReport.narrative_summary || undefined}
               callAnswers={callAnswers}
