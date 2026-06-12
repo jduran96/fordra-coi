@@ -1092,7 +1092,6 @@ export default function AppClient() {
   const [step, setStep]           = useState<Step>('upload');
   const [reqFile, setReqFile]     = useState<File | null>(null);
   const [coiFile, setCoiFile]     = useState<File | null>(null);
-  const [rcsFile, setRcsFile]     = useState<File | null>(null);
   const [reqMode, setReqMode]     = useState<'upload' | 'manual'>('upload');
   const [manualReqs, setManualReqs] = useState<Requirement[]>([
     { coverage_type: '', minimum_limit: '', notes: '' },
@@ -1127,7 +1126,6 @@ export default function AppClient() {
   // ── Verify ──
   async function runVerification() {
     if (!coiFile) { setError('Please upload the COI.'); return; }
-    if (!rcsFile) { setError('Please upload the rate confirmation sheet.'); return; }
     if (reqMode === 'upload' && !reqFile) { setError('Please upload a requirements file.'); return; }
     const cleanReqs = manualReqs
       .map(r => ({
@@ -1318,7 +1316,7 @@ export default function AppClient() {
 
   function reset() {
     setStep('upload');
-    setReqFile(null); setCoiFile(null); setRcsFile(null);
+    setReqFile(null); setCoiFile(null);
     setReqMode('upload');
     setManualReqs([{ coverage_type: '', minimum_limit: '', notes: '' }]);
     setManualNotes('');
@@ -1346,7 +1344,7 @@ export default function AppClient() {
     return amt !== null && amt > 0;
   });
   const reqReady = reqMode === 'upload' ? !!reqFile : hasValidManualRow;
-  const canRun = reqReady && !!coiFile && !!rcsFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
+  const canRun = reqReady && !!coiFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
   const insuranceOptions = verifyResult ? buildInsuranceOptions(verifyResult.coi_extracted) : [];
   const visibleOptions = insuranceOptions.slice(carouselStart, carouselStart + 2);
 
@@ -1434,7 +1432,7 @@ export default function AppClient() {
               Upload documents to verify
             </h1>
             <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, marginBottom: 32 }}>
-              We need legal entity details, your insurance requirements, the carrier&apos;s COI, and the rate confirmation sheet.
+              We need legal entity details, your insurance requirements, and the carrier&apos;s COI.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -1530,14 +1528,6 @@ export default function AppClient() {
                 file={coiFile}
                 accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={setCoiFile}
-              />
-
-              <DropZone
-                boxTitle="Rate Confirmation Sheet"
-                hint="PDF, JPG, or PNG of the signed rate confirmation"
-                file={rcsFile}
-                accept="image/jpeg,image/png,image/webp,application/pdf"
-                onChange={setRcsFile}
               />
             </div>
 

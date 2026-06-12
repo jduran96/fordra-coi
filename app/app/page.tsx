@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation';
+import { verifySession } from '@/lib/dal'
+import AppClient from './AppClient'
 
-export default function AppIndexPage() {
-  redirect('/app/home');
+export const dynamic = 'force-dynamic'
+
+export default async function AppPage() {
+  await verifySession()
+  return <AppClient />
 }
