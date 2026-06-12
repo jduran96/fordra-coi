@@ -6,7 +6,8 @@ import { C } from '@/components/ui/tokens';
 import { Card, FieldLabel, PageTitle, Pill, SecondaryBtn, SectionLabel } from '@/components/ui/primitives';
 import { DataTable, Pagination, type Column } from '@/components/ui/DataTable';
 import { ReportView, TranscriptView } from '@/components/ui/report';
-import { CompletionFlow, DocsLog } from './CompletionFlow';
+import { DocsLog } from '@/components/ui/DocsLog';
+import { CompletionFlow } from './CompletionFlow';
 import {
   MOCK_VERIFICATIONS, formatTimestamp, STATUS_LABELS,
   type MockStatus, type MockVerification,

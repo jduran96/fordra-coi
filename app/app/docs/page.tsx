@@ -93,7 +93,7 @@ function P({ children }: { children: React.ReactNode }) {
 
 export default function AppDocsPage() {
   return (
-    <div style={{ maxWidth: 920, display: 'flex', gap: 48, alignItems: 'flex-start' }}>
+    <div style={{ maxWidth: 920, margin: '0 auto', display: 'flex', gap: 48, alignItems: 'flex-start' }}>
       {/* ── Body ── */}
       <div style={{ flex: 1, minWidth: 0, maxWidth: 720 }}>
         <PageTitle subtitle="Fire verification requests programmatically instead of using the Upload page.">
@@ -237,7 +237,7 @@ const verification = await res.json();
 
       {/* ── Sticky section index ── */}
       <nav style={{
-        position: 'sticky', top: 48,
+        position: 'sticky', top: 84,
         width: 168, flexShrink: 0,
         display: 'flex', flexDirection: 'column' as const, gap: 2,
         paddingTop: 8,

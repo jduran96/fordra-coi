@@ -16,18 +16,18 @@ export default function AppHomePage() {
   const stats = deriveAppStats(MY_VERIFICATIONS);
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: 760, margin: '0 auto' }}>
       <PageTitle subtitle="Your verification activity at a glance.">
         Overview
       </PageTitle>
 
       <StatGrid columns={3}>
-        <StatCard value={stats.total} label="Requests" sub="All time" />
-        <StatCard value={stats.inProgress} label="In progress" color={stats.inProgress > 0 ? C.accent : undefined} />
-        <StatCard value={stats.completed} label="Completed" color={C.success} />
+        <StatCard value={stats.total} label="Requests" compact />
+        <StatCard value={stats.inProgress} label="In progress" color={stats.inProgress > 0 ? C.accent : undefined} compact />
+        <StatCard value={stats.completed} label="Completed" color={C.success} compact />
       </StatGrid>
       <StatGrid columns={2}>
-        <StatCard value={stats.spend} label="Est. spend" sub="This billing period" />
+        <StatCard value={stats.spend} label="Est. spend" sub="June 1 – 30" />
         <StatCard value={`${stats.avgTurnaroundHrs}h`} label="Avg turnaround" sub="Submission to final report" />
       </StatGrid>
 

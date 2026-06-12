@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Requirement } from '@/lib/types';
+import type { GapItem, Requirement } from '@/lib/types';
 import { C } from '@/components/ui/tokens';
 import { Card, FieldLabel, SectionLabel, PrimaryBtn, ScanningDoc, PageTitle } from '@/components/ui/primitives';
 import { DropZone } from '@/components/ui/DropZone';
@@ -28,6 +28,28 @@ const PROCESSING_MSGS = [
 // Canned analysis result until the backend is wired up — a pending mock
 // verification with full OCR output and a generated question list.
 const SAMPLE = MOCK_VERIFICATIONS.find(v => v.status === 'pending' && v.coi_extracted)!;
+
+// Same check the demo runs: the carrier name typed at upload must match the
+// named insured OCR'd from the COI. Mismatch → discrepancy row + a question
+// for the insurer.
+function namesMatch(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  return norm(a) === norm(b);
+}
+
+function buildNameCheckItem(carrierCompany: string, namedInsured: string): GapItem | null {
+  const user = carrierCompany.trim();
+  const ocr = namedInsured.trim();
+  if (!user || !ocr) return null;
+  const requirement = { coverage_type: 'Matching Policyholder Name', minimum_limit: '', notes: null };
+  return namesMatch(user, ocr)
+    ? { requirement, status: 'met', evidence: 'Carrier name matches the named insured on the COI.' }
+    : { requirement, status: 'not_met', evidence: `You entered "${user}" but the COI lists "${ocr}" as the policyholder.` };
+}
+
+function nameCheckQuestion(carrierCompany: string): string {
+  return `Does this policy also cover a business called ${carrierCompany.trim()}?`;
+}
 
 function StepPills({ step }: { step: Step }) {
   const idx = STEP_LABELS.findIndex(s => s.key === step);
@@ -81,7 +103,14 @@ export default function AppUploadPage() {
       timers.current.push(setTimeout(() => setMsgIdx(i), i * 1700));
     });
     timers.current.push(setTimeout(() => {
-      setQuestions(SAMPLE.agent_questions ?? []);
+      // Discrepancy questions lead, then the standard gap questions — same
+      // ordering as the demo's enrichVerifyResult.
+      const mismatch = SAMPLE.coi_extracted
+        && !namesMatch(carrierCompany, SAMPLE.coi_extracted.named_insured);
+      setQuestions([
+        ...(mismatch ? [nameCheckQuestion(carrierCompany)] : []),
+        ...(SAMPLE.agent_questions ?? []),
+      ]);
       setStep('draft');
     }, PROCESSING_MSGS.length * 1700));
   }
@@ -108,7 +137,7 @@ export default function AppUploadPage() {
   const canRun = reqReady && !!coiFile && !!rcsFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepPills step={step} />
 
       {/* ── Step 1: Upload ── */}
@@ -252,6 +281,8 @@ export default function AppUploadPage() {
         <div style={{ paddingBottom: 80 }}>
           <ReportView
             items={[
+              // Name check always leads the requirement list, like the demo.
+              ...([buildNameCheckItem(carrierCompany, SAMPLE.coi_extracted.named_insured)].filter(Boolean) as GapItem[]),
               ...SAMPLE.gap_analysis.met,
               ...SAMPLE.gap_analysis.not_met,
               ...SAMPLE.gap_analysis.uncertain,
@@ -294,10 +325,10 @@ export default function AppUploadPage() {
               fontFamily: C.serif, fontSize: 26, fontWeight: 400,
               letterSpacing: '-0.02em', color: C.txt, margin: '0 0 10px',
             }}>
-              Documents &amp; questions submitted
+              Verification submitted
             </h2>
             <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: '0 0 28px' }}>
-              We&apos;ll contact the insurer to confirm your questions and post the final report to the Status page.
+              We will contact the insurer and post the final verification report in the Status page.
             </p>
             <PrimaryBtn onClick={reset} style={{ width: '100%' }}>
               Start a new upload

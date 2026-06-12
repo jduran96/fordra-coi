@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Sidebar } from '@/components/ui/Sidebar';
+import { TopNav } from '@/components/ui/TopNav';
 
 export const metadata: Metadata = {
   title: 'Fordra — App',
@@ -15,12 +15,12 @@ const NAV = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <Sidebar
+      <TopNav
         items={NAV}
         tag="Control Center"
-        identity={{ name: 'Maya Chen', company: 'Atlas Freight Brokerage' }}
+        identity={{ name: 'Maya Chen', email: 'maya@atlasfreight.com', company: 'Atlas Freight Brokerage' }}
       />
-      <main style={{ marginLeft: 232, padding: '48px 48px 80px' }}>
+      <main style={{ padding: '100px 24px 80px' }}>
         {children}
       </main>
     </div>

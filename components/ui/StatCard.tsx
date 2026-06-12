@@ -4,22 +4,23 @@ import { C } from './tokens';
 
 // Big-number stat card (serif numeral + uppercase label), pattern from
 // the demo report's SummaryStats.
-export function StatCard({ value, label, sub, color }: {
+export function StatCard({ value, label, sub, color, compact }: {
   value: string | number;
   label: string;
   sub?: string;
   color?: string;
+  compact?: boolean;
 }) {
   const c = color ?? C.txt;
   return (
     <div style={{
-      padding: '22px 20px',
+      padding: compact ? '14px 18px' : '22px 20px',
       background: `color-mix(in oklch, ${C.txt} 6%, ${C.surface})`,
       border: `1px solid color-mix(in oklch, ${c} ${color ? 28 : 15}%, transparent)`,
       borderRadius: 12,
     }}>
       <p style={{
-        fontFamily: C.serif, fontSize: 38, fontWeight: 400,
+        fontFamily: C.serif, fontSize: compact ? 26 : 38, fontWeight: 400,
         color: c, lineHeight: 1, margin: 0,
       }}>
         {value}
@@ -27,7 +28,7 @@ export function StatCard({ value, label, sub, color }: {
       <p style={{
         fontSize: 11, fontWeight: 700, color: C.txt2,
         textTransform: 'uppercase' as const, letterSpacing: '0.07em',
-        margin: '8px 0 0', fontFamily: C.sans,
+        margin: compact ? '5px 0 0' : '8px 0 0', fontFamily: C.sans,
       }}>
         {label}
       </p>
