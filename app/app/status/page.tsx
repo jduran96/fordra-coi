@@ -115,8 +115,8 @@ export default function AppStatusPage() {
 
   return (
     <div style={{ maxWidth: 920, margin: '0 auto' }}>
-      <PageTitle subtitle="Every verification you've submitted, with live status.">
-        Status
+      <PageTitle>
+        Log
       </PageTitle>
 
       <Card style={{ padding: '12px 20px 20px' }}>

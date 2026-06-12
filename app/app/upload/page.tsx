@@ -252,13 +252,10 @@ export default function AppUploadPage() {
         <div style={{ textAlign: 'center' as const, paddingTop: 60 }}>
           <h1 style={{
             fontFamily: C.serif, fontSize: 32, fontWeight: 400,
-            letterSpacing: '-0.02em', color: C.txt, marginBottom: 10,
+            letterSpacing: '-0.02em', color: C.txt, marginBottom: 40,
           }}>
             Analyzing your documents
           </h1>
-          <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, marginBottom: 40 }}>
-            OCR is reading each document and checking it against your requirements.
-          </p>
 
           <div style={{ display: 'inline-flex', flexDirection: 'column' as const, alignItems: 'center', gap: 12 }}>
             <ScanningDoc />
@@ -328,7 +325,7 @@ export default function AppUploadPage() {
               Verification submitted
             </h2>
             <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: '0 0 28px' }}>
-              We will contact the insurer and post the final verification report in the Status page.
+              We are contacting the insurer and will provide a final verification report in your Status page.
             </p>
             <PrimaryBtn onClick={reset} style={{ width: '100%' }}>
               Start a new upload

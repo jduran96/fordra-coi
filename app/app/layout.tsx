@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 const NAV = [
   { label: 'Home',   href: '/app/home' },
   { label: 'Upload', href: '/app/upload' },
-  { label: 'Status', href: '/app/status' },
+  { label: 'Log', href: '/app/status' },
   { label: 'Docs',   href: '/app/docs' },
 ];
 
@@ -17,7 +17,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div>
       <TopNav
         items={NAV}
-        tag="Control Center"
         identity={{ name: 'Maya Chen', email: 'maya@atlasfreight.com', company: 'Atlas Freight Brokerage' }}
       />
       <main style={{ padding: '100px 24px 80px' }}>

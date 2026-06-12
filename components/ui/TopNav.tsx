@@ -29,7 +29,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 
 export function TopNav({ items, tag, identity }: {
   items: NavItem[];
-  tag: string;
+  tag?: string;
   identity: { name: string; email: string; company: string };
 }) {
   const pathname = usePathname();
@@ -61,12 +61,14 @@ export function TopNav({ items, tag, identity }: {
           }}>
             Fordra
           </span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase' as const, color: C.accent, fontFamily: C.sans,
-          }}>
-            {tag}
-          </span>
+          {tag && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+              textTransform: 'uppercase' as const, color: C.accent, fontFamily: C.sans,
+            }}>
+              {tag}
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 4, flex: 1 }}>
