@@ -30,14 +30,14 @@ function PathCard({
       style={{
         display: 'block',
         flex: 1,
-        background: hover ? 'oklch(52% 0.17 38 / 0.05)' : C.surface,
+        background: hover ? C.earthy : C.surface,
         border: `1.5px solid ${hover ? C.earthy : C.border}`,
         borderRadius: 12,
         padding: '32px 28px',
         textDecoration: 'none',
         transition: 'border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s',
         transform: hover ? 'translateY(-2px)' : 'none',
-        boxShadow: hover ? `0 6px 24px oklch(52% 0.17 38 / 0.12)` : 'none',
+        boxShadow: hover ? `0 6px 24px oklch(52% 0.17 38 / 0.25)` : 'none',
       }}
     >
       <p style={{
@@ -45,7 +45,7 @@ function PathCard({
         fontSize: 24,
         fontWeight: 400,
         letterSpacing: '-0.3px',
-        color: hover ? C.earthy : C.txt,
+        color: hover ? C.surface : C.txt,
         margin: '0 0 8px',
         transition: 'color 0.15s',
       }}>
@@ -55,8 +55,9 @@ function PathCard({
         fontFamily: C.sans,
         fontSize: 13.5,
         lineHeight: 1.5,
-        color: C.txt2,
+        color: hover ? 'oklch(100% 0 0 / 0.85)' : C.txt2,
         margin: 0,
+        transition: 'color 0.15s',
       }}>
         {description}
       </p>
@@ -64,7 +65,7 @@ function PathCard({
         fontFamily: C.sans,
         fontSize: 13,
         fontWeight: 600,
-        color: hover ? C.earthy : C.txt3,
+        color: hover ? C.surface : C.txt3,
         margin: '18px 0 0',
         transition: 'color 0.15s',
       }}>
