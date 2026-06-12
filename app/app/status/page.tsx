@@ -116,7 +116,7 @@ export default function AppStatusPage() {
   return (
     <div style={{ maxWidth: 920, margin: '0 auto' }}>
       <PageTitle>
-        Log
+        Logs
       </PageTitle>
 
       <Card style={{ padding: '12px 20px 20px' }}>

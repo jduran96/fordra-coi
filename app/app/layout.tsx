@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 const NAV = [
   { label: 'Home',   href: '/app/home' },
   { label: 'Upload', href: '/app/upload' },
-  { label: 'Log', href: '/app/status' },
+  { label: 'Logs', href: '/app/status' },
   { label: 'Docs',   href: '/app/docs' },
 ];
 
