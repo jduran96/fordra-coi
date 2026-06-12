@@ -31,7 +31,7 @@ function PathCard({
         display: 'block',
         flex: 1,
         background: C.surface,
-        border: `1px solid ${hover ? C.borderStrong : C.border}`,
+        border: `1px solid ${hover ? C.earthy : C.border}`,
         borderRadius: 12,
         padding: '32px 28px',
         textDecoration: 'none',
@@ -103,19 +103,19 @@ export default function PathSelectorPage() {
           margin: '0 0 40px',
           textAlign: 'center',
         }}>
-          Insurance verification, handled.
+          COI verification, automated.
         </p>
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <PathCard
             href="/demo"
             title="Demo"
-            description="Walk through a live certificate of insurance verification end to end."
+            description="See how Fordra works, end-to-end."
           />
           <PathCard
             href="/app"
             title="App"
-            description="Control center for submitting and tracking verifications."
+            description="Verify real COIs, via webapp or API."
           />
         </div>
 
