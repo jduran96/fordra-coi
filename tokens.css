@@ -1,31 +1,43 @@
-/* Hallmark · macrostructure: broadsheet · tone: institutional · anchor hue: 80 (warm cream)
- * theme: custom
- * vibe: "supply chain authority, compliance trust, editorial precision"
- * paper: oklch(98.5% 0.004 80) · accent: oklch(13% 0.008 265) navy-black
- * circle: oklch(52% 0.17 38) terracotta · fonts: DM Serif Display + Inter
+/* Hallmark · macrostructure: editorial-saas · tone: confident, warm-tech
+ * theme: "Krida-inspired" concept: warm cream + warm near-black + electric lime
+ * paper: #faf9f5 · ink: #141413 · accent: #d4fd8e lime · marker: #d8fca6
+ * fonts: Newsreader (Signifier sub) + Hanken Grotesk (Beausite sub) + JetBrains Mono
  */
 
 :root {
   /* ── Color ── */
-  --color-paper:           oklch(98.5% 0.004 80);
-  --color-surface:         oklch(100% 0 0);
-  --color-surface-hover:   oklch(96.5% 0.005 80);
-  --color-border:          oklch(88% 0.008 80);
-  --color-border-strong:   oklch(76% 0.010 80);
+  --color-paper:           #faf9f5;   /* cream-light, main background */
+  --color-cream:           #f2efea;   /* subtle block background */
+  --color-surface:         #ffffff;
+  --color-surface-hover:   #f2efea;
 
-  --color-text-primary:    oklch(13% 0.008 265);
-  --color-text-secondary:  oklch(46% 0.012 265);
-  --color-text-tertiary:   oklch(68% 0.008 265);
+  --color-ink:             #141413;   /* warm near-black */
+  --color-ink-soft:        #2a2926;
 
-  --color-accent:          oklch(13% 0.008 265);
-  --color-circle:          oklch(52% 0.17 38);
+  --color-border:          rgba(20, 20, 19, 0.12);
+  --color-border-strong:   rgba(20, 20, 19, 0.28);
 
-  --color-error:           oklch(52% 0.20 25);
+  --color-text-primary:    #141413;
+  --color-text-secondary:  #57544e;
+  --color-text-tertiary:   #7e7e7e;
+  --color-text-muted:      #a6a4a0;
+
+  --color-accent:          #141413;   /* dark fills */
+  --color-lime:            #d4fd8e;   /* signature accent */
+  --color-lime-deep:       #c2f06f;   /* hover / pressed lime */
+  --color-marker:          #d8fca6;   /* highlighter underline */
+
+  --color-error:           oklch(57.7% 0.245 27.325);
   --color-success:         oklch(46% 0.14 155);
 
+  /* on-dark variants */
+  --color-on-dark:         #faf9f5;
+  --color-on-dark-muted:   #a6a4a0;
+
   /* ── Typography ── */
-  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
-  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body:    'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ── Text scale ── */
   --text-xs:   11px;
@@ -51,16 +63,22 @@
   --space-24: 96px;
   --space-32: 128px;
 
-  /* ── Radii ── */
-  --radius-sm:   6px;
-  --radius-md:   12px;
-  --radius-lg:   18px;
+  /* ── Radii (Krida runs big & soft) ── */
+  --radius-sm:   10px;
+  --radius-md:   16px;
+  --radius-lg:   24px;
+  --radius-xl:   36px;
   --radius-full: 9999px;
+
+  /* ── Elevation ── */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
+  --shadow-md: 0 12px 30px -12px rgba(20, 20, 19, 0.18);
+  --shadow-lg: 0 25px 50px -12px rgba(20, 20, 19, 0.25);
 
   /* ── Motion ── */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
-  --dur-fast:    110ms;
-  --dur-base:    200ms;
-  --dur-slow:    380ms;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:    150ms;
+  --dur-base:    240ms;
+  --dur-slow:    420ms;
 }

@@ -3,28 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fordra — COI Verification</title>
+  <title>Fordra COI Verification</title>
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 </head>
 <body>
 
   <nav>
     <span class="logo">Fordra</span>
+    <div class="nav-links">
+      <a data-path="/demo" href="https://app.fordra.com/demo">Demo</a>
+      <a data-path="/admin" href="https://app.fordra.com/admin">Admin</a>
+      <a data-path="" href="https://app.fordra.com">App</a>
+      <button class="btn btn-nav" onclick="openModal()">Join Waitlist</button>
+    </div>
   </nav>
 
   <main>
     <section class="hero">
+      <span class="eyebrow">AI insurance verification</span>
       <h1>Offload your<br><span class="highlight">COI</span> headache</h1>
       <p>Fordra helps freight brokers &amp; factoring companies use AI to validate carrier insurance.</p>
-      <button class="btn" onclick="openModal()">Join the Waitlist</button>
+      <div class="hero-actions">
+        <button class="btn btn-lime" onclick="openModal()">Join the Waitlist</button>
+        <a class="btn btn-ghost" data-path="/demo" href="https://app.fordra.com/demo">See a demo &rarr;</a>
+      </div>
+      <ul class="hero-stats">
+        <li><strong>24/7</strong><span>agent follow-up</span></li>
+        <li><strong>Seconds</strong><span>to verify a COI</span></li>
+        <li><strong>Zero</strong><span>missed expirations</span></li>
+      </ul>
     </section>
 
     <section class="cards-section">
-      <div class="section-label"><span>What we do</span></div>
+      <div class="section-label"><span class="eyebrow">What we do</span><span class="section-title">How Fordra works</span></div>
       <div class="cards">
         <article class="card">
           <div class="card-header">
@@ -82,9 +97,17 @@
         </article>
       </div>
     </section>
+
+    <section class="cta-band">
+      <span class="eyebrow eyebrow-lime">Get started</span>
+      <h2>Stop chasing<br>certificates.</h2>
+      <p>Join the brokers and factoring companies using Fordra to keep their carriers covered.</p>
+      <button class="btn btn-lime" onclick="openModal()">Join the Waitlist</button>
+    </section>
   </main>
 
   <footer>
+    <span class="logo footer-logo">Fordra</span>
     <span>&copy; Fordra 2026</span>
   </footer>
 
@@ -115,6 +138,16 @@
     </div>
   </div>
 
+  <script>
+    // Point the nav at the local app when previewing on localhost; production otherwise.
+    (function () {
+      var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      var base = local ? 'http://localhost:3000' : 'https://app.fordra.com';
+      document.querySelectorAll('.nav-links a').forEach(function (a) {
+        a.href = base + (a.getAttribute('data-path') || '');
+      });
+    })();
+  </script>
   <script src="main.js"></script>
 </body>
 </html>
