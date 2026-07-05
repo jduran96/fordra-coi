@@ -10,6 +10,7 @@ import { baselineRequirements } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
+import CallNoteForm from '@/components/CallNoteForm'
 import { runExtraction, saveCallNote, saveAssessment } from '../actions'
 
 export const dynamic = 'force-dynamic'
@@ -174,13 +175,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 </table>
               </div>
             )}
-            <form action={saveCallNote.bind(null, id)} style={{ ...card(), display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <input name="contact_name" defaultValue={contact.name} placeholder="Insurer contact name" style={input()} />
-              <input name="contact_phone" defaultValue={contact.phone} placeholder="Phone" style={input()} />
-              <input name="contact_email" defaultValue={contact.email} placeholder="Email" style={input()} />
-              <textarea name="note" rows={4} placeholder="What the insurer confirmed on this call…" style={{ ...input(), resize: 'vertical' }} />
-              <PendingButton pendingLabel="Saving…" style={{ ...smallBtn(), alignSelf: 'flex-start', marginTop: 2 }}>Save note</PendingButton>
-            </form>
+            <CallNoteForm action={saveCallNote.bind(null, id)} contact={contact} />
           </div>
         </section>
 
