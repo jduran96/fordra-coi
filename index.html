@@ -26,15 +26,15 @@
     <section class="hero">
       <span class="eyebrow">AI insurance verification</span>
       <h1>Offload your<br><span class="highlight">COI</span> headache</h1>
-      <p>Fordra helps freight brokers &amp; factoring companies use AI to validate carrier insurance.</p>
+      <p>Fordra helps brokers and factoring companies instantly validate and monitor carrier insurance.</p>
       <div class="hero-actions">
         <button class="btn btn-lime" onclick="openModal()">Join the Waitlist</button>
         <a class="btn btn-ghost" data-path="/demo" href="https://app.fordra.com/demo">See a demo &rarr;</a>
       </div>
       <ul class="hero-stats">
-        <li><strong>24/7</strong><span>agent follow-up</span></li>
-        <li><strong>Seconds</strong><span>to verify a COI</span></li>
-        <li><strong>Zero</strong><span>missed expirations</span></li>
+        <li><strong>24/7</strong><span>service</span></li>
+        <li><strong>Real-Time</strong><span>verifications</span></li>
+        <li><strong>Zero</strong><span>lapses</span></li>
       </ul>
     </section>
 
@@ -54,7 +54,7 @@
             </div>
             <span class="card-num">01</span>
           </div>
-          <p>Upload COIs or get Fordra to chase for them.</p>
+          <p>Upload COIs or get Fordra to chase them.</p>
         </article>
         <article class="card">
           <div class="card-header">
@@ -67,7 +67,7 @@
             </div>
             <span class="card-num">02</span>
           </div>
-          <p>Fordra helps verify that your insurance standards are met.</p>
+          <p>Fordra checks that your standards are met.</p>
         </article>
         <article class="card">
           <div class="card-header">
@@ -79,7 +79,7 @@
             </div>
             <span class="card-num">03</span>
           </div>
-          <p>Fordra monitors changes, calls agents, and sends you alerts.</p>
+          <p>Fordra calls agents and monitors changes.</p>
         </article>
         <article class="card">
           <div class="card-header">
@@ -89,20 +89,19 @@
                 <line x1="8" y1="21" x2="16" y2="21"/>
                 <line x1="12" y1="17" x2="12" y2="21"/>
               </svg>
-              <h2>Program</h2>
+              <h2>Automate</h2>
             </div>
             <span class="card-num">04</span>
           </div>
-          <p>Access Fordra via API or visit our mobile-friendly app.</p>
+          <p>Access Fordra via Slack, API, or mobile.</p>
         </article>
       </div>
     </section>
 
     <section class="cta-band">
-      <span class="eyebrow eyebrow-lime">Get started</span>
-      <h2>Stop chasing<br>certificates.</h2>
-      <p>Join the brokers and factoring companies using Fordra to keep their carriers covered.</p>
-      <button class="btn btn-lime" onclick="openModal()">Join the Waitlist</button>
+      <span class="eyebrow eyebrow-lime">Get AI to eliminate headaches</span>
+      <h2>Stop chasing COIs.</h2>
+      <button class="btn btn-lime" onclick="openModal()">Get Started</button>
     </section>
   </main>
 
@@ -139,13 +138,37 @@
   </div>
 
   <script>
-    // Point the nav at the local app when previewing on localhost; production otherwise.
-    (function () {
+    // App links: the authored href on each [data-path] element is the production URL
+    // (https://app.fordra.com/...), so they work as-is once this site is pushed to main.
+    // On localhost we repoint them to the locally running Fordra app. The dev port can
+    // vary, and other apps may occupy 3000, so we probe ports IN PREFERENCE ORDER
+    // (Fordra's 3100 first) and lock onto the FIRST that responds, not the fastest.
+    // Override with ?appPort=NNNN (remembered for this browser).
+    (async function () {
       var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-      var base = local ? 'http://localhost:3000' : 'https://app.fordra.com';
-      document.querySelectorAll('.nav-links a').forEach(function (a) {
-        a.href = base + (a.getAttribute('data-path') || '');
-      });
+      if (!local) return; // production: keep the authored app.fordra.com hrefs
+      var host = location.hostname;
+      function apply(port) {
+        var base = 'http://' + host + ':' + port;
+        document.querySelectorAll('[data-path]').forEach(function (a) {
+          a.href = base + (a.getAttribute('data-path') || '');
+        });
+      }
+      // Explicit override wins and is remembered for this browser.
+      var qp = new URLSearchParams(location.search).get('appPort');
+      if (qp) localStorage.setItem('fordraAppPort', qp);
+      var saved = localStorage.getItem('fordraAppPort');
+      if (saved) { apply(saved); return; }
+      // Probe sequentially in preference order; first reachable port wins.
+      var ports = ['3100', '3000', '3001'];
+      apply(ports[0]); // sensible default before probing resolves
+      for (var i = 0; i < ports.length; i++) {
+        try {
+          await fetch('http://' + host + ':' + ports[i] + '/login', { mode: 'no-cors' });
+          apply(ports[i]);
+          return;
+        } catch (e) { /* port down, try the next */ }
+      }
     })();
   </script>
   <script src="main.js"></script>

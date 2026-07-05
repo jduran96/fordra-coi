@@ -117,8 +117,11 @@ These are what make it read as "Krida." Reuse them when building new pages/compo
   `#err-email`, `#err-phone`, `#modal-success`
 - Classes: `.modal`, `.phone-input`, `.invalid`, `.visible`, `.open`
 - Inline handlers in HTML: `openModal()`, `closeModal()`, `closeOnOverlay(event)`
-- The nav-rewrite `<script>` in `index.html` repoints `.nav-links a` to `localhost:3000`
-  when previewing locally; keep the `data-path` attributes on nav links.
+- The nav-rewrite `<script>` in `index.html` repoints every `[data-path]` link to the locally
+  running app when previewing on localhost. It probes ports in preference order (3100, 3000,
+  3001) and locks onto the first that responds; `?appPort=NNNN` overrides and is remembered in
+  localStorage. In production the authored `https://app.fordra.com/...` hrefs are kept as-is.
+  Keep the `data-path` attributes on the nav links (Demo / Admin / App) and the hero demo button.
 
 ---
 
@@ -148,10 +151,12 @@ python3 -m http.server 8800   # then open http://localhost:8800/
 
 ## 9. Status & next steps
 
-- **Done:** landing page reskin + copy cleanup on `website-krida-concept`. Not committed
-  unless you see a commit after this note; `main`/`website` untouched.
-- **If continuing:** apply §3–§5 to the app (`app.fordra.com`) and the demo/admin pages
-  for a consistent system. Start by porting `tokens.css` as the shared token layer.
+- **Done:** landing page reskin + copy cleanup on `website-krida-concept`; the nav now carries
+  the three app entry points (Demo / Admin / App) with the localhost port-probe rewrite (§6);
+  hero copy, card copy, and the CTA band were tightened in a later pass.
+- **Done in the app repo:** §3–§5 have been ported to the app as `lib/theme.ts` (`C` palette) and
+  applied across `/app`, `/admin`, and `/demo`. That doc plus this one are the design source of
+  truth; new UI in either repo follows them by default.
 - **Open question for the owner:** whether to license Signifier + Beausite for an exact
   Krida match (§4), or ship with Newsreader/Hanken.
 
