@@ -158,6 +158,26 @@ Migrations: `0001` (Phase A additions on top of the pre-existing dashboard schem
 
 ---
 
+## Deployment (live since 2026-07-05)
+
+Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Vercel projects):
+
+- **app.fordra.com** ← Vercel project `fordra-coi-app`, production branch **`main`** (this repo dir).
+- **fordra.com** ← Vercel project `fordra-coi-website`, production branch **`website`**
+  (the `../fordra-coi-website` clone; `website-krida-concept` was the design branch, now merged).
+- Push = deploy. No CLI steps needed; `npx vercel` is authenticated on this machine if manual
+  deploys are ever required.
+- Vercel env is complete (incl. `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`). A stray
+  `SUPABASE_SECRET_KEY` var duplicates the service key under the wrong name; unused, deletable.
+- Supabase Auth URL config: Site URL `https://app.fordra.com`; redirect allowlist includes the
+  prod and `localhost:3000` callbacks, so magic-link login works in both environments.
+- **Prod and local dev share the same Supabase project** — migrations apply once, data is common.
+- `/auth/callback` accepts both PKCE `?code=` links (login page emails) and `?token_hash=&type=`
+  links (`auth.admin.generateLink`, used to mint direct sign-in links when the built-in mailer's
+  rate limit bites).
+
+---
+
 ## Deferred (not built yet)
 
 - **Custom SMTP** (unblocks non-owner magic-link login) — highest priority for real customer testing.
