@@ -84,26 +84,35 @@ export async function saveCallNote(verificationId: string, formData: FormData) {
   const supabase = createServiceClient()
 
   const insurance_contact = {
-    name: String(formData.get('contact_name') || ''),
-    phone: String(formData.get('contact_phone') || ''),
-    email: String(formData.get('contact_email') || ''),
+    name: String(formData.get('contact_name') || '').trim(),
+    phone: String(formData.get('contact_phone') || '').trim(),
+    email: String(formData.get('contact_email') || '').trim(),
   }
-  const update: Record<string, unknown> = { insurance_contact }
+  const update: Record<string, unknown> = {}
+  // The form clears after each save; an all-blank contact means "keep the
+  // previously saved one", not "erase it".
+  if (Object.values(insurance_contact).some(Boolean)) update.insurance_contact = insurance_contact
 
   const text = String(formData.get('note') || '').trim()
   if (text) {
     const { data: v } = await supabase
       .from('verifications')
-      .select('call_notes')
+      .select('call_notes, insurance_contact')
       .eq('id', verificationId)
       .single()
     const existing = Array.isArray(v?.call_notes) ? v.call_notes : []
     // Snapshot the contact into the note so each entry records who was spoken to,
-    // even if the insurer contact fields change later.
-    update.call_notes = [...existing, { at: new Date().toISOString(), text, contact: insurance_contact }]
+    // even if the insurer contact fields change later. Blank form → snapshot the
+    // previously saved contact.
+    const snapshot = Object.values(insurance_contact).some(Boolean)
+      ? insurance_contact
+      : (v?.insurance_contact ?? insurance_contact)
+    update.call_notes = [...existing, { at: new Date().toISOString(), text, contact: snapshot }]
   }
 
-  await supabase.from('verifications').update(update).eq('id', verificationId)
+  if (Object.keys(update).length > 0) {
+    await supabase.from('verifications').update(update).eq('id', verificationId)
+  }
   revalidatePath(`/admin/${verificationId}`)
 }
 

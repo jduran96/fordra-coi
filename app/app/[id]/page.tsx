@@ -23,6 +23,7 @@ interface Coverage {
   aggregate_limit?: string
   conditions_and_exceptions?: string
 }
+interface CallNote { at: string; text: string; contact?: { name?: string; phone?: string; email?: string } }
 interface COI {
   named_insured?: string
   named_insured_address?: string
@@ -133,7 +134,41 @@ export default async function CustomerVerification({ params }: { params: Promise
           )}
 
           {coi && <CertificateCard coi={coi} />}
+          <CallNotesCard notes={(Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]} />
           <SubmittedCard docs={docsWithUrls} requirementsText={requirementsText} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Calls made to the insurer during review, newest first. */
+function CallNotesCard({ notes }: { notes: CallNote[] }) {
+  return (
+    <div style={cardC()}>
+      <h2 style={h2C()}>Insurer call notes</h2>
+      {notes.length === 0 ? (
+        <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>No calls made.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <th style={thC()}>When</th><th style={thC()}>Contact</th><th style={thC()}>Phone</th><th style={thC()}>Email</th><th style={thC()}>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notes.slice().reverse().map((n, i) => (
+                <tr key={i} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
+                  <td style={{ ...tdC(), whiteSpace: 'nowrap', color: C.txt3 }}>{new Date(n.at).toLocaleString()}</td>
+                  <td style={tdC()}>{n.contact?.name?.trim() || '—'}</td>
+                  <td style={{ ...tdC(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
+                  <td style={tdC()}>{n.contact?.email?.trim() || '—'}</td>
+                  <td style={{ ...tdC(), color: C.txt, whiteSpace: 'pre-wrap', minWidth: 220, lineHeight: 1.55 }}>{n.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
