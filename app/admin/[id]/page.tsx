@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth-helpers'
+import { createHash } from 'crypto'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
@@ -77,7 +78,6 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
-  const contact = (v.insurance_contact ?? {}) as { name?: string; phone?: string; email?: string }
   const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]
   const coi = (v.coi_extracted ?? null) as COI | null
 
@@ -175,7 +175,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 </table>
               </div>
             )}
-            <CallNoteForm action={saveCallNote.bind(null, id)} contact={contact} />
+            <CallNoteForm action={saveCallNote.bind(null, id)} />
           </div>
         </section>
 
@@ -186,7 +186,11 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             Set a verdict and evidence for each requirement, write the summary, then save a draft
             or publish. Publishing releases exactly this assessment to the customer.
           </p>
+          {/* Keyed by the analysis content: when extraction or a saved draft
+              changes the verdict data, the form remounts with fresh rows;
+              unrelated updates (e.g. call notes) leave in-progress edits alone. */}
           <AssessmentForm
+            key={createHash('md5').update(JSON.stringify([v.final_report, v.gap_analysis])).digest('hex')}
             action={saveAssessment.bind(null, id)}
             items={reviewItems}
             summaryDefault={summaryDefault}

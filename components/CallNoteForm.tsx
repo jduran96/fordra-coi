@@ -5,22 +5,19 @@ import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
 
 /**
- * Add-a-call-note form. Inputs are controlled and cleared after a successful
- * save, so the next note starts from a blank form. The saved contact still
- * lives in the Saved notes table and in insurance_contact; leaving the contact
- * fields blank on a later save keeps the previously saved contact (the action
- * only updates it when a field is filled).
+ * Add-a-call-note form. Always starts blank (no autofill) and clears after a
+ * successful save. The saved contact lives in the Saved notes table and in
+ * insurance_contact; leaving the contact fields blank keeps the previously
+ * saved contact (the action only updates it when a field is filled).
  */
 export default function CallNoteForm({
   action,
-  contact,
 }: {
   action: (formData: FormData) => Promise<void>
-  contact: { name?: string; phone?: string; email?: string }
 }) {
-  const [name, setName] = useState(contact.name ?? '')
-  const [phone, setPhone] = useState(contact.phone ?? '')
-  const [email, setEmail] = useState(contact.email ?? '')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
 
   async function submit(formData: FormData) {
