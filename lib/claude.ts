@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { curlFetch } from './anthropic-fetch';
 import type {
   Requirement,
   COIExtracted,
@@ -8,7 +9,16 @@ import type {
 
 let _client: Anthropic | null = null;
 function getClient(): Anthropic {
-  if (!_client) _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!_client) {
+    const opts: ConstructorParameters<typeof Anthropic>[0] = {
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      maxRetries: 5,
+    };
+    // Local dev: route through the system curl to dodge a Node TLS bug that
+    // corrupts large uploads on this machine. Production (Vercel) uses native fetch.
+    if (!process.env.VERCEL) opts.fetch = curlFetch as unknown as typeof fetch;
+    _client = new Anthropic(opts);
+  }
   return _client;
 }
 const MODEL = 'claude-sonnet-4-6';
@@ -90,16 +100,20 @@ function fileContentBlock(base64: string, mediaType: string): Anthropic.Messages
 
 // ─── 1. Extract plain text from an image or PDF (used for requirements docs) ─
 
+export const DEFAULT_DOC_TEXT_PROMPT =
+  'Extract and return all text from this document exactly as written. No formatting, no summary — just the raw text content.';
+
 export async function extractTextFromFile(
   base64: string,
   mediaType: string,
+  promptOverride?: string,
 ): Promise<string> {
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
       content: [
         fileContentBlock(base64, mediaType),
-        { type: 'text', text: 'Extract and return all text from this document exactly as written. No formatting, no summary — just the raw text content.' },
+        { type: 'text', text: promptOverride?.trim() || DEFAULT_DOC_TEXT_PROMPT },
       ],
     },
   ];
@@ -111,14 +125,17 @@ export const extractTextFromImage = extractTextFromFile;
 
 // ─── 2. Parse insurance requirements ─────────────────────────────────────────
 
-export async function parseRequirements(docText: string): Promise<Requirement[]> {
-  const system = `You are an insurance requirements analyst for a freight factoring company.
-Extract ONLY insurance coverage requirements from the provided document text.
-Ignore everything else: FMCSA compliance, DOT numbers, safety ratings, licensing, authority checks, or any non-insurance regulatory items.
+export const DEFAULT_REQUIREMENTS_PARSING_PROMPT = `You are an insurance requirements analyst for a freight factoring company.
+Extract insurance requirements from the provided document text. Two kinds count:
+1. Coverage requirements: a coverage type with a minimum limit (e.g. auto liability $1,000,000).
+2. Stated restrictions or conditions on the insurance: cargo/commodity restrictions ("no helicopters", "no hazmat"), radius limits, equipment or trailer conditions, endorsement demands, deductible caps. These ARE requirements even though they have no dollar limit: set coverage_type to a short label (e.g. "Restriction: No Helicopter Cargo"), minimum_limit to "", and describe the restriction in notes.
+Ignore non-insurance regulatory items: FMCSA compliance, safety ratings, licensing, authority checks.
 Return ONLY a valid JSON array. No prose, no markdown fences.
 Each element must have: coverage_type (string), minimum_limit (string), notes (string or null).
-Only include insurance requirements explicitly stated in the document. If a field is absent, use null.`;
+Only include requirements explicitly stated in the document; do not invent any. If a field is absent, use null.`;
 
+export async function parseRequirements(docText: string, promptOverride?: string): Promise<Requirement[]> {
+  const system = promptOverride?.trim() || DEFAULT_REQUIREMENTS_PARSING_PROMPT;
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
@@ -131,34 +148,43 @@ Only include insurance requirements explicitly stated in the document. If a fiel
 
 // ─── 3. Extract COI fields via Vision ────────────────────────────────────────
 
-export async function extractCOIFields(
-  base64: string,
-  mediaType: string,
-): Promise<COIExtracted> {
-  const system = `You are an expert at reading ACORD 25 Certificates of Insurance with forensic precision.
+export const DEFAULT_COI_EXTRACTION_PROMPT = `You are an expert at reading ACORD 25 Certificates of Insurance with forensic precision.
 Every legal entity name, policy number, and coverage limit must match the document exactly — character for character.
 
 CRITICAL FIELDS — read with extreme care:
 - named_insured: The exact legal name of the policyholder printed in the "Named Insured" box (typically top-left). Include LLC, Inc, Corp, DBA, and any suffixes exactly as written. This is who the policy covers.
+- named_insured_address: The policyholder's street address as printed in the Named Insured box. Use "" if not shown.
+- named_insured_phone / named_insured_email: The policyholder's phone and email if printed on the certificate. Use "" if not shown.
+- usdot_number: The USDOT number printed anywhere on the certificate (often in the description box, e.g. "USDOT 1234567"). Digits only, no prefix. Use "" if not shown.
+- mc_number: The MC (motor carrier authority) number printed anywhere on the certificate (e.g. "MC 987654"). Digits only, no prefix. Use "" if not shown.
+These identity fields matter: they confirm the certificate belongs to the right carrier.
 - producer: The agency or brokerage name from the "Producer" box (top-left of form). This is who issued the certificate and is the primary contact for verification calls.
-- insurance_company: The primary insurer name from the lettered insurer boxes (A, B, C…). Do NOT use the producer/broker here.
+- insurance_company: The insurer legal entity name(s) from the lettered insurer boxes (A, B, C…). If more than one insurer is listed, include ALL of them, comma separated, in box-letter order (e.g. "Progressive Casualty Ins Co, Great West Casualty Co"). Do NOT use the producer/broker here.
 - insurance_company_address: Street address of the producer/agent listed on the form. If absent, use the primary insurer's address.
 - insurance_company_phone: Phone number of the producer/agent. Use "" if not found.
 - insurance_company_email: Email of the producer/agent. Use "" if not found.
+- insurance_company_contact: The name(s) of any contact person printed for the producer/agent or insurer (e.g. the "Contact Name" box on ACORD 25). Comma separate multiple names. Use "" if none shown.
 - policy_number: Read each alphanumeric character by character. Do not truncate, guess, or normalize. Note ambiguous characters (0 vs O, 1 vs l) in raw_notes.
 - conditions_and_exceptions (per coverage): Types of goods or cargo covered, situations covered, exclusions, sub-limits, endorsements, or any restrictions on the coverage. Copy relevant text verbatim. Use "" if none stated.
 
 Return ONLY a valid JSON object — no prose, no markdown:
 {
   "named_insured": string,
+  "named_insured_address": string,
+  "named_insured_phone": string,
+  "named_insured_email": string,
+  "usdot_number": string,
+  "mc_number": string,
   "producer": string,
   "insurance_company": string,
   "insurance_company_address": string,
   "insurance_company_phone": string,
   "insurance_company_email": string,
+  "insurance_company_contact": string,
   "named_insured_state": string,
   "certificate_holder": string,
   "additional_insured": string,
+  "additional_terms": string,
   "coverages": [
     {
       "type": string,
@@ -174,8 +200,15 @@ Return ONLY a valid JSON object — no prose, no markdown:
   ]
 }
 named_insured_state: 2-letter US state from named insured's address (e.g. "FL", "TX"). Use "" if not found.
+additional_terms: the certificate's free-text terms verbatim: the Description of Operations box, remarks, limitations, warranties, cancellation-notice wording, and any endorsements listed. Use "" if none.
 All other missing or illegible fields: use "". Never guess entity names or policy numbers.`;
 
+export async function extractCOIFields(
+  base64: string,
+  mediaType: string,
+  promptOverride?: string,
+): Promise<COIExtracted> {
+  const system = promptOverride?.trim() || DEFAULT_COI_EXTRACTION_PROMPT;
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
@@ -194,27 +227,105 @@ All other missing or illegible fields: use "". Never guess entity names or polic
 
 // ─── 4. Gap analysis ─────────────────────────────────────────────────────────
 
+/**
+ * Baseline checks every logistics broker/factor needs on a COI, regardless of
+ * what the insurance-standards document says. Passed to analyzeGaps as extra
+ * requirement rows so they show up in the same met/not_met/uncertain report.
+ */
+export const DEFAULT_BASELINE_REQUIREMENTS: Requirement[] = [
+  {
+    coverage_type: 'Matching Policyholder Name',
+    minimum_limit: '',
+    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. A different legal entity is not met.',
+  },
+  {
+    coverage_type: 'Policy Currently Active',
+    minimum_limit: '',
+    notes: 'Every coverage on the COI must be in force today: effective date in the past, expiration date in the future. If any listed coverage is expired or not yet effective, this is not met. If dates are missing or illegible, this is uncertain.',
+  },
+  {
+    coverage_type: 'No Unusual Exclusions',
+    minimum_limit: '',
+    notes: 'Review conditions_and_exceptions on each coverage for exclusions that would matter to a freight broker (commodity exclusions, radius restrictions, unattended-vehicle or scheduled-vehicle-only clauses). Met if none are present; not_met if a clearly restrictive exclusion appears; uncertain if the certificate text is ambiguous.',
+  },
+]
+
+/**
+ * Resolve the baseline checklist: admin-configured overrides (app_config, via
+ * /admin/configs) or the defaults above. `{carrier_name}` in notes is replaced
+ * with the verification's carrier; items that need the carrier name are dropped
+ * when it is unknown.
+ */
+export function baselineRequirements(carrierName?: string, overrides?: Requirement[]): Requirement[] {
+  const source = overrides?.length ? overrides : DEFAULT_BASELINE_REQUIREMENTS
+  const name = carrierName?.trim()
+  return source
+    .filter(r => name || !r.notes?.includes('{carrier_name}'))
+    .map(r => ({
+      ...r,
+      notes: r.notes ? r.notes.replaceAll('{carrier_name}', name ?? '') : r.notes,
+    }))
+}
+
 export async function analyzeGaps(
   requirements: Requirement[],
   extracted: COIExtracted,
+  opts?: { carrierName?: string; includeBaseline?: boolean; baseline?: Requirement[] },
 ): Promise<GapAnalysis> {
+  const allRequirements = opts?.includeBaseline
+    ? [...baselineRequirements(opts.carrierName, opts.baseline), ...requirements]
+    : requirements
   const system = `You are a COI compliance analyst for a trucking freight factoring company.
+Today's date is ${new Date().toISOString().slice(0, 10)} — use it when judging whether policy dates are current.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
 - "met": The COI clearly satisfies the requirement with explicit evidence.
 - "not_met": The COI clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage).
 - "uncertain": The COI has relevant but ambiguous information, OCR could not confirm, or the requirement depends on endorsements not visible.
 Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...] }
 Each item: { "requirement": <requirement object>, "status": string, "evidence": string }
-evidence: one plain-English sentence addressed to the person who set the requirements. Use second person: "You require X; the policy shows Y." or "You require X; the policy does not include it." No raw field names, no jargon. Under 25 words.`;
+evidence: ONE plain-English sentence, second person, under 25 words. No raw field names, no jargon.
+CRITICAL — the evidence MUST be consistent with the status; never contradict it or hedge:
+- status "met": affirm satisfaction plainly, e.g. "You require $500k CGL; the policy provides $1,000,000 per occurrence, which satisfies it." Do NOT raise doubts, do NOT mention unresolved concerns, do NOT defer to any "uncertain" note, do NOT trail off.
+- status "not_met": state plainly what falls short, e.g. "You require $1M cargo; the policy shows only $100,000."
+- status "uncertain": state exactly what could not be confirmed and why — and only then.
+Judge each requirement on the coverage type and limit. Do not introduce a separate concern (e.g. effective dates) that conflicts with the status you chose.
+Some requirements are baseline checks (no minimum_limit) whose pass criteria are spelled out in their "notes" field — judge those strictly by the notes.
+Each requirement must appear EXACTLY ONCE across the three arrays. If the evidence is mixed (e.g. one coverage is active and another is expired), choose the single most severe status (not_met over uncertain over met) and explain the split in the evidence sentence. Never place the same requirement in two arrays.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Requirements:\n${JSON.stringify(requirements, null, 2)}\n\nExtracted COI data:\n${JSON.stringify(extracted, null, 2)}\n\nClassify each requirement now.`,
+      content: `Requirements:\n${JSON.stringify(allRequirements, null, 2)}\n\nExtracted COI data:\n${JSON.stringify(extracted, null, 2)}\n\nClassify each requirement now.`,
     },
   ];
 
-  return claudeJSON<GapAnalysis>(system, messages, 2048);
+  const gap = await claudeJSON<GapAnalysis>(system, messages, 2048);
+  return dedupeGapAnalysis(gap);
+}
+
+/**
+ * Defensive: the model is told to give each requirement exactly one verdict, but
+ * has been seen splitting one requirement across arrays (e.g. "Policy Currently
+ * Active" in both met and not_met). Keep only the most severe verdict per
+ * requirement name: not_met > uncertain > met.
+ */
+function dedupeGapAnalysis(gap: GapAnalysis): GapAnalysis {
+  const seen = new Set<string>();
+  const keyOf = (i: { requirement?: { coverage_type?: string } }) =>
+    (i.requirement?.coverage_type ?? '').trim().toLowerCase();
+  const take = (items: GapAnalysis['met']) =>
+    (items ?? []).filter(i => {
+      const k = keyOf(i);
+      if (!k) return true;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  // Severity order matters: scan not_met first so it wins ties.
+  const not_met = take(gap.not_met);
+  const uncertain = take(gap.uncertain);
+  const met = take(gap.met);
+  return { met, not_met, uncertain };
 }
 
 // ─── 5. Generate agent questions ──────────────────────────────────────────────
@@ -280,7 +391,7 @@ export async function generateFinalReport(
   const system = `You are writing a final insurance compliance report for a freight factoring company.
 You have a gap analysis from a COI review and answers obtained from a follow-up call with the insurance agent.
 Update the status of previously uncertain or unmet items using the call answers.
-Write a narrative_summary of exactly 2–3 sentences and no more than 30 words total. State only the verdict and the single most important gap or confirmation. No lists, no jargon.
+Write a narrative_summary of 2–4 sentences (under ~55 words). State the overall verdict, then note EVERY requirement that is still not met or unresolved after the call — including any policyholder-name mismatch. Do not omit a failed or unconfirmed check, and do not call something resolved unless the evidence says so. No lists, no jargon.
 Return ONLY valid JSON: { "met": [...], "not_met": [...], "uncertain": [...], "narrative_summary": string }
 Each item has the same shape as the input gap items. Update the "evidence" field to reflect the call answers where applicable.`;
 

@@ -5,19 +5,24 @@ import type { Requirement, COIExtracted, COICoverage, GapAnalysis, GapItem, Fina
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  paper:        'oklch(98.5% 0.004 80)',
-  surface:      'oklch(100% 0 0)',
-  surfaceHover: 'oklch(96.5% 0.005 80)',
-  border:       'oklch(88% 0.008 80)',
-  borderStrong: 'oklch(76% 0.010 80)',
-  txt:          'oklch(13% 0.008 265)',
-  txt2:         'oklch(46% 0.012 265)',
-  txt3:         'oklch(68% 0.008 265)',
-  circle:       'oklch(52% 0.17 38)',
+  paper:        '#faf9f5',
+  surface:      '#ffffff',
+  surfaceHover: '#f2efea',
+  border:       'rgba(20, 20, 19, 0.12)',
+  borderStrong: 'rgba(20, 20, 19, 0.28)',
+  txt:          '#141413',
+  txt2:         '#57544e',
+  txt3:         '#7e7e7e',
+  circle:       '#141413',   // brand solid-fill accent (was orange) → ink
+  lime:         '#d4fd8e',   // signature accent / highlight pop
+  limeDeep:     '#c2f06f',
+  marker:       '#d8fca6',
+  warn:         'oklch(70% 0.15 75)',
   success:      'oklch(46% 0.14 155)',
-  error:        'oklch(52% 0.20 25)',
-  serif:        "'DM Serif Display', Georgia, 'Times New Roman', serif",
-  sans:         "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+  error:        'oklch(57.7% 0.245 27.325)',
+  serif:        "'Newsreader', Georgia, 'Times New Roman', serif",
+  sans:         "'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  mono:         "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -121,16 +126,6 @@ function shortTitle(coverageType: string): string {
   return coverageType.split(/\s*\/\s*/)[0].trim().replace(/[,;:&|]+$/, '').trim();
 }
 
-function getDraftSubtitle(g: GapAnalysis): string {
-  const disc = g.not_met.length;
-  const miss = g.uncertain.length;
-  if (disc > 0 && miss > 0)
-    return `We found ${disc} discrepanc${disc === 1 ? 'y' : 'ies'} and ${miss} missing detail${miss === 1 ? '' : 's'}`;
-  if (disc > 0) return `We found ${disc} discrepanc${disc === 1 ? 'y' : 'ies'}`;
-  if (miss > 0) return `We found ${miss} missing detail${miss === 1 ? '' : 's'}`;
-  return 'This COI aligns with your requirements!';
-}
-
 function buildInsuranceOptions(coi: COIExtracted): InsuranceOption[] {
   const state = coi.named_insured_state?.toUpperCase().trim() || 'TX';
   const [city1, city2] = CITY_PAIRS[state] ?? ['Houston', 'Dallas'];
@@ -224,10 +219,10 @@ function DropZone({ boxTitle, hint, file, accept, onChange }: {
           onDragLeave={() => setOver(false)}
           onDrop={e => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onChange(f); }}
           style={{
-            border: `1.5px dashed ${over ? C.circle : C.border}`,
+            border: `1.5px dashed ${over ? C.txt : C.border}`,
             borderRadius: 12, padding: '28px 20px',
             textAlign: 'center' as const, cursor: 'pointer',
-            background: over ? 'oklch(52% 0.17 38 / 0.04)' : C.paper,
+            background: over ? 'rgba(212, 253, 142, 0.35)' : C.paper,
             transition: 'all 150ms cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
@@ -299,9 +294,9 @@ function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }: {
         fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
         textTransform: 'uppercase' as const, color: C.txt3, fontFamily: C.sans,
       }}>
-        <span>Coverage type</span>
-        <span>Minimum limit</span>
-        <span>Notes</span>
+        <span>Required Coverage</span>
+        <span>Minimum Limit</span>
+        <span>Other Terms</span>
         <span />
       </div>
 
@@ -375,7 +370,7 @@ function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }: {
           textTransform: 'uppercase' as const, color: C.txt3,
           fontFamily: C.sans, display: 'block', marginBottom: 6,
         }}>
-          Additional details (optional)
+          Other Required Coverage Details
         </span>
         <textarea
           value={notes}
@@ -399,7 +394,7 @@ function RequirementTag({ status }: { status: 'met' | 'not_met' | 'uncertain' })
   const config = {
     met:       { label: 'Satisfied',   color: C.success },
     not_met:   { label: 'Discrepancy', color: C.error   },
-    uncertain: { label: 'Missing',     color: C.circle  },
+    uncertain: { label: 'Missing',     color: C.warn    },
   };
   const { label, color } = config[status];
   return (
@@ -466,11 +461,11 @@ function PrimaryBtn({ children, onClick, disabled, style }: {
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         padding: '13px 28px', fontSize: 14, fontWeight: 600, fontFamily: C.sans,
-        borderRadius: 6, border: 'none',
+        borderRadius: 9999, border: 'none',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        background: disabled ? C.border : hov ? C.circle : C.txt,
-        color: disabled ? C.txt3 : C.surface,
-        transition: 'background 110ms cubic-bezier(0.16, 1, 0.3, 1)',
+        background: disabled ? C.border : hov ? C.lime : C.txt,
+        color: disabled ? C.txt3 : hov ? C.txt : C.surface,
+        transition: 'background 110ms cubic-bezier(0.16, 1, 0.3, 1), color 110ms cubic-bezier(0.16, 1, 0.3, 1)',
         opacity: disabled ? 0.6 : 1,
         ...style,
       }}
@@ -611,7 +606,7 @@ function SummaryStats({ total, discrepancies, missing }: {
   }
   const req  = { color: C.txt, bg: neutralBg, border: `color-mix(in oklch, ${C.txt} 15%, transparent)` };
   const disc = statColors(discrepancies, C.error);
-  const miss = statColors(missing, C.circle);
+  const miss = statColors(missing, C.warn);
   const stats = [
     { n: total,         label: 'Requirements', ...req  },
     { n: discrepancies, label: 'Discrepancies', ...disc },
@@ -667,19 +662,10 @@ function ReportContent({
   const disc = items.filter(i => i.status === 'not_met').length;
   const miss = items.filter(i => i.status === 'uncertain').length;
 
-  const subtitle = isFinal
-    ? (() => {
-        if (disc > 0 && miss > 0) return `${disc} discrepanc${disc === 1 ? 'y' : 'ies'} and ${miss} unresolved item${miss === 1 ? '' : 's'} remain`;
-        if (disc > 0) return `${disc} discrepanc${disc === 1 ? 'y' : 'ies'} confirmed`;
-        if (miss > 0) return `${miss} item${miss === 1 ? '' : 's'} could not be confirmed`;
-        return 'All requirements satisfied';
-      })()
-    : getDraftSubtitle({ met: items.filter(i => i.status === 'met'), not_met: items.filter(i => i.status === 'not_met'), uncertain: items.filter(i => i.status === 'uncertain') });
-
   return (
     <div>
       {/* Header row — title left, export right (final only) */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
         <h1 style={{
           fontFamily: C.serif, fontSize: 38, fontWeight: 400,
           letterSpacing: '-0.02em', color: C.txt,
@@ -703,10 +689,6 @@ function ReportContent({
           </button>
         )}
       </div>
-      <p style={{ fontSize: 15, color: C.txt2, fontFamily: C.sans, marginBottom: 32 }}>
-        {subtitle}
-      </p>
-
       <SummaryStats total={items.length} discrepancies={disc} missing={miss} />
 
       {narrativeSummary && (
@@ -919,12 +901,12 @@ function CallStatusRow({ label, done, active, icon }: {
         background: done
           ? `color-mix(in oklch, ${C.success} 14%, transparent)`
           : active
-            ? `color-mix(in oklch, ${C.circle} 14%, transparent)`
+            ? 'rgba(212, 253, 142, 0.5)'
             : C.border,
         border: done
           ? `1px solid color-mix(in oklch, ${C.success} 35%, transparent)`
           : active
-            ? `1px solid color-mix(in oklch, ${C.circle} 35%, transparent)`
+            ? `1px solid ${C.limeDeep}`
             : `1px solid ${C.border}`,
         flexShrink: 0,
         transition: 'all 200ms',
@@ -1065,6 +1047,19 @@ function buildNameCheckItem(
   };
 }
 
+const NAME_CHECK_LABEL = 'Matching Policyholder Name';
+
+// Fold the synthetic policyholder-name check into a gap analysis by its status, so
+// the final-report narrative summary accounts for it alongside the COI requirements.
+function mergeNameCheck(ga: GapAnalysis, nameCheck: GapItem | undefined): GapAnalysis {
+  if (!nameCheck) return ga;
+  return {
+    met:       nameCheck.status === 'met'       ? [nameCheck, ...ga.met]       : ga.met,
+    not_met:   nameCheck.status === 'not_met'   ? [nameCheck, ...ga.not_met]   : ga.not_met,
+    uncertain: nameCheck.status === 'uncertain' ? [nameCheck, ...ga.uncertain] : ga.uncertain,
+  };
+}
+
 function buildPolicyContext(coi: COIExtracted): string {
   const lines: string[] = [];
   if (coi.named_insured)     lines.push(`Policyholder: ${coi.named_insured}`);
@@ -1092,6 +1087,7 @@ export default function AppClient() {
   const [step, setStep]           = useState<Step>('upload');
   const [reqFile, setReqFile]     = useState<File | null>(null);
   const [coiFile, setCoiFile]     = useState<File | null>(null);
+  const [rcsFile, setRcsFile]     = useState<File | null>(null);
   const [reqMode, setReqMode]     = useState<'upload' | 'manual'>('upload');
   const [manualReqs, setManualReqs] = useState<Requirement[]>([
     { coverage_type: '', minimum_limit: '', notes: '' },
@@ -1126,7 +1122,10 @@ export default function AppClient() {
   // ── Verify ──
   async function runVerification() {
     if (!coiFile) { setError('Please upload the COI.'); return; }
-    if (reqMode === 'upload' && !reqFile) { setError('Please upload a requirements file.'); return; }
+    if (reqMode === 'upload' && !reqFile) {
+      setError('Please upload your additional insurance standards, or switch to manual entry.');
+      return;
+    }
     const cleanReqs = manualReqs
       .map(r => ({
         coverage_type: r.coverage_type.trim(),
@@ -1136,7 +1135,7 @@ export default function AppClient() {
       .filter(r => r.coverage_type && r.minimum_limit_amount !== null && r.minimum_limit_amount > 0);
     const trimmedNotes = manualNotes.trim();
     if (reqMode === 'manual' && cleanReqs.length === 0) {
-      setError('Please add at least one coverage with both a type and a minimum limit.');
+      setError('Please add at least one coverage with a type and a minimum limit.');
       return;
     }
     setError('');
@@ -1149,9 +1148,10 @@ export default function AppClient() {
     try {
       const fd = new FormData();
       fd.append('coi_file', coiFile);
+      if (rcsFile) fd.append('rcs_file', rcsFile);
       if (reqMode === 'upload') {
-        fd.append('requirements_file', reqFile!);
-      } else {
+        if (reqFile) fd.append('requirements_file', reqFile);
+      } else if (cleanReqs.length > 0 || trimmedNotes) {
         fd.append('requirements_json', JSON.stringify({
           requirements: cleanReqs.map(r => ({
             coverage_type: r.coverage_type,
@@ -1262,11 +1262,12 @@ export default function AppClient() {
     setStep('finalize');
     setGeneratingReport(true);
     try {
+      const nameCheck = buildNameCheckItem(carrierCompany, verifyResult.coi_extracted, verifyResult.discrepancies, callAnswers);
       const res = await fetch('/api/final-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          gap_analysis: verifyResult.gap_analysis,
+          gap_analysis: mergeNameCheck(verifyResult.gap_analysis, nameCheck),
           call_answers: callAnswers ?? {},
         }),
       });
@@ -1291,10 +1292,11 @@ export default function AppClient() {
     if (!verifyResult) return;
     setGeneratingReport(true);
     try {
+      const nameCheck = buildNameCheckItem(carrierCompany, verifyResult.coi_extracted, verifyResult.discrepancies, callAnswers);
       const res = await fetch('/api/final-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gap_analysis: verifyResult.gap_analysis, call_answers: {} }),
+        body: JSON.stringify({ gap_analysis: mergeNameCheck(verifyResult.gap_analysis, nameCheck), call_answers: callAnswers ?? {} }),
       });
       const data = await res.json();
       if (res.ok) setFinalReport(data);
@@ -1316,7 +1318,7 @@ export default function AppClient() {
 
   function reset() {
     setStep('upload');
-    setReqFile(null); setCoiFile(null);
+    setReqFile(null); setCoiFile(null); setRcsFile(null);
     setReqMode('upload');
     setManualReqs([{ coverage_type: '', minimum_limit: '', notes: '' }]);
     setManualNotes('');
@@ -1338,13 +1340,16 @@ export default function AppClient() {
     setCallAnswers(null);
   }
 
-  const hasValidManualRow = manualReqs.some(r => {
-    if (!r.coverage_type.trim()) return false;
-    const amt = parseCurrencyAmount(r.minimum_limit);
-    return amt !== null && amt > 0;
-  });
-  const reqReady = reqMode === 'upload' ? !!reqFile : hasValidManualRow;
-  const canRun = reqReady && !!coiFile && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
+  // Required: COI, additional standards (file or at least one valid manual row),
+  // broker, and carrier. The rate confirmation sheet is optional.
+  const reqReady = reqMode === 'upload'
+    ? !!reqFile
+    : manualReqs.some(r => {
+        const amt = parseCurrencyAmount(r.minimum_limit);
+        return r.coverage_type.trim().length > 0 && amt !== null && amt > 0;
+      });
+  const canRun = !!coiFile && reqReady
+    && verifierCompany.trim().length > 0 && carrierCompany.trim().length > 0;
   const insuranceOptions = verifyResult ? buildInsuranceOptions(verifyResult.coi_extracted) : [];
   const visibleOptions = insuranceOptions.slice(carouselStart, carouselStart + 2);
 
@@ -1353,9 +1358,10 @@ export default function AppClient() {
   // its status reflects call answers once they're available.
   const displayedItems: GapItem[] = (() => {
     if (!verifyResult) return [];
-    const base = finalReport
+    const base = (finalReport
       ? [...finalReport.met, ...finalReport.not_met, ...finalReport.uncertain]
-      : [...verifyResult.gap_analysis.met, ...verifyResult.gap_analysis.not_met, ...verifyResult.gap_analysis.uncertain];
+      : [...verifyResult.gap_analysis.met, ...verifyResult.gap_analysis.not_met, ...verifyResult.gap_analysis.uncertain]
+    ).filter(it => it.requirement.coverage_type !== NAME_CHECK_LABEL);
     const nameCheck = buildNameCheckItem(
       carrierCompany,
       verifyResult.coi_extracted,
@@ -1432,13 +1438,13 @@ export default function AppClient() {
               Upload documents to verify
             </h1>
             <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, marginBottom: 32 }}>
-              We need legal entity details, your insurance requirements, and the carrier&apos;s COI.
+              We need legal entity details, the COI, rate conf sheets, and your insurance standards.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
               {[
-                { label: 'Your company name', value: verifierCompany, onChange: setVerifierCompany, placeholder: 'e.g. Fordra Financial' },
-                { label: 'Carrier company name', value: carrierCompany, onChange: setCarrierCompany, placeholder: 'e.g. Sunrise Trucking LLC' },
+                { label: 'Name of Broker', value: verifierCompany, onChange: setVerifierCompany, placeholder: 'e.g. Fordra Financial' },
+                { label: 'Name of Carrier', value: carrierCompany, onChange: setCarrierCompany, placeholder: 'e.g. Sunrise Trucking LLC' },
               ].map(({ label, value, onChange, placeholder }) => (
                 <div key={label}>
                   <span style={{
@@ -1467,6 +1473,14 @@ export default function AppClient() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 20, marginBottom: 32 }}>
+              <DropZone
+                boxTitle="Carrier's Certificate of Insurance"
+                hint="PDF, JPG, or PNG scan of the COI (ACORD 25)"
+                file={coiFile}
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={setCoiFile}
+              />
+
               <div>
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1476,7 +1490,7 @@ export default function AppClient() {
                     fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
                     textTransform: 'uppercase' as const, color: C.txt3, fontFamily: C.sans,
                   }}>
-                    Your requirements
+                    Additional Insurance Standards
                   </span>
                   <div style={{
                     display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2,
@@ -1523,11 +1537,11 @@ export default function AppClient() {
               </div>
 
               <DropZone
-                boxTitle="Carrier's Certificate of Insurance"
-                hint="PDF, JPG, or PNG scan of the COI (ACORD 25)"
-                file={coiFile}
+                boxTitle="Rate Confirmation Sheet (optional)"
+                hint="PDF, JPG, or PNG of the rate confirmation"
+                file={rcsFile}
                 accept="image/jpeg,image/png,image/webp,application/pdf"
-                onChange={setCoiFile}
+                onChange={setRcsFile}
               />
             </div>
 
@@ -1542,12 +1556,12 @@ export default function AppClient() {
               onMouseLeave={() => setRunHover(false)}
               style={{
                 width: '100%', padding: '15px',
-                background: !canRun ? C.border : runHover ? C.circle : C.txt,
-                color: !canRun ? C.txt3 : C.surface,
+                background: !canRun ? C.border : runHover ? C.lime : C.txt,
+                color: !canRun ? C.txt3 : runHover ? C.txt : C.surface,
                 fontSize: 15, fontWeight: 600, fontFamily: C.sans,
-                borderRadius: 6, border: 'none',
+                borderRadius: 9999, border: 'none',
                 cursor: canRun ? 'pointer' : 'not-allowed',
-                transition: 'background 110ms cubic-bezier(0.16, 1, 0.3, 1)',
+                transition: 'background 110ms cubic-bezier(0.16, 1, 0.3, 1), color 110ms cubic-bezier(0.16, 1, 0.3, 1)',
                 opacity: !canRun ? 0.5 : 1,
               }}
             >

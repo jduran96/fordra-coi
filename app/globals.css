@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ffffff;
-  --muted: rgba(255, 255, 255, 0.4);
-  --border: rgba(255, 255, 255, 0.08);
-  --card: rgba(255, 255, 255, 0.02);
-  --input-bg: rgba(255, 255, 255, 0.05);
-  --font: 'Inter', -apple-system, sans-serif;
+  --background: #faf9f5;
+  --foreground: #141413;
+  --muted: rgba(20, 20, 19, 0.4);
+  --border: rgba(20, 20, 19, 0.12);
+  --card: #ffffff;
+  --input-bg: #faf9f5;
+  --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,4 +19,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
+}
+
+@keyframes fordra-spin {
+  to { transform: rotate(360deg); }
 }

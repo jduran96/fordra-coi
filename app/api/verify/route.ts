@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mammoth from 'mammoth';
+import sharp from 'sharp';
 import {
   extractTextFromFile,
   parseRequirements,
@@ -11,6 +12,26 @@ import { requireAuth } from '@/lib/auth';
 import type { Requirement } from '@/lib/types';
 
 export const maxDuration = 60;
+
+// Downscale images before sending to Claude vision. Keeps the request payload
+// small (large uploads intermittently corrupt over some networks) and matches
+// Claude's ~1568px guidance, so extraction quality is unaffected. PDFs/others
+// pass through unchanged (sharp can't rasterize them reliably).
+async function prepForVision(buf: Buffer, mimeType: string): Promise<{ base64: string; mediaType: string }> {
+  if (mimeType.startsWith('image/')) {
+    try {
+      const out = await sharp(buf)
+        .rotate()
+        .resize({ width: 1568, height: 1568, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      return { base64: out.toString('base64'), mediaType: 'image/jpeg' };
+    } catch {
+      return { base64: buf.toString('base64'), mediaType: mimeType };
+    }
+  }
+  return { base64: buf.toString('base64'), mediaType: mimeType };
+}
 
 interface ManualRequirementInput {
   coverage_type?: unknown;
@@ -34,10 +55,11 @@ export async function POST(req: NextRequest) {
     const reqFile = formData.get('requirements_file') as File | null;
     const reqJsonRaw = formData.get('requirements_json');
     const coiFile = formData.get('coi_file') as File | null;
+    const rcsFile = formData.get('rcs_file') as File | null;
 
     if (!coiFile) return NextResponse.json({ error: 'coi_file is required' }, { status: 400 });
-    if (!reqFile && !reqJsonRaw) {
-      return NextResponse.json({ error: 'requirements_file or requirements_json is required' }, { status: 400 });
+    if (!reqFile && !reqJsonRaw && !rcsFile) {
+      return NextResponse.json({ error: 'requirements_file, requirements_json, or rcs_file is required' }, { status: 400 });
     }
 
     const coiOk = coiFile.type.startsWith('image/') || coiFile.type === 'application/pdf';
@@ -47,9 +69,28 @@ export async function POST(req: NextRequest) {
 
     const coiBuffer = Buffer.from(await coiFile.arrayBuffer());
 
-    // Resolve requirements: either from manual JSON input or from an uploaded file
-    let requirements: Requirement[];
-    let coiExtracted;
+    // Pull raw text from an uploaded requirements / rate-con file
+    // (image+pdf via vision, docx via mammoth, else utf-8).
+    const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    async function fileToText(file: File): Promise<string> {
+      const buf = Buffer.from(await file.arrayBuffer());
+      if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+        const { base64, mediaType } = await prepForVision(buf, file.type);
+        return extractTextFromFile(base64, mediaType);
+      }
+      if (file.type === DOCX) {
+        const result = await mammoth.extractRawText({ buffer: buf });
+        return result.value;
+      }
+      return buf.toString('utf-8');
+    }
+
+    // Gather requirement inputs from every source:
+    //   • manual JSON rows (structured) + optional free-text notes
+    //   • an uploaded "Additional Insurance Standards" file (free text)
+    //   • the Rate Confirmation Sheet (free text — rate cons state/imply coverage requirements)
+    let manualReqs: Requirement[] = [];
+    const textSources: string[] = [];
 
     if (reqJsonRaw) {
       let payload: ManualRequirementsPayload;
@@ -58,7 +99,7 @@ export async function POST(req: NextRequest) {
       } catch {
         return NextResponse.json({ error: 'requirements_json must be valid JSON' }, { status: 400 });
       }
-      const manualReqs: Requirement[] = (Array.isArray(payload.requirements) ? payload.requirements : [])
+      manualReqs = (Array.isArray(payload.requirements) ? payload.requirements : [])
         .map(r => {
           if (!r || typeof r.coverage_type !== 'string' || !r.coverage_type.trim()) return null;
           if (typeof r.minimum_limit !== 'number' || !Number.isFinite(r.minimum_limit) || r.minimum_limit <= 0) return null;
@@ -71,34 +112,26 @@ export async function POST(req: NextRequest) {
         })
         .filter((r): r is Requirement => r !== null);
       const extraNotes = (payload.additional_notes ?? '').trim();
-      if (manualReqs.length === 0) {
-        return NextResponse.json({ error: 'At least one requirement with coverage_type and a positive integer minimum_limit is required' }, { status: 400 });
-      }
-      // Run COI extraction (always) in parallel with parsing the free-text notes (if any)
-      const [coi, parsedFromNotes] = await Promise.all([
-        extractCOIFields(coiBuffer.toString('base64'), coiFile.type),
-        extraNotes ? parseRequirements(extraNotes) : Promise.resolve<Requirement[]>([]),
-      ]);
-      coiExtracted = coi;
-      requirements = [...manualReqs, ...parsedFromNotes];
-    } else {
-      const reqBuffer = Buffer.from(await reqFile!.arrayBuffer());
-      const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      let reqText: string;
-      if (reqFile!.type.startsWith('image/') || reqFile!.type === 'application/pdf') {
-        reqText = await extractTextFromFile(reqBuffer.toString('base64'), reqFile!.type);
-      } else if (reqFile!.type === DOCX) {
-        const result = await mammoth.extractRawText({ buffer: reqBuffer });
-        reqText = result.value;
-      } else {
-        reqText = reqBuffer.toString('utf-8');
-      }
-      const [parsedReqs, coi] = await Promise.all([
-        parseRequirements(reqText),
-        extractCOIFields(coiBuffer.toString('base64'), coiFile.type),
-      ]);
-      requirements = parsedReqs;
-      coiExtracted = coi;
+      if (extraNotes) textSources.push(extraNotes);
+    } else if (reqFile) {
+      textSources.push(await fileToText(reqFile));
+    }
+
+    // Rate confirmation sheet → fold its stated/implied requirements into the set
+    if (rcsFile) {
+      textSources.push(await fileToText(rcsFile));
+    }
+
+    // COI extraction + parse every free-text source, in parallel
+    const coiImg = await prepForVision(coiBuffer, coiFile.type);
+    const [coiExtracted, parsedChunks] = await Promise.all([
+      extractCOIFields(coiImg.base64, coiImg.mediaType),
+      Promise.all(textSources.map(t => (t.trim() ? parseRequirements(t) : Promise.resolve<Requirement[]>([])))),
+    ]);
+    const requirements: Requirement[] = [...manualReqs, ...parsedChunks.flat()];
+
+    if (requirements.length === 0) {
+      return NextResponse.json({ error: 'Provide at least one requirement via standards or the rate confirmation sheet.' }, { status: 400 });
     }
 
     // Step 3: gap analysis

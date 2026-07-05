@@ -26,14 +26,21 @@ export interface COICoverage {
 
 export interface COIExtracted {
   named_insured: string;
+  named_insured_address: string;
+  named_insured_phone: string;
+  named_insured_email: string;
+  usdot_number: string;
+  mc_number: string;
   producer: string;
   insurance_company: string;
   insurance_company_address: string;
   insurance_company_phone: string;
   insurance_company_email: string;
+  insurance_company_contact: string;
   named_insured_state: string;
   certificate_holder: string;
   additional_insured: string;
+  additional_terms: string;
   coverages: COICoverage[];
 }
 

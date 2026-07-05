@@ -1,44 +1,8 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { SESSION_COOKIE, verifyToken } from '@/lib/demo-token'
 
-export const SESSION_COOKIE = 'fordra-session'
-const PAYLOAD = 'fordra-auth'
-
-export async function signToken(secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(PAYLOAD))
-  const sigHex = Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-  return `${sigHex}.${PAYLOAD}`
-}
-
-async function verifyToken(token: string, secret: string): Promise<boolean> {
-  try {
-    const dotIdx = token.indexOf('.')
-    if (dotIdx === -1) return false
-    const sigHex = token.slice(0, dotIdx)
-    const payload = token.slice(dotIdx + 1)
-    if (payload !== PAYLOAD) return false
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['verify'],
-    )
-    const sigBytes = new Uint8Array(sigHex.match(/.{2}/g)!.map(h => parseInt(h, 16)))
-    return await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
-  } catch {
-    return false
-  }
-}
+export { SESSION_COOKIE, SESSION_MAX_AGE_MS, signToken, verifyToken } from '@/lib/demo-token'
 
 export async function getSession(): Promise<boolean> {
   const cookieStore = await cookies()
