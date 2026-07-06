@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { getProfile } from '@/lib/auth-helpers'
 import { createClient } from '@/lib/supabase/server'
-import { uploadDocument } from '@/lib/storage'
 import { generateApiKey, type KeyMode } from '@/lib/apikeys'
+import { createVerification, type VerificationFile } from '@/lib/verifications'
 
 export interface SubmitState { error?: string }
 
@@ -30,41 +30,36 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     return { error: 'Insurance standards are required. Upload a file or enter them manually.' }
   }
 
-  const supabase = await createClient()
-  const { data: v, error } = await supabase
-    .from('verifications')
-    .insert({
-      org_id: profile.org_id,
-      created_by: profile.id,
-      carrier_name: carrier,
-      source: 'web',
-      status: 'pending',
-      requirements: requirementsText ? { text: requirementsText } : null,
-    })
-    .select('id')
-    .single()
-  if (error || !v) return { error: error?.message || 'Could not create verification.' }
-
-  const files: [File | null, 'coi' | 'rcs' | 'requirements'][] = [
+  const fileInputs: [File | null, 'coi' | 'rcs' | 'requirements'][] = [
     [coi, 'coi'],
     [formData.get('rcs_file') as File | null, 'rcs'],
     [reqFile, 'requirements'],
   ]
-  for (const [file, kind] of files) {
+  const files: VerificationFile[] = []
+  for (const [file, kind] of fileInputs) {
     if (!file || file.size === 0) continue
-    const path = `${profile.org_id}/${v.id}/${kind}-${file.name}`
-    await uploadDocument(path, await file.arrayBuffer(), file.type || 'application/octet-stream')
-    const { error: derr } = await supabase.from('documents').insert({
-      org_id: profile.org_id,
-      verification_id: v.id,
+    files.push({
+      bytes: await file.arrayBuffer(),
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
       kind,
-      storage_path: path,
-      file_name: file.name,
-      mime_type: file.type || 'application/octet-stream',
-      size_bytes: file.size,
-      uploaded_by: profile.id,
     })
-    if (derr) return { error: derr.message }
+  }
+
+  const supabase = await createClient()
+  try {
+    await createVerification(supabase, {
+      orgId: profile.org_id,
+      carrierName: carrier,
+      source: 'web',
+      requirements: requirementsText ? { text: requirementsText } : null,
+      createdBy: profile.id,
+      files,
+      // Session client: column-level grants forbid select('*') on verifications.
+      select: 'id',
+    })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not create verification.' }
   }
 
   revalidatePath('/app')

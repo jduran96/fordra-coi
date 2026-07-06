@@ -11,7 +11,7 @@
 companies. A factor's broker submits a carrier's insurance documents; Fordra extracts and checks
 them against the deal's requirements, a human reviews, and the verdict is returned.
 
-It ships as **one Next.js app + one Supabase backend**, with **four surfaces** behind three
+It ships as **one Next.js app + one Supabase backend**, with **five surfaces** behind four
 different auth mechanisms, plus a **separate static marketing site**.
 
 | Surface | Path | Who | Auth |
@@ -21,6 +21,7 @@ different auth mechanisms, plus a **separate static marketing site**.
 | Customer portal | `/app` | Customers (e.g. HaulPay) | **Supabase magic-link** (RLS-scoped) |
 | Admin console | `/admin` | Jullian only | **Supabase**, gated to `ADMIN_EMAIL` |
 | Machine API | `/v1/*` | Customer systems | **API keys** (`sk_test_`/`sk_live_`) |
+| Slack intake | `/api/slack/*` | Partner Slack workspaces | **Signed install links + Slack signing secret** (see `Slack/README.md`) |
 
 The landing chooser is the marketing site's nav: **Demo / Admin / App** links point at
 `app.fordra.com/{demo,admin,}` in production, and auto-rewrite to `localhost:3000` when viewed
@@ -109,7 +110,17 @@ Tenant = **`orgs`** (NOT "partners" — the BUILD_PLAN prose predates this; orgs
 
 Migrations: `0001` (Phase A additions on top of the pre-existing dashboard schema), `0002`
 (api_keys customer write), `0003` (nullable `verification_id`/`created_by` for API rows), `0004`
-(`auto_call` column + PostgREST cache reload).
+(`auto_call` column + PostgREST cache reload), `0009` (Slack: `slack_installations`,
+`slack_intake_sessions`, `slack_events_seen` — all service-role only).
+
+**Slack intake** (`Slack/` folder — plumbing, conversation state machine, manifest, README; the
+route files under `app/api/slack/` are thin re-exports). Partners DM the Fordra Slack app a COI,
+the bot collects carrier name + requirements conversationally, then calls the shared
+`createVerification()` in `lib/verifications.ts` (also used by the web action and `/v1`).
+Gatekeeping: installs only work via HMAC-signed per-org links generated on `/admin/slack`
+(signed with `SESSION_SECRET`); runtime events verified with `SLACK_SIGNING_SECRET` + active
+`slack_installations` row; optional per-user whitelist. Env: `SLACK_CLIENT_ID`,
+`SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`. Setup + testing walkthrough: `Slack/README.md`.
 
 ---
 

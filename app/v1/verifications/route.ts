@@ -1,7 +1,6 @@
-import { randomUUID } from 'crypto'
 import { authenticateRequest, unauthorized, apiError, serializeVerification } from '@/lib/api-auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { uploadDocument } from '@/lib/storage'
+import { createVerification, type VerificationFile } from '@/lib/verifications'
 import { emitEvent } from '@/lib/webhooks'
 
 export const maxDuration = 60
@@ -101,34 +100,29 @@ export async function POST(request: Request) {
   const autoCall = String(form.get('auto_call') || '') === 'true'
 
   const svc = createServiceClient()
-  const { data: v, error } = await svc.from('verifications').insert({
-    org_id: auth.orgId,
-    carrier_name: carrierName,
-    verifier_company: brokerName,
-    source: 'api',
-    status: 'pending',
-    requirements: requirements ?? null,
-    auto_call: autoCall,
-  }).select('*').single()
-  if (error || !v) return apiError(error?.message || 'Could not create verification.', 500, 'api_error')
-
-  const docRefs: { id: string; kind: string; file_name: string }[] = []
+  const verificationFiles: VerificationFile[] = []
   for (const { file, kind } of files) {
-    const docId = randomUUID()
-    const path = `${auth.orgId}/${v.id}/${kind}-${file.name}`
-    await uploadDocument(path, await file.arrayBuffer(), file.type || 'application/octet-stream')
-    await svc.from('documents').insert({
-      id: docId,
-      org_id: auth.orgId,
-      verification_id: v.id,
-      kind,
-      storage_path: path,
-      file_name: file.name,
-      mime_type: file.type || 'application/octet-stream',
-      size_bytes: file.size,
-      extraction_status: 'processing',
+    verificationFiles.push({
+      bytes: await file.arrayBuffer(),
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      kind: kind as VerificationFile['kind'],
     })
-    docRefs.push({ id: docId, kind, file_name: file.name })
+  }
+
+  let v: Record<string, unknown>, docRefs
+  try {
+    ({ verification: v, docRefs } = await createVerification(svc, {
+      orgId: auth.orgId,
+      carrierName,
+      verifierCompany: brokerName,
+      source: 'api',
+      requirements,
+      autoCall,
+      files: verificationFiles,
+    }))
+  } catch (e) {
+    return apiError(e instanceof Error ? e.message : 'Could not create verification.', 500, 'api_error')
   }
 
   // Sandbox: resolve instantly with a canned result and fire the webhook.

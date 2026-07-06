@@ -1,0 +1,31 @@
+# Fordra Slack app manifest. Create the app at https://api.slack.com/apps
+# ("Create New App" -> "From a manifest") and paste this file.
+# Replace app.fordra.com with your tunnel URL for local testing.
+display_information:
+  name: Fordra
+  description: Create COI verification requests by sending documents in a DM.
+  background_color: "#191713"
+features:
+  bot_user:
+    display_name: Fordra
+    always_online: true
+  app_home:
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+oauth_config:
+  redirect_urls:
+    - https://app.fordra.com/api/slack/oauth/callback
+  scopes:
+    bot:
+      - im:history
+      - chat:write
+      - files:read
+      - users:read
+settings:
+  event_subscriptions:
+    request_url: https://app.fordra.com/api/slack/events
+    bot_events:
+      - message.im
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
