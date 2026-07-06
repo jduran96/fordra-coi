@@ -53,10 +53,11 @@ interface SessionState {
   files: StoredFile[]
 }
 
+// One thing at a time: the greeting only asks for the COI; the flow asks for
+// each remaining item in its own message as slots fill.
 const HELP =
   'Hi! I create insurance verification requests for Fordra. ' +
-  'Send me the carrier\'s COI (PDF or image) to start. You can also attach a rate confirmation ' +
-  'and the insurance requirements, or paste requirements as text. Say "cancel" anytime to start over.'
+  'To get started, please upload the carrier\'s COI (PDF or image).'
 
 /** Handle one DM message event end to end (called after the HTTP ack). */
 export async function handleIntakeMessage(install: Installation, ev: SlackMessageEvent) {
