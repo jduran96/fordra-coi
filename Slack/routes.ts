@@ -61,8 +61,8 @@ export async function handleOAuthCallback(request: Request): Promise<Response> {
   if (error) return htmlPage('Install failed', 'We could not save the connection. Contact Fordra at (727) 729-9594.', 500)
 
   return htmlPage(
-    'Fordra connected',
-    'Your Slack workspace is connected. Open a direct message with the Fordra app and send a COI to start your first verification request.',
+    'Fordra Connected',
+    'Your Slack workspace is now connected. Open a direct message with the Fordra app and send a COI to start a verification.',
   )
 }
 
