@@ -10,7 +10,7 @@ export default async function PortalDashboard() {
   const supabase = await createClient()
   const { data: rows } = await supabase
     .from('my_verifications')
-    .select('id, display_id, carrier_name, status, created_at, published_at')
+    .select('id, display_id, carrier_name, status, source, created_at, published_at')
     .order('created_at', { ascending: false })
 
   if (!profile?.org_id) {
@@ -42,7 +42,7 @@ export default async function PortalDashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                <th style={th()}>ID</th><th style={th()}>Carrier</th><th style={th()}>Status</th><th style={th()}>Submitted</th>
+                <th style={th()}>ID</th><th style={th()}>Carrier</th><th style={th()}>Status</th><th style={th()}>Source</th><th style={th()}>Submitted</th>
               </tr>
             </thead>
             <tbody>
@@ -51,6 +51,7 @@ export default async function PortalDashboard() {
                   <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
                   <td style={td()}>{r.carrier_name}</td>
                   <td style={td()}><Pill status={r.status} /></td>
+                  <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
                   <td style={{ ...td(), color: C.txt3 }}>{new Date(r.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -60,6 +61,12 @@ export default async function PortalDashboard() {
       )}
     </div>
   )
+}
+
+function sourceLabel(source: string | null) {
+  if (source === 'slack') return 'Slack'
+  if (source === 'api') return 'API'
+  return 'Web app'
 }
 
 function Pill({ status }: { status: string }) {
