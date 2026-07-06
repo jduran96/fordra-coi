@@ -66,7 +66,7 @@ export default async function PortalDashboard() {
 function sourceLabel(source: string | null) {
   if (source === 'slack') return 'Slack'
   if (source === 'api') return 'API'
-  return 'Web app'
+  return 'Web'
 }
 
 function Pill({ status }: { status: string }) {
