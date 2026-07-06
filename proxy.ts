@@ -31,6 +31,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Slack — authenticated in-route (request signature for events, signed
+  // install-link state for OAuth); the demo cookie gate must not apply.
+  if (pathname.startsWith('/api/slack/')) {
+    return NextResponse.next()
+  }
+
   // Customer portal + admin console — Supabase session
   if (pathname.startsWith('/app') || pathname.startsWith('/admin')) {
     const { response, user } = await updateSession(request)
