@@ -9,6 +9,7 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const next = searchParams.get('next') || ''
   const expired = searchParams.get('expired') === '1'
+  const linkError = searchParams.get('error') === 'link'
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
@@ -21,10 +22,15 @@ function LoginForm() {
     setLoading(true)
     try {
       const supabase = createClient()
-      const redirectTo = `${window.location.origin}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ''}`
+      // Keep the redirect URL query-free: the email template appends
+      // ?token_hash=...&type=magiclink to it. `next` rides in a short-lived
+      // cookie the callback reads instead.
+      document.cookie = next
+        ? `login-next=${encodeURIComponent(next)}; path=/; max-age=3600; samesite=lax`
+        : 'login-next=; path=/; max-age=0'
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: redirectTo },
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       })
       if (error) setError(error.message)
       else setSent(true)
@@ -49,6 +55,12 @@ function LoginForm() {
       {expired && (
         <p style={{ fontSize: 13, color: C.txt2, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
           Your session expired after 24 hours. Sign in again to continue.
+        </p>
+      )}
+      {linkError && (
+        <p style={{ fontSize: 13, color: C.error, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
+          That sign-in link didn&rsquo;t work. It may have expired or already been used, and only
+          the most recently requested link is valid. Enter your email for a fresh one.
         </p>
       )}
       <input

@@ -2,76 +2,21 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
-import { downloadDocument } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
-import { extractCOIFields, extractTextFromFile, parseRequirements, analyzeGaps } from '@/lib/claude'
-import { getExtractionConfig } from '@/lib/config'
+import { runExtractionPipeline } from '@/lib/extraction'
 
-/** Run OCR/extraction on a verification's documents and store the parsed analysis. */
+/**
+ * Run OCR/extraction on a verification's documents and store the parsed analysis.
+ * The pipeline body lives in lib/extraction.ts, shared with the dedicated
+ * /api/admin/run-extraction route (raised maxDuration on Vercel — Claude vision
+ * regularly exceeds the default limit; prefer the route in production).
+ */
 export async function runExtraction(verificationId: string) {
   await requireAdmin()
-  const supabase = createServiceClient()
-  // Admin-editable prompts + baseline checklist (/admin/configs); defaults apply when unset.
-  const cfg = await getExtractionConfig()
-
-  const { data: v } = await supabase
-    .from('verifications')
-    .select('id, requirements, carrier_name')
-    .eq('id', verificationId)
-    .single()
-  const { data: docs } = await supabase
-    .from('documents')
-    .select('id, kind, storage_path, mime_type')
-    .eq('verification_id', verificationId)
-
-  // COI → structured fields (vision)
-  const coiDoc = docs?.find(d => d.kind === 'coi')
-  let coiExtracted: unknown = null
-  if (coiDoc) {
-    const { bytes, contentType } = await downloadDocument(coiDoc.storage_path)
-    const b64 = Buffer.from(bytes).toString('base64')
-    coiExtracted = await extractCOIFields(b64, coiDoc.mime_type || contentType, cfg.promptCoiExtraction)
-    await supabase.from('documents')
-      .update({ extracted: coiExtracted, extractor: 'claude', extraction_status: 'processed' })
-      .eq('id', coiDoc.id)
-  }
-
-  // requirements: free text + rate con / requirements docs → text → parsed.
-  // Two stored shapes: web submissions { text }, API submissions [{ type: 'text', value }].
-  const storedReqs = v?.requirements as { text?: string } | { type?: string; value?: string }[] | null
-  let reqText = (Array.isArray(storedReqs)
-    ? storedReqs.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n')
-    : storedReqs?.text ?? ''
-  ).trim()
-  for (const d of (docs ?? []).filter(d => d.kind === 'requirements' || d.kind === 'rcs')) {
-    const { bytes, contentType } = await downloadDocument(d.storage_path)
-    const txt = await extractTextFromFile(Buffer.from(bytes).toString('base64'), d.mime_type || contentType, cfg.promptDocTextExtraction)
-    await supabase.from('documents')
-      .update({ extracted: { text: txt }, extractor: 'claude', extraction_status: 'processed' })
-      .eq('id', d.id)
-    reqText += `\n${txt}`
-  }
-
-  const requirements = reqText.trim() ? await parseRequirements(reqText, cfg.promptRequirementsParsing) : []
-  // Always run the analysis when a COI was extracted: the baseline broker checks
-  // apply even when no insurance-standards document was provided.
-  const gap = coiExtracted
-    ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], {
-        carrierName: (v as { carrier_name?: string } | null)?.carrier_name,
-        includeBaseline: true,
-        baseline: cfg.baselineRequirements,
-      })
-    : null
-
-  await supabase.from('verifications').update({
-    coi_extracted: coiExtracted,
-    requirements_normalized: requirements,
-    gap_analysis: gap,
-    case_status: 'ocr_complete',
-  }).eq('id', verificationId)
-
+  await runExtractionPipeline(verificationId)
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -174,6 +119,48 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     redirect('/admin')
   }
   revalidatePath(`/admin/${verificationId}`)
+}
+
+export interface InviteUserState { ok?: boolean; error?: string; signinLink?: string }
+
+/**
+ * Invite a new user by email and assign them to an org in one step.
+ * Also mints a direct sign-in link (generateLink token_hash, accepted by
+ * /auth/callback) so the admin can hand it over when email delivery is flaky.
+ */
+export async function inviteUser(_prev: InviteUserState, formData: FormData): Promise<InviteUserState> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const email = String(formData.get('email') || '').trim().toLowerCase()
+  const orgId = String(formData.get('org_id') || '')
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Enter a valid email address.' }
+  if (!orgId) return { error: 'Pick an org.' }
+
+  const hdrs = await headers()
+  const origin = hdrs.get('origin') || `https://${hdrs.get('host') || 'app.fordra.com'}`
+
+  const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${origin}/auth/callback`,
+  })
+  if (error) return { error: error.message }
+
+  // handle_new_user() created the profile row; link it to the chosen org.
+  if (data.user) {
+    const { error: perr } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', data.user.id)
+    if (perr) return { error: `Invited, but could not link the account: ${perr.message}` }
+  }
+
+  // Fallback link in case the invite email does not arrive.
+  let signinLink: string | undefined
+  const { data: linkData } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
+  const props = linkData?.properties
+  if (props?.hashed_token) {
+    signinLink = `${origin}/auth/callback?token_hash=${props.hashed_token}&type=magiclink`
+  }
+
+  revalidatePath('/admin/users')
+  return { ok: true, signinLink }
 }
 
 export interface GrantState { ok?: boolean; error?: string }

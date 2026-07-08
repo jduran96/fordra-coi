@@ -12,7 +12,7 @@ rationale + roadmap). Quick orientation:
 - **What it is:** a COI verification platform. One Next.js 16 app + Supabase. Four surfaces:
   `/demo` (operator pipeline, password gate), `/app` (customer portal, Supabase magic-link),
   `/admin` (review console, gated to `ADMIN_EMAIL`), `/v1/*` (machine API, `sk_test_`/`sk_live_`
-  keys). Separate static marketing site in `../fordra-coi-website`.
+  keys). The static marketing site lives in `website/` (same folder, separate Vercel deploy).
 - **Tenant = `orgs`/`org_id`** in the live Supabase schema (the term "partners" in older BUILD_PLAN
   prose is the same thing; orgs is authoritative). RLS isolates by org; admin sees all.
   `my_verifications` view hides analysis until `published_at` (the admin "publish" step).
@@ -41,7 +41,7 @@ rationale + roadmap). Quick orientation:
 ## Conventions
 
 - Next 16 middleware lives in **`proxy.ts`** (exported `proxy()`), not `middleware.ts`.
-- **Design system (canonical):** the Krida-inspired system in `../fordra-coi-website/HANDOFF.md`
+- **Design system (canonical):** the Krida-inspired system in `website/HANDOFF.md`
   §3–§5 (warm cream paper, warm near-black ink, electric lime accent; Newsreader / Hanken
   Grotesk / JetBrains Mono; pill buttons, big soft rounded cards, mono eyebrows). The app
   mirrors it via `lib/theme.ts` (`C`). Any new UI in either repo follows that doc by default.

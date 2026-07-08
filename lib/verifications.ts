@@ -20,6 +20,8 @@ export interface CreateVerificationInput {
   source: 'web' | 'api' | 'slack'
   /** Stored as-is; web uses { text }, API/Slack use [{ type: 'text', value }]. */
   requirements: unknown
+  /** Provenance: the requirement_templates row the standards came from. */
+  templateId?: string
   autoCall?: boolean
   createdBy?: string
   files: VerificationFile[]
@@ -51,6 +53,7 @@ export async function createVerification(
     source: input.source,
     status: 'pending',
     requirements: input.requirements ?? null,
+    ...(input.templateId ? { template_id: input.templateId } : {}),
     ...(input.autoCall !== undefined ? { auto_call: input.autoCall } : {}),
   }).select(input.select ?? '*').single<Record<string, unknown>>()
   if (error || !v) throw new Error(error?.message || 'Could not create verification.')

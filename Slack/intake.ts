@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { uploadDocument, downloadDocument } from '@/lib/storage'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
+import { listTemplates, resolveTemplate, type RequirementTemplate } from '@/lib/templates'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { downloadSlackFile, postMessage } from './slack'
@@ -50,6 +51,9 @@ interface StoredFile {
 interface SessionState {
   carrier_name?: string
   requirements_text?: string
+  /** Saved standard selected by name; variables collected one at a time. */
+  template_id?: string
+  template_vars?: Record<string, string>
   files: StoredFile[]
 }
 
@@ -141,15 +145,36 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     state.files.push({ kind, storage_path: path, file_name: name, mime_type: f.mimetype || contentType, size_bytes: bytes.byteLength })
   }
 
+  // The org's saved standards (templates) are offered by name at the
+  // requirements step; a reply matching a name selects one.
+  let templates: RequirementTemplate[] = []
+  try {
+    templates = await listTemplates(svc, install.org_id)
+  } catch {
+    // Standards stay free-text if templates cannot load.
+  }
+  const selectedTemplate = () => templates.find(t => t.id === state.template_id) ?? null
+  const missingVars = (t: RequirementTemplate) =>
+    (t.variables ?? []).filter(v => v.required && !(state.template_vars ?? {})[v.key]?.trim())
+
   // ---- Text answers fill the next empty slot (files from this message count).
   const hasCoi = state.files.some(f => f.kind === 'coi')
-  const hasReqs = !!state.requirements_text || state.files.some(f => f.kind === 'requirements')
+  const hasReqs = !!state.requirements_text || !!state.template_id || state.files.some(f => f.kind === 'requirements')
   // File captions are not answers; only plain text messages fill slots.
   if (text && !isSubmitWord(lower) && (!ev.files || ev.files.length === 0)) {
+    const t = selectedTemplate()
     if (hasCoi && !state.carrier_name) {
       state.carrier_name = text
+    } else if (hasCoi && state.carrier_name && t && missingVars(t).length > 0) {
+      state.template_vars = { ...(state.template_vars ?? {}), [missingVars(t)[0].key]: text }
     } else if (hasCoi && state.carrier_name && !hasReqs) {
-      state.requirements_text = text
+      const match = templates.find(x => x.name.trim().toLowerCase() === lower)
+      if (match) {
+        state.template_id = match.id
+        state.template_vars = {}
+      } else {
+        state.requirements_text = text
+      }
     }
   }
 
@@ -159,7 +184,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
 
   // ---- Decide what to ask next (recompute after this message's updates).
   const nowHasCoi = state.files.some(f => f.kind === 'coi')
-  const nowHasReqs = !!state.requirements_text || state.files.some(f => f.kind === 'requirements')
+  const nowHasReqs = !!state.requirements_text || !!state.template_id || state.files.some(f => f.kind === 'requirements')
 
   if (!nowHasCoi) {
     await say('To get started I need the carrier\'s COI. Please upload it here (PDF or image).')
@@ -170,8 +195,24 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     return
   }
   if (!nowHasReqs) {
-    await say('Got it. What insurance coverage do you require? (write out an explanation in your reply OR upload a document with your insurance standards)')
+    if (templates.length > 0) {
+      const names = templates.map(t => `*${t.name}*${t.is_default ? ' (default)' : ''}`).join(', ')
+      await say(
+        `Got it. Which insurance standard applies? Reply with one of your saved standards: ${names}. ` +
+        'Or write out your requirements, or upload a document with them.',
+      )
+    } else {
+      await say('Got it. What insurance coverage do you require? (write out an explanation in your reply OR upload a document with your insurance standards)')
+    }
     return
+  }
+  {
+    const t = selectedTemplate()
+    if (t && missingVars(t).length > 0) {
+      const v = missingVars(t)[0]
+      await say(`Using *${t.name}*. What is the ${v.label.toLowerCase()} for this deal?`)
+      return
+    }
   }
   if (!isSubmitWord(lower)) {
     await say('Great. Final step, attach a rate confirmation sheet if you have one OR reply *done* to finalize this verification.')
@@ -184,7 +225,20 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     const { bytes } = await downloadDocument(f.storage_path)
     files.push({ bytes, name: f.file_name, mimeType: f.mime_type, kind: f.kind })
   }
-  const requirements = state.requirements_text ? [{ type: 'text', value: state.requirements_text }] : null
+  let requirements: unknown = state.requirements_text ? [{ type: 'text', value: state.requirements_text }] : null
+  const finalTemplate = selectedTemplate()
+  if (finalTemplate) {
+    try {
+      const resolved = resolveTemplate(finalTemplate, {
+        carrier_name: state.carrier_name!,
+        ...(state.template_vars ?? {}),
+      })
+      requirements = [{ type: 'text', value: resolved.text }, { type: 'template', ...resolved.provenance }]
+    } catch (e) {
+      await say(`I could not apply *${finalTemplate.name}*: ${e instanceof Error ? e.message : 'unknown error'}. Reply "cancel" to start over.`)
+      return
+    }
+  }
 
   let verification: Record<string, unknown>, docRefs
   try {
@@ -193,6 +247,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       carrierName: state.carrier_name!,
       source: 'slack',
       requirements,
+      templateId: finalTemplate?.id,
       files,
     }))
   } catch (e) {
@@ -214,7 +269,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
 function classifyFile(state: SessionState, name: string): StoredFile['kind'] {
   const lower = name.toLowerCase()
   if (!state.files.some(f => f.kind === 'coi')) return 'coi'
-  const hasReqs = !!state.requirements_text || state.files.some(f => f.kind === 'requirements')
+  const hasReqs = !!state.requirements_text || !!state.template_id || state.files.some(f => f.kind === 'requirements')
   if (/rate|conf|rc\b/.test(lower) && !state.files.some(f => f.kind === 'rcs')) return 'rcs'
   if (!hasReqs) return 'requirements'
   return 'rcs'

@@ -164,6 +164,9 @@ These identity fields matter: they confirm the certificate belongs to the right 
 - insurance_company_phone: Phone number of the producer/agent. Use "" if not found.
 - insurance_company_email: Email of the producer/agent. Use "" if not found.
 - insurance_company_contact: The name(s) of any contact person printed for the producer/agent or insurer (e.g. the "Contact Name" box on ACORD 25). Comma separate multiple names. Use "" if none shown.
+- loss_payee: Any entity named as loss payee anywhere on the certificate (Description of Operations, certificate holder box wording like "loss payee", endorsement lists). Copy the entity name(s) exactly; comma separate multiple. Use "" if none stated.
+- additional_insured: Any entity named as additional insured, whether in a dedicated box, the Description of Operations, or an endorsement list. Comma separate multiple. Use "" if none stated.
+- other_named_parties: OWNER-OPERATOR SEARCH — many certificates are issued under a fleet or program policy where the actual operator is NOT the named insured. Search the ENTIRE document for every other person or business named anywhere: scheduled drivers, listed operators, DBA names, lessees, parties in the Description of Operations, endorsement schedules, or remarks. For each, give the name and where it appears, e.g. "John Delgado (listed as scheduled driver); JD Hauling LLC (DBA in Description of Operations)". Use "" if none.
 - policy_number: Read each alphanumeric character by character. Do not truncate, guess, or normalize. Note ambiguous characters (0 vs O, 1 vs l) in raw_notes.
 - conditions_and_exceptions (per coverage): Types of goods or cargo covered, situations covered, exclusions, sub-limits, endorsements, or any restrictions on the coverage. Copy relevant text verbatim. Use "" if none stated.
 
@@ -184,6 +187,8 @@ Return ONLY a valid JSON object — no prose, no markdown:
   "named_insured_state": string,
   "certificate_holder": string,
   "additional_insured": string,
+  "loss_payee": string,
+  "other_named_parties": string,
   "additional_terms": string,
   "coverages": [
     {
@@ -195,10 +200,13 @@ Return ONLY a valid JSON object — no prose, no markdown:
       "each_occurrence_limit": string,
       "aggregate_limit": string,
       "conditions_and_exceptions": string,
+      "additional_insured": string,
+      "loss_payee": string,
       "raw_notes": string
     }
   ]
 }
+Per-coverage additional_insured / loss_payee: the entity holding that status on THAT specific coverage line, when the certificate ties it to a coverage (e.g. additional insured on liability, loss payee on physical damage). Use "" when not tied to the coverage.
 named_insured_state: 2-letter US state from named insured's address (e.g. "FL", "TX"). Use "" if not found.
 additional_terms: the certificate's free-text terms verbatim: the Description of Operations box, remarks, limitations, warranties, cancellation-notice wording, and any endorsements listed. Use "" if none.
 All other missing or illegible fields: use "". Never guess entity names or policy numbers.`;
@@ -236,7 +244,7 @@ export const DEFAULT_BASELINE_REQUIREMENTS: Requirement[] = [
   {
     coverage_type: 'Matching Policyholder Name',
     minimum_limit: '',
-    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. A different legal entity is not met.',
+    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. Owner-operator certificates: if the carrier is not the named insured but appears elsewhere on the certificate (other_named_parties, additional_insured, a scheduled driver or DBA), this is uncertain, and the evidence must say where the name was found. Only a carrier appearing nowhere on the certificate is not met.',
   },
   {
     coverage_type: 'Policy Currently Active',

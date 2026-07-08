@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fordra</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <nav>
+    <span class="logo">Fordra</span>
+    <div class="nav-links">
+      <a data-path="/demo" href="https://app.fordra.com/demo">Demo</a>
+      <a data-path="/admin" href="https://app.fordra.com/admin">Admin</a>
+      <a data-path="" href="https://app.fordra.com">App</a>
+      <button class="btn btn-nav" onclick="openModal()">Join Waitlist</button>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">AI insurance verification</span>
+      <h1>Offload your<br><span class="highlight">COI</span> headache</h1>
+      <p>Fordra helps brokers and factoring companies instantly validate and monitor carrier insurance.</p>
+      <div class="hero-actions">
+        <button class="btn btn-lime" onclick="openModal()">Join the Waitlist</button>
+        <a class="btn btn-ghost" data-path="/demo" href="https://app.fordra.com/demo">See a demo &rarr;</a>
+      </div>
+      <ul class="hero-stats">
+        <li><strong>24/7</strong><span>service</span></li>
+        <li><strong>Real-Time</strong><span>verifications</span></li>
+        <li><strong>Zero</strong><span>lapses</span></li>
+      </ul>
+    </section>
+
+    <section class="cards-section">
+      <div class="section-label"><span class="eyebrow">What we do</span><span class="section-title">How Fordra works</span></div>
+      <div class="cards">
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+              <h2>Collect</h2>
+            </div>
+            <span class="card-num">01</span>
+          </div>
+          <p>Upload COIs or get Fordra to chase them.</p>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <h2>Check</h2>
+            </div>
+            <span class="card-num">02</span>
+          </div>
+          <p>Fordra checks that your standards are met.</p>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.59 3.47 2 2 0 0 1 3.56 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6.29 6.29l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <h2>Track</h2>
+            </div>
+            <span class="card-num">03</span>
+          </div>
+          <p>Fordra calls agents and monitors changes.</p>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+              <h2>Automate</h2>
+            </div>
+            <span class="card-num">04</span>
+          </div>
+          <p>Access Fordra via Slack, API, or mobile.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="cta-band">
+      <span class="eyebrow eyebrow-lime">Get AI to eliminate headaches</span>
+      <h2>Stop chasing COIs.</h2>
+      <button class="btn btn-lime" onclick="openModal()">Get Started</button>
+    </section>
+  </main>
+
+  <footer>
+    <span class="logo footer-logo">Fordra</span>
+    <span>&copy; Fordra 2026</span>
+  </footer>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal" onclick="closeOnOverlay(event)">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+      <h3>Get early access</h3>
+      <p class="modal-sub">We'll be in touch within 24 hours.</p>
+      <form id="contact-form" novalidate>
+        <input type="text" name="name" id="field-name" placeholder="Full name" required />
+        <div class="field-wrap">
+          <input type="email" name="email" id="field-email" placeholder="Email address" required />
+          <span class="field-error" id="err-email">Enter a valid email address.</span>
+        </div>
+        <div class="field-wrap">
+          <div class="phone-input">
+            <span class="phone-prefix">+1</span>
+            <input type="tel" name="phone" id="field-phone" placeholder="(555) 555-5555" maxlength="14" />
+          </div>
+          <span class="field-error" id="err-phone">Enter a valid 10-digit US number.</span>
+        </div>
+        <button type="submit" class="btn btn-submit">Submit</button>
+      </form>
+      <div class="modal-success" id="modal-success">
+        You're on the list!
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // App links: the authored href on each [data-path] element is the production URL
+    // (https://app.fordra.com/...), so they work as-is once this site is pushed to main.
+    // On localhost we repoint them to the locally running Fordra app. The dev port can
+    // vary, and other apps may occupy 3000, so we probe ports IN PREFERENCE ORDER
+    // (Fordra's 3100 first) and lock onto the FIRST that responds, not the fastest.
+    // Override with ?appPort=NNNN (remembered for this browser).
+    (async function () {
+      var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (!local) return; // production: keep the authored app.fordra.com hrefs
+      var host = location.hostname;
+      function apply(port) {
+        var base = 'http://' + host + ':' + port;
+        document.querySelectorAll('[data-path]').forEach(function (a) {
+          a.href = base + (a.getAttribute('data-path') || '');
+        });
+      }
+      // Explicit override wins and is remembered for this browser.
+      var qp = new URLSearchParams(location.search).get('appPort');
+      if (qp) localStorage.setItem('fordraAppPort', qp);
+      var saved = localStorage.getItem('fordraAppPort');
+      if (saved) { apply(saved); return; }
+      // Probe sequentially in preference order; first reachable port wins.
+      var ports = ['3100', '3000', '3001'];
+      apply(ports[0]); // sensible default before probing resolves
+      for (var i = 0; i < ports.length; i++) {
+        try {
+          await fetch('http://' + host + ':' + ports[i] + '/login', { mode: 'no-cors' });
+          apply(ports[i]);
+          return;
+        } catch (e) { /* port down, try the next */ }
+      }
+    })();
+  </script>
+  <script src="main.js"></script>
+</body>
+</html>

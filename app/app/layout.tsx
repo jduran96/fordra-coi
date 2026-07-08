@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         links={[
           { href: '/app', label: 'Verifications' },
           { href: '/app/docs', label: 'API Docs' },
+          { href: '/app/settings', label: 'Settings' },
         ]}
       />
       <main style={{ maxWidth: 980, margin: '0 auto', padding: '32px 28px' }}>{children}</main>

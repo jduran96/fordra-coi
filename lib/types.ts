@@ -22,6 +22,9 @@ export interface COICoverage {
   aggregate_limit: string;
   conditions_and_exceptions: string;
   raw_notes: string;
+  /** Optional: older extractions predate these fields. */
+  additional_insured?: string;
+  loss_payee?: string;
 }
 
 export interface COIExtracted {
@@ -41,6 +44,11 @@ export interface COIExtracted {
   certificate_holder: string;
   additional_insured: string;
   additional_terms: string;
+  /** Optional: older extractions predate these fields. */
+  loss_payee?: string;
+  /** Every other person/entity named anywhere on the cert (drivers, operators,
+   *  DBAs, endorsement parties) with where each was found — the owner-operator hook. */
+  other_named_parties?: string;
   coverages: COICoverage[];
 }
 

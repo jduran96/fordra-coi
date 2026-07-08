@@ -1,6 +1,7 @@
 import { authenticateRequest, unauthorized, apiError, serializeVerification } from '@/lib/api-auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
+import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { emitEvent } from '@/lib/webhooks'
 
 export const maxDuration = 60
@@ -86,20 +87,46 @@ export async function POST(request: Request) {
   const rcs = form.get('rate_confirmation')
   if (rcs instanceof File && rcs.size > 0) files.push({ file: rcs, kind: 'rcs' })
 
-  // insurance_standards is required, sent as a file or a plain text string.
+  const svc = createServiceClient()
+
+  // Standards come from a saved template (template_id or template_name +
+  // template_variables), a file, or a plain text string — one is required.
+  const templateIdIn = String(form.get('template_id') || '').trim()
+  const templateName = String(form.get('template_name') || '').trim()
   const standards = form.get('insurance_standards')
   let requirements: unknown = null
-  if (standards instanceof File && standards.size > 0) {
+  let templateId: string | undefined
+  if (templateIdIn || templateName) {
+    let q = svc.from('requirement_templates').select(TEMPLATE_SELECT).eq('org_id', auth.orgId)
+    q = templateIdIn ? q.eq('id', templateIdIn) : q.eq('name', templateName)
+    const { data: t } = await q.maybeSingle<RequirementTemplate>()
+    if (!t) return apiError('No template with that id or name exists for your account. List templates with GET /v1/templates.')
+    let values: Record<string, string> = {}
+    const rawVars = String(form.get('template_variables') || '').trim()
+    if (rawVars) {
+      try {
+        values = JSON.parse(rawVars)
+      } catch {
+        return apiError('`template_variables` must be a JSON object, e.g. {"asset_sale_price": "$85,000"}.')
+      }
+    }
+    values = { carrier_name: carrierName, ...values }
+    try {
+      const resolved = resolveTemplate(t, values)
+      requirements = [{ type: 'text', value: resolved.text }, { type: 'template', ...resolved.provenance }]
+      templateId = t.id
+    } catch (e) {
+      return apiError(e instanceof Error ? e.message : 'Could not apply the template.')
+    }
+  } else if (standards instanceof File && standards.size > 0) {
     files.push({ file: standards, kind: 'requirements' })
   } else if (typeof standards === 'string' && standards.trim()) {
     requirements = [{ type: 'text', value: standards.trim() }]
   } else {
-    return apiError('`insurance_standards` is required. Send it as a text string or a file.')
+    return apiError('`insurance_standards` is required (text or file), or send `template_id` / `template_name` for a saved standard.')
   }
 
   const autoCall = String(form.get('auto_call') || '') === 'true'
-
-  const svc = createServiceClient()
   const verificationFiles: VerificationFile[] = []
   for (const { file, kind } of files) {
     verificationFiles.push({
@@ -118,6 +145,7 @@ export async function POST(request: Request) {
       verifierCompany: brokerName,
       source: 'api',
       requirements,
+      templateId,
       autoCall,
       files: verificationFiles,
     }))

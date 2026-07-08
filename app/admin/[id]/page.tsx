@@ -15,6 +15,9 @@ import CallNoteForm from '@/components/CallNoteForm'
 import { runExtraction, saveCallNote, saveAssessment } from '../actions'
 
 export const dynamic = 'force-dynamic'
+// Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
+// vision OCR; on Vercel the default function limit cuts it off mid-run.
+export const maxDuration = 300
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
 interface GapItem { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string }
@@ -35,6 +38,8 @@ interface COI {
   insurance_company_contact?: string
   certificate_holder?: string
   additional_insured?: string
+  loss_payee?: string
+  other_named_parties?: string
 }
 
 function gapItems(g: Gap | null | undefined): GapItem[] {
@@ -218,6 +223,8 @@ function InsurerCard({ coi }: { coi: COI }) {
     ['Email', coi.insurance_company_email],
     ['Certificate holder', coi.certificate_holder],
     ['Additional insured(s)', coi.additional_insured],
+    ['Loss payee(s)', coi.loss_payee],
+    ['Other named parties', coi.other_named_parties],
   ]
   const shown = facts.filter(([, val]) => !!val?.trim())
   if (!shown.length) return null

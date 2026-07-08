@@ -1,0 +1,46 @@
+<!-- Supabase Auth email template: Magic Link.
+     Paste into Dashboard -> Authentication -> Emails -> Magic Link.
+     Uses the token_hash link format (see app/auth/callback/route.ts).
+     Email-safe: tables + inline styles; Georgia/system fallbacks stand in for
+     Newsreader / Hanken Grotesk. Palette mirrors lib/theme.ts (lime #d4fd8e). -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf9f5;padding:40px 16px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5e4e0;border-radius:16px;">
+        <tr>
+          <td style="padding:40px 40px 36px;">
+            <p style="margin:0 0 28px;font-family:Georgia,'Times New Roman',serif;font-size:26px;letter-spacing:-0.5px;color:#141413;">Fordra</p>
+            <p style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:normal;color:#141413;">Your Sign in Link</p>
+            <p style="margin:0 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#57544e;">
+              This link expires in 1 hour and can only be used once.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#d4fd8e;border-radius:9999px;">
+                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink"
+                     style="display:inline-block;padding:13px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#141413 !important;text-decoration:none !important;text-decoration-color:#141413 !important;border-radius:9999px;">
+                    <span style="display:inline-block;color:#141413 !important;text-decoration:none !important;text-decoration-color:#141413 !important;">Sign in&nbsp;&nbsp;&rarr;</span>
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:28px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#7e7e7e;">
+              If the button above does not work, use this link instead:<br>
+              <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink" style="color:#141413 !important;word-break:break-all;">{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 40px;border-top:1px solid #e5e4e0;">
+            <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#7e7e7e;">
+              Fordra &copy; 2026
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:20px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#a6a4a0;">
+        If you did not request this email, you can safely ignore it.
+      </p>
+    </td>
+  </tr>
+</table>

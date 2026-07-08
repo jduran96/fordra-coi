@@ -173,7 +173,9 @@ export default async function DocsPage() {
         <><Mono>carrier_name</Mono>: the carrier&apos;s legal name (text, required)</>,
         <><Mono>broker_name</Mono>: your company name (text, required)</>,
         <><Mono>coi</Mono>: the certificate of insurance (file, required)</>,
-        <><Mono>insurance_standards</Mono>: your insurance requirements (text or file, required)</>,
+        <><Mono>insurance_standards</Mono>: your insurance requirements (text or file, required unless you send a template)</>,
+        <><Mono>template_id</Mono> or <Mono>template_name</Mono>: use a saved standard from your Settings page instead of <Mono>insurance_standards</Mono> (text, optional)</>,
+        <><Mono>template_variables</Mono>: JSON object with values for the template&apos;s placeholders, e.g. <Mono>{'{"asset_sale_price": "$85,000"}'}</Mono> (text, required if the template has placeholders)</>,
         <><Mono>rate_confirmation</Mono>: the rate confirmation sheet (file, optional)</>,
       ]} />
       <P><B>Sending documents:</B> attach each file to the request as a normal file upload, the same
@@ -191,6 +193,20 @@ export default async function DocsPage() {
         complete. Remember to store the <Mono>id</Mono> field as you will use this to identify this
         verification later.</P>
       <CodeBox title="Sample POST response payload">{createResponse}</CodeBox>
+
+      <SubH id="saved-standards">Saved standards (templates)</SubH>
+      <Endpoint method="GET" path="/v1/templates" />
+      <P>Standards saved on your Settings page can be reused by the API. List them to get each
+        template&apos;s <Mono>id</Mono>, <Mono>name</Mono>, and required <Mono>variables</Mono>, then
+        pass <Mono>template_id</Mono> (or <Mono>template_name</Mono>) with
+        {' '}<Mono>template_variables</Mono> when starting a verification.</P>
+      <CodeBox title="Start a verification from a saved standard">{`curl -X POST ${BASE}/v1/verifications \\
+  -H "Authorization: Bearer `}<Key>sk_live_YOUR_KEY</Key>{`" \\
+  -F carrier_name="ACME Trucking LLC" \\
+  -F broker_name="Fordra Financial" \\
+  -F coi=@coi.pdf \\
+  -F template_name="Trucking standard" \\
+  -F template_variables='{"asset_sale_price": "$85,000"}'`}</CodeBox>
 
       <H id="review-a-result">Review a Result</H>
 
@@ -234,6 +250,7 @@ function Toc() {
   const items: [string, string, number][] = [
     ['authentication', 'Authentication', 0],
     ['start-a-verification', 'Start a Verification', 0],
+    ['saved-standards', 'Saved standards', 1],
     ['review-a-result', 'Review a Result', 0],
     ['via-webhook', 'Via webhook', 1],
     ['via-get', 'Via GET', 1],

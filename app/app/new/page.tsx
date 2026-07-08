@@ -1,4 +1,6 @@
 import { getProfile } from '@/lib/auth-helpers'
+import { createClient } from '@/lib/supabase/server'
+import { listTemplates } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import Link from 'next/link'
 import NewVerificationForm from './NewVerificationForm'
@@ -18,6 +20,9 @@ export default async function NewVerification() {
     )
   }
 
+  const supabase = await createClient()
+  const templates = await listTemplates(supabase, profile.org_id)
+
   return (
     <div style={{ maxWidth: 640 }}>
       <h1 style={h1S()}>New verification</h1>
@@ -25,7 +30,7 @@ export default async function NewVerification() {
         Upload the carrier’s COI and your insurance standards. The rate confirmation is optional.
         We’ll parse them and queue the deal for review.
       </p>
-      <NewVerificationForm />
+      <NewVerificationForm templates={templates} />
     </div>
   )
 }

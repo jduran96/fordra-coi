@@ -53,9 +53,11 @@ locally. The Next app root `/` redirects to `/app`.
      keeping payloads small. **If a large PDF still fails, add PDF rasterization** (sharp can't).
    Don't "fix" these by reverting them — they're load-bearing on this machine.
 
-2. **Magic-link email only delivers to the project owner** (`jullianalfonso96@gmail.com`) until
-   custom SMTP is configured in Supabase → Auth → Emails. So you can log in as admin, but other
-   users (HaulPay) won't receive links yet. This is the #1 thing blocking full customer testing.
+2. ~~Magic-link email only delivers to the project owner~~ **Resolved 2026-07-08:** custom SMTP
+   (Resend, smtp.resend.com:465) is configured in Supabase Auth, and the Magic Link + Invite
+   email templates use the `token_hash` link format (repo copies: `supabase/email-templates/`;
+   see `.claude/skills/fordra-repeat-bugs/SKILL.md` #1 — a template reset to the PKCE default
+   reintroduces the "link bounces back to login" bug).
 
 Also: `next.config.ts` sets `experimental.proxyClientMaxBodySize: '30mb'` (the proxy buffers the
 body with a 10MB cap by default, which broke multipart uploads).
@@ -69,7 +71,7 @@ body with a 10MB cap by default, which broke multipart uploads).
 cd fordra-coi-app && npm run dev
 
 # 2. Marketing site (port 8080) — its nav rewrites links to localhost:3000
-cd ../fordra-coi-website && python3 -m http.server 8080 --bind 127.0.0.1
+cd website && python3 -m http.server 8080 --bind 127.0.0.1
 
 # 3. DB migrations (idempotent) — needs SUPABASE_DB_URL in .env.local
 npm run db:migrate
@@ -174,8 +176,9 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
 Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Vercel projects):
 
 - **app.fordra.com** ← Vercel project `fordra-coi-app`, production branch **`main`** (this repo dir).
-- **fordra.com** ← Vercel project `fordra-coi-website`, production branch **`website`**
-  (the `../fordra-coi-website` clone; `website-krida-concept` was the design branch, now merged).
+- **fordra.com** ← Vercel project `fordra-coi-website`, production branch **`main`**, Root
+  Directory **`website/`** (monorepo since 2026-07-08; the old `website` branch and the separate
+  `../fordra-coi-website` clone are retired).
 - Push = deploy. No CLI steps needed; `npx vercel` is authenticated on this machine if manual
   deploys are ever required.
 - Vercel env is complete (incl. `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`). A stray
@@ -189,9 +192,32 @@ Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Verc
 
 ---
 
+## Added 2026-07-08 (Dakota pilot readiness)
+
+- **Requirement templates (self-serve insurance standards):** `requirement_templates` table
+  (migration `0011`, org-scoped RLS CRUD for `authenticated`), `lib/templates.ts`
+  (`resolveTemplate` substitutes `{tokens}`; `{carrier_name}` auto-fills from the carrier field,
+  other tokens become per-deal form inputs, e.g. `{asset_sale_price}`). Managed on **/app/settings**
+  (new nav item; also has a Team section w/ self-invites). The web form pre-selects the org's
+  default template with swap/manual/upload fallbacks; `/v1` accepts `template_id`/`template_name`
+  + `template_variables` (+ `GET /v1/templates`); Slack offers templates by name and collects
+  variable values. `verifications.template_id` records provenance; template-based submissions
+  skip the global baseline merge (templates pre-fill baseline rows in the Settings editor).
+- **Extraction upgrades:** `COIExtracted` gains `loss_payee` + `other_named_parties` (+ per-coverage
+  `additional_insured`/`loss_payee`); the OCR prompt searches the whole doc for owner-operator
+  names; the policyholder baseline treats a carrier found elsewhere on the cert as `uncertain`.
+  Pipeline body moved to `lib/extraction.ts`; `/admin/[id]` exports `maxDuration = 300`.
+- **Invites:** admin Invite User modal on /admin/users (`inviteUser` + copy-able one-time link);
+  customer self-invite on /app/settings (own org only). Auth emails are branded
+  (`supabase/email-templates/`).
+- **Monorepo:** the marketing site moved into `website/` (Vercel `fordra-coi-website` project:
+  production branch `main`, root directory `website/`). Redundant Vercel project `fordra` and
+  the stray `SUPABASE_SECRET_KEY` env var were deleted.
+- **Known-bug checklist:** `.claude/skills/fordra-repeat-bugs/SKILL.md` — consult before
+  debugging auth/empty-page/extraction issues; append new recurring bugs there.
+
 ## Deferred (not built yet)
 
-- **Custom SMTP** (unblocks non-owner magic-link login) — highest priority for real customer testing.
 - **Google OAuth** (magic-link-only for now).
 - **Phase B**: rate-con inference extractor (stated + inferred requirements with explanations),
   Middesk-shaped `review_tasks`/`requirements_normalized` in the real pipeline (the pilot reuses
@@ -199,14 +225,12 @@ Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Verc
 - **Azure Document Intelligence** as a swappable stage-1 OCR layer (`Extractor` interface) — Phase C.
 - **Self-serve webhook registration** (`POST /v1/webhooks`); webhook **retries/backoff**.
 - **Document reuse** across verifications (deliberately removed; each submission is self-contained).
-- On **Vercel**, the admin Run-extraction action needs a route with raised `maxDuration` (Claude
-  vision is slow).
 
 ---
 
 ## Working conventions
 
-- **Design system:** the Krida-inspired system documented in `../fordra-coi-website/HANDOFF.md`
+- **Design system:** the Krida-inspired system documented in `website/HANDOFF.md`
   §3–§5 is canonical for both repos (cream paper / near-black ink / electric lime accent,
   Newsreader + Hanken Grotesk + JetBrains Mono, pill buttons, soft rounded cards, mono eyebrows).
   The app mirrors it in `lib/theme.ts` (`C`); UI uses inline styles with that palette. No Tailwind
