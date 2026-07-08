@@ -56,8 +56,7 @@ interface SessionState {
 // One thing at a time: the greeting only asks for the COI; the flow asks for
 // each remaining item in its own message as slots fill.
 const HELP =
-  'Hi! I create insurance verification requests for Fordra. ' +
-  'To get started, please upload the carrier\'s COI (PDF or image).'
+  'Hey there, let\'s start a new verification. Please upload the carrier\'s COI (pdf or image).'
 
 /** Handle one DM message event end to end (called after the HTTP ack). */
 export async function handleIntakeMessage(install: Installation, ev: SlackMessageEvent) {
@@ -167,21 +166,15 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     return
   }
   if (!state.carrier_name) {
-    const names = state.files.map(f => `"${f.file_name}"`).join(', ')
-    await say(`Got ${names}. What is the carrier\'s name?`)
+    await say('Received. What is the legal name of this carrier?')
     return
   }
   if (!nowHasReqs) {
-    await say('Thanks. Now send the insurance requirements. Paste them as text or attach the requirements document (a rate confirmation with the insurance section works too).')
+    await say('Got it. What insurance coverage do you require? (write out an explanation in your reply OR upload a document with your insurance standards)')
     return
   }
   if (!isSubmitWord(lower)) {
-    const extras = state.files.filter(f => f.kind !== 'coi').map(f => f.file_name)
-    await say(
-      `I have everything I need for *${state.carrier_name}*` +
-      (extras.length ? ` (extra docs: ${extras.join(', ')})` : '') +
-      '. Attach a rate confirmation if you have one, or reply *done* to submit.',
-    )
+    await say('Great. Final step, attach a rate confirmation sheet if you have one OR reply *done* to finalize this verification.')
     return
   }
 
