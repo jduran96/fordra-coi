@@ -4,6 +4,8 @@ import { C } from '@/lib/theme'
 
 export const dynamic = 'force-dynamic'
 
+export const metadata = { title: 'Fordra | App' }
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await getProfile()
   return (

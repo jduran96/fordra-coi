@@ -4,6 +4,8 @@ import { C } from '@/lib/theme'
 
 export const dynamic = 'force-dynamic'
 
+export const metadata = { title: 'Fordra | Admin' }
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdmin()
   return (

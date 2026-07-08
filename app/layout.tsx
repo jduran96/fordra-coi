@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Fordra — COI Verification',
+  title: 'Fordra',
   description: 'Insurance verification, handled.',
 };
 
