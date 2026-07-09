@@ -4,6 +4,7 @@ import { C } from '@/lib/theme'
 import EditUserModal from './EditUserModal'
 import InviteUserModal from './InviteUserModal'
 import CreateOrgModal from './CreateOrgModal'
+import OrgsTable from './OrgsTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,8 +20,15 @@ export default async function UsersPage() {
     .order('created_at', { ascending: true })
   const { data: orgs } = await svc.from('orgs').select('id, name').order('name')
   const { data: authData } = await svc.auth.admin.listUsers()
+  const { data: verifOrgs } = await svc.from('verifications').select('org_id')
 
   const rows = (profiles ?? []) as unknown as Prof[]
+  const orgRows = (orgs ?? []).map(o => ({
+    id: o.id,
+    name: o.name,
+    members: rows.filter(p => p.org_id === o.id).length,
+    verifications: (verifOrgs ?? []).filter(v => v.org_id === o.id).length,
+  }))
   const lastSeen = new Map<string, string | null>()
   for (const u of authData?.users ?? []) lastSeen.set(u.id, u.last_sign_in_at ?? null)
   const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : '—')
@@ -60,6 +68,13 @@ export default async function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      <h2 style={{ fontFamily: C.serif, fontSize: 20, fontWeight: 400, margin: '28px 0 12px' }}>Organizations</h2>
+      <OrgsTable orgs={orgRows} />
+      <p style={{ color: C.txt3, fontSize: 12, marginTop: 10 }}>
+        Edit a name and Save to rename. An org can only be deleted once it has no members and no
+        verifications; use New Org above to create one.
+      </p>
     </div>
   )
 }

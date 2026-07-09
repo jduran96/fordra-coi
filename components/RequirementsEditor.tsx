@@ -42,13 +42,15 @@ function smartLimitInput(raw: string): string {
 /** Shared empty height for every grid field: 10px padding x2 + 19px line + 3px borders. */
 const FIELD_H = 42
 
-export default function RequirementsEditor({ rows, onChange, minRows = 0, reorderable = true }: {
+export default function RequirementsEditor({ rows, onChange, minRows = 0, reorderable = true, titlePlaceholder = 'e.g. General Liability' }: {
   rows: Requirement[]
   onChange: (next: Requirement[]) => void
   /** Rows cannot be removed below this count. */
   minRows?: number
   /** false: hide the move arrows (per-deal editing on /app/new), keep remove. */
   reorderable?: boolean
+  /** Placeholder for the Title cell of limit/variable rows (conditions keep their own). */
+  titlePlaceholder?: string
 }) {
   // Coverage and notes wrap onto extra lines; Type is just wide enough for
   // "Condition"; the trailing column holds ↑ ↓ × (settings) or just × (per-deal).
@@ -98,7 +100,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
             <AutoGrowTextarea
               value={row.coverage_type}
               onChange={v => updateRow(i, { coverage_type: v })}
-              placeholder={kind === 'condition' ? 'e.g. Loss Payee' : 'e.g. General Liability'}
+              placeholder={kind === 'condition' ? 'e.g. Loss Payee' : titlePlaceholder}
               style={inputS}
             />
             <select value={kind} onChange={e => setKind(i, e.target.value as 'limit' | 'condition' | 'variable')}

@@ -14,6 +14,7 @@ interface Row {
   source: string
   created_at: string
   published_at: string | null
+  case_status: string | null
   coi_extracted: unknown
   call_notes: unknown
   manual_notes: string | null
@@ -30,13 +31,16 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, orgs(name)')
+    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
   const all = (data ?? []) as unknown as Row[]
-  const open = all.filter(r => !r.published_at)
-  const completed = all.filter(r => !!r.published_at)
+  // Rejected requests are done from the admin's perspective even though
+  // nothing was published — they live in Completed, not the review queue.
+  const done = (r: Row) => !!r.published_at || r.case_status === 'rejected'
+  const open = all.filter(r => !done(r))
+  const completed = all.filter(done)
 
   return (
     <div>

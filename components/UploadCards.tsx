@@ -104,7 +104,7 @@ export function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }:
       padding: 16, background: C.surface,
       display: 'flex', flexDirection: 'column' as const, gap: 12,
     }}>
-      <RequirementsEditor rows={rows} onChange={onChange} minRows={1} reorderable={false} />
+      <RequirementsEditor rows={rows} onChange={onChange} minRows={1} reorderable={false} titlePlaceholder="e.g. Cargo" />
 
       <div style={{ marginTop: 4 }}>
         <span style={{

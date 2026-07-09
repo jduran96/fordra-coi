@@ -93,11 +93,15 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   }
 
   const narrative_summary = String(formData.get('narrative_summary') || '').trim()
-  const publish = String(formData.get('intent') || '') === 'publish'
+  const intent = String(formData.get('intent') || '')
+  const publish = intent === 'publish'
+  // Reject: the request is closed without a customer-facing report. The draft
+  // still saves, and a later Save draft or Publish un-rejects it.
+  const reject = intent === 'reject'
 
   const update: Record<string, unknown> = {
     final_report: { ...report, narrative_summary },
-    case_status: 'report_ready',
+    case_status: reject ? 'rejected' : 'report_ready',
   }
   if (publish) {
     update.status = 'completed'
@@ -118,6 +122,10 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     revalidatePath('/admin')
     redirect('/admin')
   }
+  if (reject) {
+    revalidatePath('/admin')
+    redirect('/admin')
+  }
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -135,6 +143,58 @@ export async function createOrg(_prev: CreateOrgState, formData: FormData): Prom
   if (existing) return { error: 'An org with that name already exists.' }
 
   const { error } = await supabase.from('orgs').insert({ name })
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
+}
+
+export interface OrgActionState { ok?: boolean; error?: string }
+
+/** Rename an org. Same duplicate guard as createOrg. */
+export async function renameOrg(_prev: OrgActionState, formData: FormData): Promise<OrgActionState> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const orgId = String(formData.get('org_id') || '')
+  const name = String(formData.get('name') || '').trim()
+  if (!orgId) return { error: 'Pick an org.' }
+  if (!name) return { error: 'Enter an org name.' }
+
+  const { data: existing } = await supabase
+    .from('orgs').select('id').ilike('name', name).neq('id', orgId).maybeSingle()
+  if (existing) return { error: 'An org with that name already exists.' }
+
+  const { error } = await supabase.from('orgs').update({ name }).eq('id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
+}
+
+/**
+ * Delete an org. Guarded: refuses while the org still has members or
+ * verifications, so history can never disappear by accident. Slack
+ * installations (no FK cascade) are removed with the org; api_keys,
+ * webhooks, events, and templates cascade in the schema.
+ */
+export async function deleteOrg(_prev: OrgActionState, formData: FormData): Promise<OrgActionState> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const orgId = String(formData.get('org_id') || '')
+  if (!orgId) return { error: 'Pick an org.' }
+
+  const [{ count: members }, { count: verifications }] = await Promise.all([
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
+    supabase.from('verifications').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
+  ])
+  if (members) return { error: `This org still has ${members} member${members === 1 ? '' : 's'}. Reassign or delete them first.` }
+  if (verifications) return { error: `This org still has ${verifications} verification${verifications === 1 ? '' : 's'}. Delete them first.` }
+
+  const { error: serr } = await supabase.from('slack_installations').delete().eq('org_id', orgId)
+  if (serr) return { error: serr.message }
+  const { error } = await supabase.from('orgs').delete().eq('id', orgId)
   if (error) return { error: error.message }
 
   revalidatePath('/admin/users')

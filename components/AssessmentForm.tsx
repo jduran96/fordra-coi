@@ -87,6 +87,10 @@ export default function AssessmentForm({
       </div>
       <div style={{ display: 'flex', gap: 10 }}>
         <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
+        <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
+          style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
+          Reject
+        </PendingButton>
         <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
           {published ? 'Republish to customer' : 'Publish to customer'}
         </PendingButton>

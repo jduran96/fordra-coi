@@ -187,6 +187,47 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   )
 }
 
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="3" />
+      {off && <line x1="4" y1="4" x2="20" y2="20" />}
+    </svg>
+  )
+}
+
+function PasswordInput({ value, onChange, placeholder }: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+}) {
+  const [show, setShow] = useState(false)
+  return (
+    <div style={{ position: 'relative', maxWidth: 220, flex: '1 1 180px' }}>
+      <input
+        type={show ? 'text' : 'password'} value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder} autoComplete="new-password"
+        style={{ ...inputS, width: '100%', boxSizing: 'border-box', paddingRight: 38 }}
+      />
+      <button
+        type="button" onClick={() => setShow(s => !s)}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        title={show ? 'Hide password' : 'Show password'}
+        style={{
+          position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 28, height: 28, padding: 0, border: 'none', borderRadius: 6,
+          background: 'transparent', color: C.txt3, cursor: 'pointer',
+        }}
+      >
+        <EyeIcon off={show} />
+      </button>
+    </div>
+  )
+}
+
 function PasswordSection() {
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -218,16 +259,8 @@ function PasswordSection() {
           sign in with an email link and set a new one here.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input
-            type="password" value={pw} onChange={e => setPw(e.target.value)}
-            placeholder="New password" autoComplete="new-password"
-            style={{ ...inputS, maxWidth: 220 }}
-          />
-          <input
-            type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
-            placeholder="Confirm password" autoComplete="new-password"
-            style={{ ...inputS, maxWidth: 220 }}
-          />
+          <PasswordInput value={pw} onChange={setPw} placeholder="New password" />
+          <PasswordInput value={confirm} onChange={setConfirm} placeholder="Confirm password" />
           <button type="button" onClick={save} disabled={!pw || !confirm || pending}
             style={pillS(true, !pw || !confirm || pending)}>
             {pending ? 'Saving…' : 'Save password'}

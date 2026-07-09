@@ -5,37 +5,26 @@
 
 ---
 
-## ⚠️ PENDING TESTS — Slack + auth/login (updated 2026-07-09)
+## ⚠️ PENDING — reject feature + polish batch (updated 2026-07-09)
 
-All 2026-07-08 UI cases are done: standards/new-verification UI, template extras, org/user
-modals, email templates, admin review without global baseline, and the standards-editor prod
-smoke test all passed by 2026-07-09 evening. Remaining before design partners onboard:
+All previously pending tests passed by 2026-07-09: Slack intake against prod (happy path,
+variants, adversarial cases), auth/login flows (Gmail invite, magic links, org-less screen),
+and the polish batch. Test data for the Fordra Testing org was identified for cleanup.
+Remaining:
 
-1. **Slack intake, against prod** (walkthrough: `Slack/README.md`):
-   - Generate an install link from `/admin/slack` for a test org and install into a personal
-     workspace. Also try an expired/tampered link (must be rejected).
-   - Happy path DM: COI upload → carrier name → requirements as pasted text → `done` → shows
-     as New in `/admin` under the right org and in that org's portal history.
-   - Variants: requirements as a file; rate confirmation attached up front; **template by name
-     with variable collection** (interacts with the reworked templates code); `cancel` mid-flow
-     then restart. Read the bot copy end to end (tone, typos, no em dashes).
-   - Adversarial: non-whitelisted user gets the reply with their Slack ID; revoke from
-     `/admin/slack` kills the bot instantly. Watch for duplicate verifications (dedup via
-     `slack_events_seen`).
-2. **Auth/login:**
-   - Fresh admin-invite flow end to end, opening the email **in Gmail** (repeat-bugs #1/#9
-     territory). Also a customer self-invite from `/app/settings` Team.
-   - Magic-link login at `/login` (customer) and `/admin/login` (admin) on prod; an org-less
-     user sees the "contact admin (727) 729-9594" screen, not an error.
-3. **Quick check of the 2026-07-09 polish batch** (this deploy): manual-entry row heights on
-   `/app/new`; no Condition chip on customer results; "Used template: X" / "Entered manually"
-   provenance in What you submitted; admin "Log a call" pop-up saves into the notes table.
+1. **Run `npm run db:migrate`** — migration `0015` adds the `rejected` value to the
+   `case_status` enum (needed by the new admin Reject button; rejecting before the migration
+   will error).
+2. **Clean Fordra Testing test data** — run `node scripts/cleanup-fordra-testing.mjs`
+   (one-off; delete it after). Removes that org's 3 verifications, their documents rows +
+   storage objects, and 2 orphaned `slack-intake/...` temp objects. Users and orgs untouched.
+3. **Smoke-test the 2026-07-09 second batch after deploy:** password show/hide eye on
+   `/app/settings`; "e.g. Cargo" placeholder in `/app/new` manual entry; org
+   rename/create/delete table on `/admin/users` (delete refuses while an org has members or
+   verifications); admin Reject button (moves the request to the Completed queue with a red
+   Rejected pill; Save draft or Publish un-rejects).
 
-One cross-surface pass: one Slack-originated and one web-originated verification through
-review → extraction → publish → identical rendering on the portal.
-
-Clean up any test rows/users/storage afterwards, including `slack-intake/...` temp objects and
-intake sessions (or ask the agent to). Delete this section when done.
+Delete this section when done.
 
 ---
 
@@ -189,7 +178,9 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
 - **`/admin`** (review console): queue lists ALL verifications across orgs (source of truth):
   awaiting-review section + completed section. Admin-facing status is derived, not stored
   (`lib/admin-status.ts`): **New** (no admin action) → **In Progress** (extraction/notes/draft
-  exist) → **Complete** (published). Detail page stacks vertically: **Uploads** (signed URLs) →
+  exist) → **Complete** (published), plus **Rejected** (`case_status = 'rejected'`, set by the
+  Assessment Reject button; closes the request into the Completed queue without publishing —
+  the customer keeps seeing `pending`. Save draft or Publish un-rejects). Detail page stacks vertically: **Uploads** (signed URLs) →
   **OCR Analysis** (Run extraction; insurer-contact card + raw JSON) → **Verification call notes**
   (`call_notes` is an append-only jsonb array of `{at, text}`; insurer contact saved alongside) →
   **Assessment** (per-requirement verdict Passed/Discrepancy/Unconfirmed + evidence + summary;
