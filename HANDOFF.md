@@ -12,13 +12,10 @@ variants, adversarial cases), auth/login flows (Gmail invite, magic links, org-l
 and the polish batch. Test data for the Fordra Testing org was identified for cleanup.
 Remaining:
 
-1. **Run `npm run db:migrate`** — migration `0015` adds the `rejected` value to the
-   `case_status` enum (needed by the new admin Reject button; rejecting before the migration
-   will error).
-2. **Clean Fordra Testing test data** — run `node scripts/cleanup-fordra-testing.mjs`
-   (one-off; delete it after). Removes that org's 3 verifications, their documents rows +
-   storage objects, and 2 orphaned `slack-intake/...` temp objects. Users and orgs untouched.
-3. **Smoke-test the 2026-07-09 second batch after deploy:** password show/hide eye on
+Migration `0015` (rejected enum) is applied and the Fordra Testing test data is cleaned
+(2026-07-09). Remaining:
+
+1. **Smoke-test the 2026-07-09 second batch after deploy:** password show/hide eye on
    `/app/settings`; "e.g. Cargo" placeholder in `/app/new` manual entry; org
    rename/create/delete table on `/admin/users` (delete refuses while an org has members or
    verifications); admin Reject button (moves the request to the Completed queue with a red
