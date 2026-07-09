@@ -7,7 +7,8 @@ import { C } from '@/lib/theme'
 /**
  * "Edit User" button + modal: assign a registered user to an org, or delete
  * the account. Admin accounts can never be deleted here (the server action
- * enforces it too).
+ * enforces it too). The dialog is remounted (key) on every open so a stale
+ * ok-state from a previous save can't instantly re-close it.
  */
 export default function EditUserModal({
   users,
@@ -17,6 +18,21 @@ export default function EditUserModal({
   orgs: { id: string; name: string }[]
 }) {
   const [open, setOpen] = useState(false)
+  const [session, setSession] = useState(0)
+
+  return (
+    <>
+      <button onClick={() => { setSession(s => s + 1); setOpen(true) }} style={primaryBtn}>Edit User</button>
+      {open && <EditUserDialog key={session} users={users} orgs={orgs} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function EditUserDialog({ users, orgs, onClose }: {
+  users: { id: string; email: string; isAdmin: boolean }[]
+  orgs: { id: string; name: string }[]
+  onClose: () => void
+}) {
   const [selectedId, setSelectedId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [state, formAction, pending] = useActionState<GrantState, FormData>(grantAccess, {})
@@ -25,98 +41,89 @@ export default function EditUserModal({
   const selected = users.find(u => u.id === selectedId)
 
   // Close the modal once a save or delete succeeds (the table revalidates behind it).
-  useEffect(() => { if (state.ok || delState.ok) setOpen(false) }, [state.ok, delState.ok])
+  useEffect(() => { if (state.ok || delState.ok) onClose() }, [state.ok, delState.ok, onClose])
 
-  // Close on Escape; reset transient state whenever the modal opens.
   useEffect(() => {
-    if (!open) return
-    setConfirmDelete(false)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [onClose])
 
   return (
-    <>
-      <button onClick={() => setOpen(true)} style={primaryBtn}>Edit User</button>
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={overlay}>
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>Edit user</h2>
+          <button onClick={onClose} aria-label="Close" style={closeBtn}>×</button>
+        </div>
+        <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: '0 0 20px' }}>
+          Assign a registered user to an organization, or delete the account.
+        </p>
 
-      {open && (
-        <div onClick={e => { if (e.target === e.currentTarget) setOpen(false) }} style={overlay}>
-          <div style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>Edit user</h2>
-              <button onClick={() => setOpen(false)} aria-label="Close" style={closeBtn}>×</button>
-            </div>
-            <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: '0 0 20px' }}>
-              Assign a registered user to an organization, or delete the account.
-            </p>
+        <form action={formAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <label style={lbl}>User
+            <select
+              name="profile_id" required value={selectedId}
+              onChange={e => { setSelectedId(e.target.value); setConfirmDelete(false) }}
+              style={input}
+            >
+              <option value="" disabled>Select a user…</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
+            </select>
+          </label>
+          <label style={lbl}>Org
+            <select name="org_id" required defaultValue="" style={input}>
+              <option value="" disabled>Select an org…</option>
+              {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
 
-            <form action={formAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={lbl}>User
-                <select
-                  name="profile_id" required value={selectedId}
-                  onChange={e => { setSelectedId(e.target.value); setConfirmDelete(false) }}
-                  style={input}
-                >
-                  <option value="" disabled>Select a user…</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
-                </select>
-              </label>
-              <label style={lbl}>Org
-                <select name="org_id" required defaultValue="" style={input}>
-                  <option value="" disabled>Select an org…</option>
-                  {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
-              </label>
+          {state.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{state.error}</p>}
 
-              {state.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{state.error}</p>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button type="submit" disabled={pending} style={{ ...primaryBtn, opacity: pending ? 0.6 : 1 }}>
+              {pending ? 'Saving…' : 'Save'}
+            </button>
+            <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+          </div>
+        </form>
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button type="submit" disabled={pending} style={{ ...primaryBtn, opacity: pending ? 0.6 : 1 }}>
-                  {pending ? 'Saving…' : 'Save'}
-                </button>
-                <button type="button" onClick={() => setOpen(false)} style={ghostBtn}>Cancel</button>
-              </div>
-            </form>
-
-            {/* Delete: only for a selected, non-admin user; two clicks to confirm. */}
-            {selected && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
-                {selected.isAdmin ? (
-                  <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-                    Admin accounts cannot be deleted.
-                  </p>
+        {/* Delete: only for a selected, non-admin user; two clicks to confirm. */}
+        {selected && (
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+            {selected.isAdmin ? (
+              <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+                Admin accounts cannot be deleted.
+              </p>
+            ) : (
+              <form action={delAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <input type="hidden" name="profile_id" value={selected.id} />
+                {delState.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{delState.error}</p>}
+                {confirmDelete ? (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <button type="submit" disabled={delPending} style={{ ...dangerBtn, opacity: delPending ? 0.6 : 1 }}>
+                      {delPending ? 'Deleting…' : `Yes, delete ${selected.email}`}
+                    </button>
+                    <button type="button" onClick={() => setConfirmDelete(false)} style={ghostBtn}>Keep user</button>
+                  </div>
                 ) : (
-                  <form action={delAction} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <input type="hidden" name="profile_id" value={selected.id} />
-                    {delState.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{delState.error}</p>}
-                    {confirmDelete ? (
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <button type="submit" disabled={delPending} style={{ ...dangerBtn, opacity: delPending ? 0.6 : 1 }}>
-                          {delPending ? 'Deleting…' : `Yes, delete ${selected.email}`}
-                        </button>
-                        <button type="button" onClick={() => setConfirmDelete(false)} style={ghostBtn}>Keep user</button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete(true)}
-                        style={{ ...ghostBtn, color: C.error, alignSelf: 'flex-start' }}
-                      >
-                        Delete user…
-                      </button>
-                    )}
-                    <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-                      Removes their sign-in and profile. The org&apos;s verifications are kept.
-                    </p>
-                  </form>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    style={{ ...ghostBtn, color: C.error, alignSelf: 'flex-start' }}
+                  >
+                    Delete user…
+                  </button>
                 )}
-              </div>
+                <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+                  Removes their sign-in and profile. The org&apos;s verifications are kept.
+                </p>
+              </form>
             )}
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </div>
+    </div>
   )
 }
 

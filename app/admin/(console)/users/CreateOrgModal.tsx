@@ -4,62 +4,70 @@ import { useState, useEffect, useActionState } from 'react'
 import { createOrg, type CreateOrgState } from '../actions'
 import { C } from '@/lib/theme'
 
-/** "New Org" button + modal: create a customer org, then invite users into it. */
+/**
+ * "New Org" button + modal: create a customer org, then invite users into it.
+ * The dialog is remounted (key) on every open so a previous creation's
+ * success screen never masks the blank form.
+ */
 export default function CreateOrgModal() {
   const [open, setOpen] = useState(false)
-  const [state, formAction, pending] = useActionState<CreateOrgState, FormData>(createOrg, {})
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+  const [session, setSession] = useState(0)
 
   return (
     <>
-      <button onClick={() => setOpen(true)} style={ghostBtn}>New Org</button>
-
-      {open && (
-        <div onClick={e => { if (e.target === e.currentTarget) setOpen(false) }} style={overlay}>
-          <div style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>New org</h2>
-              <button onClick={() => setOpen(false)} aria-label="Close" style={closeBtn}>×</button>
-            </div>
-
-            {state.ok ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: 0 }}>
-                  Org created. Use Invite User to add its first member.
-                </p>
-                <button type="button" onClick={() => setOpen(false)} style={{ ...primaryBtn, alignSelf: 'flex-start' }}>Done</button>
-              </div>
-            ) : (
-              <>
-                <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: '0 0 20px' }}>
-                  Create a customer organization. You can invite members right after.
-                </p>
-                <form action={formAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <label style={lbl}>Org name
-                    <input name="name" required placeholder="e.g. Dakota Financial" style={input} />
-                  </label>
-
-                  {state.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{state.error}</p>}
-
-                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                    <button type="submit" disabled={pending} style={{ ...primaryBtn, opacity: pending ? 0.6 : 1 }}>
-                      {pending ? 'Creating…' : 'Create org'}
-                    </button>
-                    <button type="button" onClick={() => setOpen(false)} style={ghostBtn}>Cancel</button>
-                  </div>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <button onClick={() => { setSession(s => s + 1); setOpen(true) }} style={ghostBtn}>New Org</button>
+      {open && <CreateOrgDialog key={session} onClose={() => setOpen(false)} />}
     </>
+  )
+}
+
+function CreateOrgDialog({ onClose }: { onClose: () => void }) {
+  const [state, formAction, pending] = useActionState<CreateOrgState, FormData>(createOrg, {})
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={overlay}>
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>New org</h2>
+          <button onClick={onClose} aria-label="Close" style={closeBtn}>×</button>
+        </div>
+
+        {state.ok ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: 0 }}>
+              Org created. Use Invite User to add its first member.
+            </p>
+            <button type="button" onClick={onClose} style={{ ...primaryBtn, alignSelf: 'flex-start' }}>Done</button>
+          </div>
+        ) : (
+          <>
+            <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: '0 0 20px' }}>
+              Create a customer organization. You can invite members right after.
+            </p>
+            <form action={formAction} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <label style={lbl}>Org name
+                <input name="name" required placeholder="e.g. Dakota Financial" style={input} />
+              </label>
+
+              {state.error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{state.error}</p>}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button type="submit" disabled={pending} style={{ ...primaryBtn, opacity: pending ? 0.6 : 1 }}>
+                  {pending ? 'Creating…' : 'Create org'}
+                </button>
+                <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
