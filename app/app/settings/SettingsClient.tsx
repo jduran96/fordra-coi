@@ -5,6 +5,7 @@ import type { Requirement } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import RequirementsEditor, { BLANK_REQUIREMENT } from '@/components/RequirementsEditor'
+import { createClient } from '@/lib/supabase/client'
 import { saveTemplate, deleteTemplate, inviteTeammate } from './actions'
 
 interface Member { id: string; email: string; full_name: string | null }
@@ -155,8 +156,62 @@ export default function SettingsClient({ templates, starterRows, members, selfId
         )}
       </section>
 
+      <PasswordSection />
       <TeamSection members={members} selfId={selfId} />
     </div>
+  )
+}
+
+function PasswordSection() {
+  const [pw, setPw] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [msg, setMsg] = useState<{ ok?: string; error?: string }>({})
+  const [pending, setPending] = useState(false)
+
+  async function save() {
+    setMsg({})
+    if (pw.length < 8) return setMsg({ error: 'Use at least 8 characters.' })
+    if (pw !== confirm) return setMsg({ error: 'The passwords do not match.' })
+    setPending(true)
+    try {
+      const { error } = await createClient().auth.updateUser({ password: pw })
+      if (error) setMsg({ error: error.message })
+      else { setMsg({ ok: 'Password saved. You can now sign in with it.' }); setPw(''); setConfirm('') }
+    } catch {
+      setMsg({ error: 'Something went wrong. Try again.' })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <section>
+      <span style={labelS}>Password</span>
+      <div style={{ ...cardS, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ fontSize: 13, color: C.txt2, fontFamily: C.sans, margin: 0, lineHeight: 1.6 }}>
+          Set a password to sign in without waiting for an email link. If you ever forget it,
+          sign in with an email link and set a new one here.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input
+            type="password" value={pw} onChange={e => setPw(e.target.value)}
+            placeholder="New password" autoComplete="new-password"
+            style={{ ...inputS, maxWidth: 220 }}
+          />
+          <input
+            type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+            placeholder="Confirm password" autoComplete="new-password"
+            style={{ ...inputS, maxWidth: 220 }}
+          />
+          <button type="button" onClick={save} disabled={!pw || !confirm || pending}
+            style={pillS(true, !pw || !confirm || pending)}>
+            {pending ? 'Saving…' : 'Save password'}
+          </button>
+        </div>
+        {msg.error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{msg.error}</p>}
+        {msg.ok && <p style={{ fontSize: 13, color: C.success, fontFamily: C.sans, margin: 0 }}>{msg.ok}</p>}
+      </div>
+    </section>
   )
 }
 
