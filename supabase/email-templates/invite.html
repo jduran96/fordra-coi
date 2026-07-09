@@ -1,45 +1,43 @@
 <!-- Supabase Auth email template: Invite user.
-     Paste into Dashboard -> Authentication -> Emails -> Invite user.
+     Paste into Dashboard -> Authentication -> Emails -> Invite user, then Save
+     ON THAT TAB and reload to confirm it stuck.
      Sent by auth.admin.inviteUserByEmail (admin invite on /admin/users and
-     org self-invite on /app/settings). Same design as magic-link.html. -->
+     org self-invite on /app/settings). Same design + hardening notes as
+     magic-link.html: no quoted font names, sizing on the td, short lines. -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf9f5;padding:40px 16px;">
   <tr>
     <td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5e4e0;border-radius:16px;">
         <tr>
           <td style="padding:40px 40px 36px;">
-            <p style="margin:0 0 28px;font-family:Georgia,'Times New Roman',serif;font-size:26px;letter-spacing:-0.5px;color:#141413;">Fordra</p>
-            <p style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:normal;color:#141413;">Use Fordra to Verify Insurance</p>
-            <p style="margin:0 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#57544e;">
+            <p style="margin:0 0 28px;font-family:Georgia,serif;font-size:26px;color:#141413;">Fordra</p>
+            <p style="margin:0 0 8px;font-family:Georgia,serif;font-size:22px;color:#141413;">Use Fordra to Verify Insurance</p>
+            <p style="margin:0 0 28px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#57544e;">
               Join your organization by clicking on the invite link below. This link expires in 1
               hour and can only be used once.
             </p>
-            <!-- Bulletproof button: padding lives on the td (Gmail drops the whole
-                 style attribute of an element when it dislikes one property, so the
-                 anchor keeps only simple, universally supported styles). -->
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td align="center" bgcolor="#d4fd8e" style="background-color:#d4fd8e;border-radius:9999px;padding:13px 28px;">
-                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite" target="_blank"
-                     style="display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;font-weight:bold;line-height:15px;color:#141413;text-decoration:none;">Accept invitation&nbsp;&nbsp;&rarr;</a>
+                <td align="center" bgcolor="#d4fd8e" style="border-radius:9999px;padding:13px 28px;">
+                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite" target="_blank" style="display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;line-height:15px;color:#141413;text-decoration:none;">Accept invitation&nbsp;&nbsp;&rarr;</a>
                 </td>
               </tr>
             </table>
-            <p style="margin:28px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#7e7e7e;">
+            <p style="margin:28px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#7e7e7e;">
               If the button above does not work, use this link instead:<br>
-              <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite" style="color:#141413 !important;word-break:break-all;">{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite</a>
+              <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite" style="color:#141413;word-break:break-all;">{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite</a>
             </p>
           </td>
         </tr>
         <tr>
           <td style="padding:18px 40px;border-top:1px solid #e5e4e0;">
-            <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#7e7e7e;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#7e7e7e;">
               Fordra &copy; 2026
             </p>
           </td>
         </tr>
       </table>
-      <p style="margin:20px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#a6a4a0;">
+      <p style="margin:20px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#a6a4a0;">
         If you were not expecting this invitation, you can safely ignore it.
       </p>
     </td>
