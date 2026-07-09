@@ -50,7 +50,9 @@ export default async function UsersPage() {
             {rows.map(p => (
               <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={td()}>{p.email}</td>
-                <td style={{ ...td(), textTransform: 'capitalize' }}>{p.role}</td>
+                {/* Real admin access is the ADMIN_EMAIL allowlist, not profiles.role
+                    (which nothing ever promotes) — display the same truth auth uses. */}
+                <td style={{ ...td(), textTransform: 'capitalize' }}>{isAdminEmail(p.email) ? 'admin' : 'customer'}</td>
                 <td style={{ ...td(), color: p.org_id ? C.txt : C.txt3 }}>{p.orgs?.name ?? 'unassigned'}</td>
                 <td style={{ ...td(), color: C.txt3 }}>{fmt(lastSeen.get(p.id))}</td>
               </tr>

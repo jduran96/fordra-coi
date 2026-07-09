@@ -174,7 +174,9 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     } else if (hasCoi && state.carrier_name && t && missingVars(t).length > 0) {
       state.template_vars = { ...(state.template_vars ?? {}), [missingVars(t)[0].key]: text }
     } else if (hasCoi && state.carrier_name && !hasReqs) {
-      const match = templates.find(x => x.name.trim().toLowerCase() === lower)
+      // Tolerate a copied *bold* name keeping its mrkdwn asterisks.
+      const replyName = lower.replace(/^\*+|\*+$/g, '').trim()
+      const match = templates.find(x => x.name.trim().toLowerCase() === replyName)
       if (match) {
         state.template_id = match.id
         state.template_vars = {}
@@ -204,8 +206,8 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     if (templates.length > 0) {
       const names = templates.map(t => `*${t.name}*${t.is_default ? ' (default)' : ''}`).join(', ')
       await say(
-        `Got it. Which insurance standard applies? Reply with one of your saved standards: ${names}. ` +
-        'Or write out your requirements, or upload a document with them.',
+        `Got it. Which of your saved insurance standards do you want to use? ${names}. ` +
+        'Copy ONE in your reply OR share new, custom standards.',
       )
     } else {
       await say('Got it. What insurance coverage do you require? (write out an explanation in your reply OR upload a document with your insurance standards)')
@@ -216,7 +218,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     const t = selectedTemplate()
     if (t && missingVars(t).length > 0) {
       const v = missingVars(t)[0]
-      await say(`Using *${t.name}*. What is the ${v.label.toLowerCase()} for this deal?`)
+      await say(`Using insurance standard: *${t.name}*. What is the ${v.label.toLowerCase()} for this deal?`)
       return
     }
   }
@@ -241,7 +243,9 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       })
       requirements = [{ type: 'text', value: resolved.text }, { type: 'template', ...resolved.provenance }]
     } catch (e) {
-      await say(`I could not apply *${finalTemplate.name}*: ${e instanceof Error ? e.message : 'unknown error'}. Reply "cancel" to start over.`)
+      // Error detail stays in server logs; the user just needs a way out.
+      console.error('slack intake: could not apply template', finalTemplate.id, e)
+      await say('An error occurred while trying to apply that insurance standard. Reply "cancel" to start over.')
       return
     }
   }

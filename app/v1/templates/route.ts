@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       is_default: t.is_default,
       requirements: t.requirements,
       variables: t.variables,
+      details: t.details ?? null,
     })),
   })
 }

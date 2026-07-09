@@ -5,9 +5,7 @@ import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CONFIG_KEYS, setConfig, deleteConfig } from '@/lib/config'
 import type { Requirement } from '@/lib/types'
-import { requirementKind } from '@/lib/types'
-import type { TemplateVariable } from '@/lib/templates'
-import { templateTokens } from '@/lib/templates'
+import { normalizeRequirementRows } from '@/lib/templates'
 
 const PROMPT_KEYS: Record<string, string> = {
   coi: CONFIG_KEYS.promptCoiExtraction,
@@ -29,20 +27,6 @@ export async function savePrompt(which: string, formData: FormData) {
 
 export interface OrgTemplateState { ok?: boolean; error?: string }
 
-function humanize(key: string): string {
-  const label = key.replaceAll('_', ' ').trim()
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
-
-function deriveVariables(requirements: Requirement[]): TemplateVariable[] {
-  return templateTokens({ requirements }).filter(key => key !== 'carrier_name').map(key => ({
-    key,
-    label: humanize(key),
-    type: /price|amount|limit|value/.test(key) ? 'currency' : 'text',
-    required: true,
-  }))
-}
-
 /**
  * Create or update an insurance-standards template on behalf of an org.
  * It appears on that org's /app Settings page, where they can edit it further.
@@ -57,24 +41,16 @@ export async function saveOrgTemplate(_prev: OrgTemplateState, formData: FormDat
   if (!orgId) return { error: 'Pick an org.' }
   if (!name) return { error: 'Give the standard a name.' }
 
-  let requirements: Requirement[]
+  let rawRows: Requirement[]
   try {
-    requirements = JSON.parse(String(formData.get('rows') || '[]'))
+    rawRows = JSON.parse(String(formData.get('rows') || '[]'))
   } catch {
     return { error: 'Could not read the requirement rows.' }
   }
-  requirements = requirements
-    .map(r => {
-      const kind = requirementKind(r)
-      return {
-        coverage_type: (r.coverage_type ?? '').trim(),
-        minimum_limit: kind === 'condition' ? '' : (r.minimum_limit ?? '').trim(),
-        notes: (r.notes ?? '').trim() || null,
-        kind,
-      }
-    })
-    .filter(r => r.coverage_type)
+  const { requirements, variables, error: rowsError } = normalizeRequirementRows(rawRows)
+  if (rowsError) return { error: rowsError }
   if (requirements.length === 0) return { error: 'Add at least one requirement row.' }
+  const details = String(formData.get('details') || '').trim() || null
 
   const isDefault = String(formData.get('is_default') || '') === 'true'
   // One default per org (partial unique index): clear the old one first.
@@ -89,7 +65,8 @@ export async function saveOrgTemplate(_prev: OrgTemplateState, formData: FormDat
     org_id: orgId,
     name,
     requirements,
-    variables: deriveVariables(requirements),
+    variables,
+    details,
     is_default: isDefault,
     updated_at: new Date().toISOString(),
   }

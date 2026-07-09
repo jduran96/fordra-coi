@@ -5,9 +5,8 @@ import { getProfile } from '@/lib/auth-helpers'
 import { createClient } from '@/lib/supabase/server'
 import { generateApiKey, type KeyMode } from '@/lib/apikeys'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
-import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
+import { normalizeRequirementRows, resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import type { Requirement } from '@/lib/types'
-import { requirementKind } from '@/lib/types'
 import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
 
 export interface SubmitState { error?: string }
@@ -45,34 +44,34 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     if (!t) return { error: 'That saved standard could not be found.' }
 
     let rows = t.requirements
+    let variables = t.variables ?? []
     const rawRows = String(formData.get('template_rows') || '').trim()
     if (rawRows) {
       try {
         const parsed = JSON.parse(rawRows) as Requirement[]
         if (!Array.isArray(parsed)) throw new Error('bad shape')
-        const cleaned = parsed
-          .map(r => {
-            const kind = requirementKind(r)
-            return {
-              coverage_type: String(r.coverage_type ?? '').trim(),
-              minimum_limit: kind === 'condition' ? '' : String(r.minimum_limit ?? '').trim(),
-              notes: String(r.notes ?? '').trim() || null,
-              kind,
-            }
-          })
-          .filter(r => r.coverage_type)
-        if (cleaned.length === 0) return { error: 'Add at least one requirement row.' }
-        rows = cleaned
+        // Re-derive variables from the edited rows: a renamed or added Variable
+        // row changes which per-deal values apply to this submission.
+        const normalized = normalizeRequirementRows(parsed)
+        if (normalized.error) return { error: normalized.error }
+        if (normalized.requirements.length === 0) return { error: 'Add at least one requirement row.' }
+        rows = normalized.requirements
+        variables = normalized.variables
       } catch {
         return { error: 'Could not read the adjusted requirement rows.' }
       }
     }
 
+    // Per-deal override of the standard's free-text details; absent field
+    // (non-web callers) falls back to the stored value.
+    const rawDetails = formData.get('template_details')
+    const details = rawDetails === null ? t.details : (String(rawDetails).trim() || null)
+
     // {carrier_name} is auto-filled from the carrier field, never a form input.
     const values: Record<string, string> = { carrier_name: carrier }
-    for (const v of t.variables ?? []) values[v.key] = String(formData.get(`template_var_${v.key}`) || '')
+    for (const v of variables) values[v.key] = String(formData.get(`template_var_${v.key}`) || '')
     try {
-      const resolved = resolveTemplate({ ...t, requirements: rows }, values)
+      const resolved = resolveTemplate({ ...t, requirements: rows, variables, details }, values)
       requirements = { text: resolved.text, ...resolved.provenance }
     } catch (e) {
       return { error: e instanceof Error ? e.message : 'Could not apply the saved standard.' }

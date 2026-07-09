@@ -104,7 +104,7 @@ export function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }:
       padding: 16, background: C.surface,
       display: 'flex', flexDirection: 'column' as const, gap: 12,
     }}>
-      <RequirementsEditor rows={rows} onChange={onChange} currencyLimits minRows={1} />
+      <RequirementsEditor rows={rows} onChange={onChange} minRows={1} reorderable={false} />
 
       <div style={{ marginTop: 4 }}>
         <span style={{
@@ -112,12 +112,12 @@ export function ManualRequirementsForm({ rows, onChange, notes, onNotesChange }:
           textTransform: 'uppercase' as const, color: C.txt3,
           fontFamily: C.sans, display: 'block', marginBottom: 6,
         }}>
-          Other Required Coverage Details
+          Other Required Coverage Details <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
         </span>
         <textarea
           value={notes}
           onChange={e => onNotesChange(e.target.value)}
-          placeholder="Anything the fields above didn't capture — extra coverages, conditions, endorsements, etc."
+          placeholder="Anything the fields above didn't capture: extra coverages, conditions, endorsements, etc."
           rows={3}
           style={{
             width: '100%', boxSizing: 'border-box' as const,

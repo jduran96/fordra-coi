@@ -5,31 +5,10 @@ import { headers } from 'next/headers'
 import { getProfile } from '@/lib/auth-helpers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Requirement } from '@/lib/types'
-import { requirementKind } from '@/lib/types'
-import type { TemplateVariable } from '@/lib/templates'
-import { templateTokens } from '@/lib/templates'
+import { normalizeRequirementRows } from '@/lib/templates'
 import { rateLimitAllows } from '@/lib/rate-limit'
 
 export interface TemplateState { ok?: boolean; error?: string }
-
-function humanize(key: string): string {
-  const label = key.replaceAll('_', ' ').trim()
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
-
-/**
- * Variables are derived from the {tokens} used in the rows, one input each.
- * {carrier_name} is special: it is filled from the verification's carrier field
- * automatically, never asked for.
- */
-function deriveVariables(requirements: Requirement[]): TemplateVariable[] {
-  return templateTokens({ requirements }).filter(key => key !== 'carrier_name').map(key => ({
-    key,
-    label: humanize(key),
-    type: /price|amount|limit|value/.test(key) ? 'currency' : 'text',
-    required: true,
-  }))
-}
 
 /** Create or update one of the org's insurance-standards templates. */
 export async function saveTemplate(_prev: TemplateState, formData: FormData): Promise<TemplateState> {
@@ -40,24 +19,16 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
   const name = String(formData.get('name') || '').trim()
   if (!name) return { error: 'Give the template a name.' }
 
-  let requirements: Requirement[]
+  let rawRows: Requirement[]
   try {
-    requirements = JSON.parse(String(formData.get('rows') || '[]'))
+    rawRows = JSON.parse(String(formData.get('rows') || '[]'))
   } catch {
     return { error: 'Could not read the requirement rows.' }
   }
-  requirements = requirements
-    .map(r => {
-      const kind = requirementKind(r)
-      return {
-        coverage_type: (r.coverage_type ?? '').trim(),
-        minimum_limit: kind === 'condition' ? '' : (r.minimum_limit ?? '').trim(),
-        notes: (r.notes ?? '').trim() || null,
-        kind,
-      }
-    })
-    .filter(r => r.coverage_type)
+  const { requirements, variables, error: rowsError } = normalizeRequirementRows(rawRows)
+  if (rowsError) return { error: rowsError }
   if (requirements.length === 0) return { error: 'Add at least one requirement row.' }
+  const details = String(formData.get('details') || '').trim() || null
 
   const isDefault = String(formData.get('is_default') || '') === 'true'
   const supabase = await createClient()
@@ -74,7 +45,8 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
     org_id: profile.org_id,
     name,
     requirements,
-    variables: deriveVariables(requirements),
+    variables,
+    details,
     is_default: isDefault,
     updated_at: new Date().toISOString(),
   }

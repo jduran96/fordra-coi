@@ -12,15 +12,24 @@ export interface Requirement {
   notes: string | null;
   /**
    * 'limit' = numeric coverage minimum; 'condition' = qualitative check with no
-   * dollar amount (loss payee, name match, endorsements). Older rows predate the
-   * field: treat an empty minimum_limit as 'condition'.
+   * dollar amount (loss payee, name match, endorsements); 'variable' = a dollar
+   * amount that changes per deal — minimum_limit holds a {token} placeholder in
+   * storage (asked for at submission), or the plain human title while being
+   * edited. Older rows predate the field: treat an empty minimum_limit as
+   * 'condition'.
    */
-  kind?: 'limit' | 'condition';
+  kind?: 'limit' | 'condition' | 'variable';
 }
 
-/** Resolve a row's kind, tolerating rows saved before `kind` existed. */
-export function requirementKind(r: Pick<Requirement, 'minimum_limit' | 'kind'>): 'limit' | 'condition' {
-  return r.kind ?? (r.minimum_limit?.trim() ? 'limit' : 'condition');
+/** A minimum_limit that is exactly one {token} placeholder. */
+export const VARIABLE_TOKEN_RE = /^\{([a-z0-9_]+)\}$/i;
+
+/** Resolve a row's kind, tolerating rows saved before `kind` (or 'variable') existed. */
+export function requirementKind(r: Pick<Requirement, 'minimum_limit' | 'kind'>): 'limit' | 'condition' | 'variable' {
+  if (r.kind === 'condition') return 'condition';
+  const limit = r.minimum_limit?.trim() ?? '';
+  if (r.kind === 'variable' || VARIABLE_TOKEN_RE.test(limit)) return 'variable';
+  return r.kind ?? (limit ? 'limit' : 'condition');
 }
 
 export interface COICoverage {

@@ -3,8 +3,10 @@
 import { useState, useTransition } from 'react'
 import type { Requirement } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
+import { editableRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import RequirementsEditor, { BLANK_REQUIREMENT } from '@/components/RequirementsEditor'
+import EditorModal from '@/components/EditorModal'
 import { createClient } from '@/lib/supabase/client'
 import { saveTemplate, deleteTemplate, inviteTeammate } from './actions'
 
@@ -40,6 +42,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   const [editing, setEditing] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [rows, setRows] = useState<Requirement[]>([])
+  const [details, setDetails] = useState('')
   const [isDefault, setIsDefault] = useState(false)
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
@@ -48,13 +51,16 @@ export default function SettingsClient({ templates, starterRows, members, selfId
     setEditing('new')
     setName('')
     setRows([...starterRows.map(r => ({ ...r })), { ...BLANK_REQUIREMENT }])
+    setDetails('')
     setIsDefault(templates.length === 0)
     setError('')
   }
   function openEdit(t: RequirementTemplate) {
     setEditing(t.id)
     setName(t.name)
-    setRows(t.requirements.length ? t.requirements.map(r => ({ ...r })) : [{ ...BLANK_REQUIREMENT }])
+    const rows = editableRows(t)
+    setRows(rows.length ? rows : [{ ...BLANK_REQUIREMENT }])
+    setDetails(t.details ?? '')
     setIsDefault(t.is_default)
     setError('')
   }
@@ -65,6 +71,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
     if (editing && editing !== 'new') fd.append('id', editing)
     fd.append('name', name)
     fd.append('rows', JSON.stringify(rows))
+    fd.append('details', details)
     fd.append('is_default', String(isDefault))
     startTransition(async () => {
       const res = await saveTemplate({}, fd)
@@ -81,9 +88,9 @@ export default function SettingsClient({ templates, starterRows, members, selfId
           <button type="button" onClick={openNew} style={pillS(true)}>+ New template</button>
         </div>
         <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 13.5, lineHeight: 1.6, margin: '6px 0 12px' }}>
-          Save your insurance standards once and reuse them on every verification. Use
-          a <span style={{ fontFamily: C.mono, fontSize: 12.5 }}>{'{placeholder}'}</span> in a limit for
-          deal-specific values, like <span style={{ fontFamily: C.mono, fontSize: 12.5 }}>{'{asset_sale_price}'}</span>.
+          Save your insurance standards once and reuse them on every verification. When a dollar
+          amount changes deal to deal, set the row&apos;s type to Variable and name the amount
+          (like Asset Sale Price); the number is asked for on each new verification.
         </p>
 
         {templates.length === 0 && editing === null && (
@@ -128,7 +135,8 @@ export default function SettingsClient({ templates, starterRows, members, selfId
         </div>
 
         {editing !== null && (
-          <div style={{ ...cardS, marginTop: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <EditorModal title={editing === 'new' ? 'New template' : 'Edit template'} onClose={() => setEditing(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <span style={labelS}>Template name</span>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Trucking standard" style={inputS} />
@@ -136,7 +144,23 @@ export default function SettingsClient({ templates, starterRows, members, selfId
 
             <div>
               <span style={labelS}>Requirements</span>
+              <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '0 0 10px' }}>
+                Variable amounts are asked for on each new verification.
+              </p>
               <RequirementsEditor rows={rows} onChange={setRows} />
+            </div>
+
+            <div>
+              <span style={labelS}>
+                Other required coverage details <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+              </span>
+              <textarea
+                value={details}
+                onChange={e => setDetails(e.target.value)}
+                placeholder="Anything the rows above didn't capture: extra coverages, conditions, endorsements, etc."
+                rows={3}
+                style={{ ...inputS, resize: 'vertical', minHeight: 64 }}
+              />
             </div>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: C.txt2, fontFamily: C.sans, cursor: 'pointer' }}>
@@ -153,6 +177,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
               <button type="button" onClick={() => setEditing(null)} style={pillS(false)}>Cancel</button>
             </div>
           </div>
+          </EditorModal>
         )}
       </section>
 

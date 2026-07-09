@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Requirement } from '@/lib/types'
+import { requirementKind, VARIABLE_TOKEN_RE } from '@/lib/types'
 
 /**
  * Insurance-standards templates: org-saved requirement sets selectable at
@@ -10,29 +11,13 @@ import type { Requirement } from '@/lib/types'
 
 /**
  * Condition rows every logistics broker/factor tends to want on a COI. New
- * templates start pre-filled with these so orgs can see and tailor them; they
- * are never merged into a verification automatically. `{carrier_name}` resolves
- * from the verification's carrier field at submission time.
+ * standards start pre-filled with these two, notes intentionally blank so the
+ * org describes the check in their own words; they are never merged into a
+ * verification automatically.
  */
 export const STARTER_REQUIREMENTS: Requirement[] = [
-  {
-    coverage_type: 'Matching Policyholder Name',
-    minimum_limit: '',
-    kind: 'condition',
-    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. Owner-operator certificates: if the carrier is not the named insured but appears elsewhere on the certificate (other_named_parties, additional_insured, a scheduled driver or DBA), this is uncertain, and the evidence must say where the name was found. Only a carrier appearing nowhere on the certificate is not met.',
-  },
-  {
-    coverage_type: 'Policy Currently Active',
-    minimum_limit: '',
-    kind: 'condition',
-    notes: 'Every coverage on the COI must be in force today: effective date in the past, expiration date in the future. If any listed coverage is expired or not yet effective, this is not met. If dates are missing or illegible, this is uncertain.',
-  },
-  {
-    coverage_type: 'No Unusual Exclusions',
-    minimum_limit: '',
-    kind: 'condition',
-    notes: 'Review conditions_and_exceptions on each coverage for exclusions that would matter to a freight broker (commodity exclusions, radius restrictions, unattended-vehicle or scheduled-vehicle-only clauses). Met if none are present; not_met if a clearly restrictive exclusion appears; uncertain if the certificate text is ambiguous.',
-  },
+  { coverage_type: 'Matching Policyholder Name', minimum_limit: '', kind: 'condition', notes: '' },
+  { coverage_type: 'Policy Currently Active', minimum_limit: '', kind: 'condition', notes: '' },
 ]
 
 export interface TemplateVariable {
@@ -48,12 +33,14 @@ export interface RequirementTemplate {
   name: string
   requirements: Requirement[]
   variables: TemplateVariable[]
+  /** Optional free-text standards the rows don't capture (endorsements, extra conditions). */
+  details?: string | null
   is_default: boolean
   created_at?: string
   updated_at?: string
 }
 
-export const TEMPLATE_SELECT = 'id, org_id, name, requirements, variables, is_default, created_at, updated_at'
+export const TEMPLATE_SELECT = 'id, org_id, name, requirements, variables, details, is_default, created_at, updated_at'
 
 /** List an org's templates, default first then A-Z. Pass any client; RLS scopes the session client. */
 export async function listTemplates(db: SupabaseClient, orgId: string): Promise<RequirementTemplate[]> {
@@ -75,6 +62,85 @@ export function templateTokens(t: Pick<RequirementTemplate, 'requirements'>): st
     }
   }
   return [...found]
+}
+
+/** '{asset_sale_price}' / 'asset_sale_price' -> 'Asset sale price'. */
+export function humanizeToken(key: string): string {
+  const label = key.replaceAll('_', ' ').trim()
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/** 'Asset Sale Price' -> 'asset_sale_price'. */
+export function slugifyVariable(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/**
+ * Canonicalize editor rows for storage and derive the per-deal variable inputs.
+ * Variable rows arrive with the human title the user typed in the Amount cell
+ * ("Asset Sale Price"); storage keeps the {asset_sale_price} token so the
+ * substitution machinery is unchanged. Raw {tokens} typed into limits or notes
+ * still work and derive variables too. {carrier_name} is never asked for: it is
+ * filled from the verification's carrier field automatically.
+ */
+export function normalizeRequirementRows(raw: Requirement[]): {
+  requirements: Requirement[]
+  variables: TemplateVariable[]
+  error?: string
+} {
+  const requirements: Requirement[] = []
+  const variables: TemplateVariable[] = []
+  const seen = new Set<string>(['carrier_name'])
+  for (const r of raw) {
+    const coverage_type = (r.coverage_type ?? '').trim()
+    if (!coverage_type) continue
+    const kind = requirementKind(r)
+    let minimum_limit = kind === 'condition' ? '' : (r.minimum_limit ?? '').trim()
+    if (kind === 'variable') {
+      const token = minimum_limit.match(VARIABLE_TOKEN_RE)
+      const key = token ? token[1].toLowerCase() : slugifyVariable(minimum_limit)
+      if (!key) {
+        return {
+          requirements: [], variables: [],
+          error: `Name the per-deal amount for "${coverage_type}" (for example "Asset Sale Price").`,
+        }
+      }
+      minimum_limit = `{${key}}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        variables.push({ key, label: token ? humanizeToken(key) : (r.minimum_limit ?? '').trim(), type: 'currency', required: true })
+      }
+    }
+    requirements.push({ coverage_type, minimum_limit, notes: (r.notes ?? '').trim() || null, kind })
+  }
+  for (const found of templateTokens({ requirements })) {
+    const key = found.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    variables.push({
+      key,
+      label: humanizeToken(key),
+      type: /price|amount|limit|value/.test(key) ? 'currency' : 'text',
+      required: true,
+    })
+  }
+  return { requirements, variables }
+}
+
+/**
+ * Stored rows -> editor rows: variable rows swap their {token} for the human
+ * title shown while editing (the saved variable label when we have it).
+ */
+export function editableRows(t: Pick<RequirementTemplate, 'requirements' | 'variables'>): Requirement[] {
+  const labels = new Map((t.variables ?? []).map(v => [v.key, v.label]))
+  return (t.requirements ?? []).map(r => {
+    const token = (r.minimum_limit ?? '').trim().match(VARIABLE_TOKEN_RE)
+    if (token && requirementKind(r) === 'variable') {
+      const key = token[1].toLowerCase()
+      return { ...r, kind: 'variable' as const, minimum_limit: labels.get(key) ?? humanizeToken(key) }
+    }
+    return { ...r }
+  })
 }
 
 export interface ResolvedTemplate {
@@ -108,11 +174,13 @@ export function resolveTemplate(
     minimum_limit: sub(r.minimum_limit),
     notes: r.notes ? sub(r.notes) : r.notes,
   }))
-  const text = requirements.map(r => {
+  const lines = requirements.map(r => {
     const note = (r.notes ?? '').trim()
     const limit = r.minimum_limit.trim()
     return `${r.coverage_type.trim()}${limit ? `: ${limit}` : ''}${note ? ` (${note})` : ''}`
-  }).join('\n')
+  })
+  if (template.details?.trim()) lines.push(`Additional details: ${sub(template.details.trim())}`)
+  const text = lines.join('\n')
   return {
     text,
     requirements,

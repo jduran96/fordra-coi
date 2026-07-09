@@ -110,9 +110,13 @@ server action). Any new route/page that triggers `runExtractionPipeline`
   locally" never isolates the database.
 - Test rows/storage written to the live DB must be cleaned up afterward
   (storage objects via the Storage API, not SQL).
-- `{token}` placeholders: currency-formatted inputs (`formatCurrencyInput`)
-  strip non-digits, so template tokens like `{asset_sale_price}` cannot pass
-  through currency fields — template rows use plain text inputs on /app/settings.
+- `{token}` placeholders: `formatCurrencyInput` strips non-digits, so template
+  tokens like `{asset_sale_price}` cannot pass through it. The shared
+  RequirementsEditor therefore formats Limit amounts only when the value is
+  purely numeric (`smartLimitInput`), and per-deal "Variable" amounts are
+  authored as plain titles that `normalizeRequirementRows` converts to
+  `{tokens}` at save time — never run variable titles or token text through
+  `formatCurrencyInput`.
 - `requirement_templates` has a partial unique index (one `is_default` per
   org): clear the existing default before setting a new one, as
   `saveTemplate` in `app/app/settings/actions.ts` does.

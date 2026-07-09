@@ -6,6 +6,7 @@ import Link from 'next/link'
 import type { Requirement } from '@/lib/types'
 import { requirementKind } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
+import { editableRows, normalizeRequirementRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import { DropZone, ManualRequirementsForm } from '@/components/UploadCards'
 import RequirementsEditor, { formatCurrencyInput } from '@/components/RequirementsEditor'
@@ -37,16 +38,17 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const [carrier, setCarrier] = useState('')
   const [coiFile, setCoiFile] = useState<File | null>(null)
   const [rcsFile, setRcsFile] = useState<File | null>(null)
-  // Saved standards are the default entry point when the org has any.
-  const [useTemplate, setUseTemplate] = useState(!!defaultTemplate)
   const [templateId, setTemplateId] = useState<string>(defaultTemplate?.id ?? '')
   // The selected standard's rows, editable for this deal only (the saved
-  // template is not changed). Limits stay plain text so {tokens} pass through.
+  // template is not changed). Variable rows show their human title here;
+  // normalizeRequirementRows restores the {token} form at submit time.
   const [tplRows, setTplRows] = useState<Requirement[]>(
-    (defaultTemplate?.requirements ?? []).map(r => ({ ...r })),
+    defaultTemplate ? editableRows(defaultTemplate) : [],
   )
+  const [tplDetails, setTplDetails] = useState(defaultTemplate?.details ?? '')
   const [varValues, setVarValues] = useState<Record<string, string>>({})
-  const [reqMode, setReqMode] = useState<'upload' | 'manual'>('manual')
+  // Saved standards are the default entry point when the org has any.
+  const [reqMode, setReqMode] = useState<'template' | 'manual' | 'upload'>(defaultTemplate ? 'template' : 'manual')
   const [reqFile, setReqFile] = useState<File | null>(null)
   const [manualReqs, setManualReqs] = useState<Requirement[]>([{ coverage_type: '', minimum_limit: '', notes: '', kind: 'limit' }])
   const [manualNotes, setManualNotes] = useState('')
@@ -56,15 +58,19 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const [hover, setHover] = useState(false)
 
   const template = templates.find(t => t.id === templateId) ?? null
-  const missingVar = template ? (template.variables ?? []).find(v => v.required && !varValues[v.key]?.trim()) : undefined
-  const cleanTplRows = tplRows.filter(r => r.coverage_type.trim())
+  // Variables derive live from the (possibly edited) rows, so renaming or
+  // adding a Variable row updates the per-deal inputs immediately.
+  const normalizedTpl = normalizeRequirementRows(tplRows)
+  const tplVars = normalizedTpl.variables
+  const missingVar = tplVars.find(v => v.required && !varValues[v.key]?.trim())
+  const cleanTplRows = normalizedTpl.requirements
 
   // A manual row counts when it has a name and either a limit or is a condition.
   const cleanReqs = manualReqs.filter(r =>
     r.coverage_type.trim() && (requirementKind(r) === 'condition' || r.minimum_limit.trim()))
   const checkedLines = MANUAL_CHECKS.filter(c => manualChecks[c.key])
-  const reqReady = useTemplate
-    ? !!template && !missingVar && cleanTplRows.length > 0
+  const reqReady = reqMode === 'template'
+    ? !!template && !normalizedTpl.error && !missingVar && cleanTplRows.length > 0
     : reqMode === 'upload' ? !!reqFile : (cleanReqs.length > 0 || checkedLines.length > 0)
   const canSubmit = !!carrier.trim() && !!coiFile && reqReady && !pending
 
@@ -72,7 +78,8 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     setTemplateId(id)
     setVarValues({})
     const t = templates.find(x => x.id === id)
-    setTplRows((t?.requirements ?? []).map(r => ({ ...r })))
+    setTplRows(t ? editableRows(t) : [])
+    setTplDetails(t?.details ?? '')
   }
 
   function serializeStandards(): string {
@@ -90,8 +97,9 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     setError('')
     if (!carrier.trim()) return setError('Carrier name is required.')
     if (!coiFile) return setError('Upload the carrier COI.')
-    if (useTemplate) {
+    if (reqMode === 'template') {
       if (!template) return setError('Pick a saved standard, or switch to entering standards for this deal.')
+      if (normalizedTpl.error) return setError(normalizedTpl.error)
       if (cleanTplRows.length === 0) return setError('The selected standard has no requirement rows left. Add at least one.')
       if (missingVar) return setError(`Enter ${missingVar.label.toLowerCase()} for the selected standard.`)
     } else {
@@ -106,10 +114,11 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     fd.append('carrier_name', carrier.trim())
     fd.append('coi_file', coiFile)
     if (rcsFile) fd.append('rcs_file', rcsFile)
-    if (useTemplate && template) {
+    if (reqMode === 'template' && template) {
       fd.append('template_id', template.id)
       fd.append('template_rows', JSON.stringify(cleanTplRows))
-      for (const v of template.variables ?? []) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
+      fd.append('template_details', tplDetails)
+      for (const v of tplVars) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
     } else if (reqMode === 'upload' && reqFile) {
       fd.append('requirements_file', reqFile)
     } else {
@@ -148,44 +157,37 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <Label noMargin>Insurance Standards</Label>
-          {!useTemplate && (
-            <div style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
-              {([['manual', 'Enter manually'], ['upload', 'Upload file']] as const).map(([m, label]) => (
-                <button key={m} type="button" onClick={() => setReqMode(m)}
-                  style={{
-                    fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
-                    padding: '4px 10px', borderRadius: 6, border: 'none',
-                    background: reqMode === m ? C.txt : 'transparent',
-                    color: reqMode === m ? C.surface : C.txt3, cursor: 'pointer', transition: 'all 120ms',
-                  }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+          <div style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
+            {([
+              ...(templates.length > 0 ? [['template', 'Saved template'] as const] : []),
+              ['manual', 'Enter manually'] as const,
+              ['upload', 'Upload doc'] as const,
+            ]).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => setReqMode(m)}
+                style={{
+                  fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
+                  padding: '4px 10px', borderRadius: 6, border: 'none',
+                  background: reqMode === m ? C.txt : 'transparent',
+                  color: reqMode === m ? C.surface : C.txt3, cursor: 'pointer', transition: 'all 120ms',
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {templates.length > 0 && (
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
-            fontSize: 13.5, color: C.txt2, fontFamily: C.sans, cursor: 'pointer',
-          }}>
-            <input type="checkbox" checked={useTemplate} onChange={e => setUseTemplate(e.target.checked)} />
-            Use a saved standard
-          </label>
-        )}
-
-        {useTemplate && template ? (
+        {reqMode === 'template' && template ? (
           <div style={{
             border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
             background: C.surface, display: 'flex', flexDirection: 'column', gap: 12,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div>
+              <Label>Which saved standard to use</Label>
               <select
                 value={templateId}
                 onChange={e => pickTemplate(e.target.value)}
                 style={{
-                  flex: 1, padding: '9px 12px', fontSize: 14, fontFamily: C.sans,
+                  width: '100%', boxSizing: 'border-box', padding: '9px 12px', fontSize: 14, fontFamily: C.sans,
                   border: `1.5px solid ${C.border}`, borderRadius: 8, background: C.surface, color: C.txt,
                 }}
               >
@@ -193,19 +195,38 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
                   <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>
                 ))}
               </select>
-              <Link href="/app/settings" style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, whiteSpace: 'nowrap' }}>
-                Manage
-              </Link>
             </div>
 
-            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-              Adjust the rows below for this deal if needed; the saved standard itself is not changed.
-            </p>
-            <RequirementsEditor rows={tplRows} onChange={setTplRows} />
+            <div>
+              <Label>This standard&apos;s requirements</Label>
+              <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '0 0 10px' }}>
+                You can edit the inputs below. The saved standard will not be changed.
+              </p>
+              <RequirementsEditor rows={tplRows} onChange={setTplRows} reorderable={false} />
+            </div>
 
-            {(template.variables ?? []).length > 0 && (
+            <div>
+              <Label>Other required coverage details <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></Label>
+              <textarea
+                value={tplDetails}
+                onChange={e => setTplDetails(e.target.value)}
+                placeholder="Anything the rows above didn't capture: extra coverages, conditions, endorsements, etc."
+                rows={2}
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13,
+                  fontFamily: C.sans, borderRadius: 6, border: `1.5px solid ${C.border}`,
+                  background: C.surface, color: C.txt, outline: 'none',
+                  resize: 'vertical', minHeight: 48,
+                }}
+              />
+            </div>
+
+            {tplVars.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                {(template.variables ?? []).map(v => (
+                <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+                  This standard needs the following for each deal:
+                </p>
+                {tplVars.map(v => (
                   <div key={v.key}>
                     <Label>
                       {v.label}
@@ -242,6 +263,12 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <ManualRequirementsForm rows={manualReqs} onChange={setManualReqs} notes={manualNotes} onNotesChange={setManualNotes} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                color: C.txt3, fontFamily: C.sans,
+              }}>
+                Standard checks <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(included when checked)</span>
+              </span>
               {MANUAL_CHECKS.map(c => (
                 <label key={c.key} style={{
                   display: 'flex', alignItems: 'center', gap: 8,

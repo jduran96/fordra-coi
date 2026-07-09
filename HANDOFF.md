@@ -5,30 +5,19 @@
 
 ---
 
-## ⚠️ PENDING TESTS — run these first (written 2026-07-08, for 2026-07-09)
+## ⚠️ PENDING TESTS — one left (updated 2026-07-09)
 
-Jullian must verify the **insurance-standards rework** in prod before design partners use it.
-Auth/invite/rate-limit paths were already machine-verified; these UI flows were not:
+Cases 1, 3, 4 of the 2026-07-08 list (standards + new-verification UI, template extras, org/user
+modals) were tested by Jullian on 2026-07-09. Email templates were done 2026-07-08. Remaining:
 
-1. **Standards + new verification (plan step 5).** As admin on `/admin/settings`: create a
-   standard for a test org mixing a `$1,000,000` limit row, a `{asset_sale_price}` limit row,
-   and a Loss Payee **Condition** row. As a user in that org: confirm it appears on
-   `/app/settings`, then on `/app/new` confirm rows are prefilled + editable, Asset sale price
-   is required (submit blocked until filled), the Condition row has no dollar field, and
-   unchecking "Use a saved standard" defaults to manual entry with the two pre-checked
-   baseline checkboxes. Submit a real COI.
-2. **Admin review without global baseline (plan step 6).** Run extraction on that submission:
-   gap analysis must judge exactly the org's rows (no extra global checks). Publish; the
-   customer results page must show the Loss Payee row with the "Condition" chip.
-3. **Also worth 5 minutes:** save a template on `/app/settings` using the Limit/Condition
-   dropdown and re-open it (kinds persist); edit a template row on `/app/new` before submitting
-   and confirm the edited text reaches the admin detail page; one manual-mode submission with a
-   condition row (e.g. Loss Payee) and only the checkboxes checked.
-4. **Also untested in UI:** New Org modal, Invite User modal, delete-user in Edit User modal
-   (added 2026-07-08; server actions verified only by code/typecheck).
+1. **Admin review without global baseline (plan step 6).** Run extraction on the test
+   submission: gap analysis must judge exactly the org's rows (no extra global checks).
+   Publish; the customer results page must show the Loss Payee row with the "Condition" chip.
 
-~~Email templates~~ DONE 2026-07-08 evening: wrap-proof templates pasted into the dashboard and
-verified rendering correctly in Gmail (see repeat-bugs #9 for the root cause).
+Also worth a quick prod smoke test after the 2026-07-09 deploy (standards editor rework):
+create/edit a standard via the new pop-up editor on both `/admin/settings` and `/app/settings`,
+including a **Variable** row (type the amount's title, no `{braces}`), and one `/app/new`
+submission from the Saved template mode.
 
 Clean up any test rows/users/storage afterwards (or ask the agent to). Delete this section when done.
 
