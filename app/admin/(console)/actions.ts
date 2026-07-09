@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { requireAdmin } from '@/lib/auth-helpers'
+import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { emitEvent } from '@/lib/webhooks'
 import { runExtractionPipeline } from '@/lib/extraction'
@@ -181,6 +181,35 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
 
   revalidatePath('/admin/users')
   return { ok: true, signinLink }
+}
+
+export interface DeleteUserState { ok?: boolean; error?: string }
+
+/**
+ * Delete a user account (auth user + profile). Admin accounts (ADMIN_EMAIL
+ * allowlist) can never be deleted from the UI. The org's history survives:
+ * the user's verifications get created_by nulled instead of cascading away.
+ */
+export async function deleteUser(_prev: DeleteUserState, formData: FormData): Promise<DeleteUserState> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const profileId = String(formData.get('profile_id') || '')
+  if (!profileId) return { error: 'Pick a user.' }
+
+  const { data: profile } = await supabase
+    .from('profiles').select('id, email').eq('id', profileId).maybeSingle()
+  if (!profile) return { error: 'That user no longer exists.' }
+  if (isAdminEmail(profile.email)) return { error: 'Admin accounts cannot be deleted from here.' }
+
+  await supabase.from('verifications').update({ created_by: null }).eq('created_by', profileId)
+  const { error: perr } = await supabase.from('profiles').delete().eq('id', profileId)
+  if (perr) return { error: perr.message }
+  const { error: aerr } = await supabase.auth.admin.deleteUser(profileId)
+  if (aerr) return { error: `Profile removed, but the sign-in account could not be deleted: ${aerr.message}` }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
 }
 
 export interface GrantState { ok?: boolean; error?: string }

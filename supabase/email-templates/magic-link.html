@@ -14,13 +14,14 @@
             <p style="margin:0 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#57544e;">
               This link expires in 1 hour and can only be used once.
             </p>
-            <table role="presentation" cellpadding="0" cellspacing="0">
+            <!-- Bulletproof button: padding lives on the td (Gmail drops the whole
+                 style attribute of an element when it dislikes one property, so the
+                 anchor keeps only simple, universally supported styles). -->
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="background-color:#d4fd8e;border-radius:9999px;">
-                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink"
-                     style="display:inline-block;padding:13px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#141413 !important;text-decoration:none !important;text-decoration-color:#141413 !important;border-radius:9999px;">
-                    <span style="display:inline-block;color:#141413 !important;text-decoration:none !important;text-decoration-color:#141413 !important;">Sign in&nbsp;&nbsp;&rarr;</span>
-                  </a>
+                <td align="center" bgcolor="#d4fd8e" style="background-color:#d4fd8e;border-radius:9999px;padding:13px 28px;">
+                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink" target="_blank"
+                     style="display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;font-weight:bold;line-height:15px;color:#141413;text-decoration:none;">Sign in&nbsp;&nbsp;&rarr;</a>
                 </td>
               </tr>
             </table>

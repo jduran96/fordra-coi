@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/admin-emails'
 import { C } from '@/lib/theme'
 import EditUserModal from './EditUserModal'
 import InviteUserModal from './InviteUserModal'
@@ -32,7 +33,7 @@ export default async function UsersPage() {
           <CreateOrgModal />
           <InviteUserModal orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))} />
           <EditUserModal
-            users={rows.map(r => ({ id: r.id, email: r.email }))}
+            users={rows.map(r => ({ id: r.id, email: r.email, isAdmin: isAdminEmail(r.email) }))}
             orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
           />
         </div>

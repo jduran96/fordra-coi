@@ -6,10 +6,12 @@ export default function NavBar({
   title,
   links,
   email,
+  orgName,
 }: {
   title?: string
   links: { href: string; label: string }[]
   email?: string | null
+  orgName?: string | null
 }) {
   return (
     <header style={{
@@ -33,7 +35,13 @@ export default function NavBar({
         ))}
       </nav>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-        {email && <span style={{ fontSize: 13, color: C.txt3, fontFamily: C.sans }}>{email}</span>}
+        {email && (
+          <span style={{ fontSize: 13, color: C.txt3, fontFamily: C.sans }}>
+            {orgName && <span style={{ color: C.txt2, fontWeight: 600 }}>{orgName}</span>}
+            {orgName && ' | '}
+            {email}
+          </span>
+        )}
         <form action="/auth/signout" method="post">
           <button type="submit" style={{
             fontSize: 13, color: C.txt2, fontFamily: C.sans, background: 'none',

@@ -5,6 +5,36 @@
 
 ---
 
+## ⚠️ PENDING TESTS — run these first (written 2026-07-08, for 2026-07-09)
+
+Jullian must verify the **insurance-standards rework** in prod before design partners use it.
+Auth/invite/rate-limit paths were already machine-verified; these UI flows were not:
+
+1. **Standards + new verification (plan step 5).** As admin on `/admin/settings`: create a
+   standard for a test org mixing a `$1,000,000` limit row, a `{asset_sale_price}` limit row,
+   and a Loss Payee **Condition** row. As a user in that org: confirm it appears on
+   `/app/settings`, then on `/app/new` confirm rows are prefilled + editable, Asset sale price
+   is required (submit blocked until filled), the Condition row has no dollar field, and
+   unchecking "Use a saved standard" defaults to manual entry with the two pre-checked
+   baseline checkboxes. Submit a real COI.
+2. **Admin review without global baseline (plan step 6).** Run extraction on that submission:
+   gap analysis must judge exactly the org's rows (no extra global checks). Publish; the
+   customer results page must show the Loss Payee row with the "Condition" chip.
+3. **Also worth 5 minutes:** save a template on `/app/settings` using the Limit/Condition
+   dropdown and re-open it (kinds persist); edit a template row on `/app/new` before submitting
+   and confirm the edited text reaches the admin detail page; one manual-mode submission with a
+   condition row (e.g. Loss Payee) and only the checkboxes checked.
+4. **Also untested in UI:** New Org modal, Invite User modal, delete-user in Edit User modal
+   (added 2026-07-08; server actions verified only by code/typecheck).
+
+Manual dashboard step still owed: paste the fixed `supabase/email-templates/{magic-link,invite}.html`
+into Supabase Dashboard → Authentication → Emails (Gmail was collapsing the buttons; repo copies
+now use bulletproof markup — the dashboard is the live source).
+
+Clean up any test rows/users/storage afterwards (or ask the agent to). Delete this section when done.
+
+---
+
 ## What this app is
 
 **Fordra** is a COI (Certificate of Insurance) verification platform for freight factoring
@@ -18,8 +48,8 @@ different auth mechanisms, plus a **separate static marketing site**.
 |---|---|---|---|
 | Marketing site | `fordra.com` (static, separate repo dir) | Public | none |
 | Demo | `/demo` | Sales / Jullian | **Password gate** (`APP_PASSWORD`); session cookie, token hard-expires after 24h (`lib/demo-token.ts`) |
-| Customer portal | `/app` | Customers (e.g. HaulPay) | **Supabase magic-link** (RLS-scoped) |
-| Admin console | `/admin` | Jullian only | **Supabase**, gated to `ADMIN_EMAIL` |
+| Customer portal | `/app` | Customers (e.g. HaulPay) | **Supabase magic-link or password** at `/login` (RLS-scoped); invite-only, no self-signup |
+| Admin console | `/admin` | Jullian + Emmanuel | **Supabase magic-link only** at `/admin/login`, gated to the `ADMIN_EMAIL` comma-separated allowlist |
 | Machine API | `/v1/*` | Customer systems | **API keys** (`sk_test_`/`sk_live_`) |
 | Slack intake | `/api/slack/*` | Partner Slack workspaces | **Signed install links + Slack signing secret** (see `Slack/README.md`) |
 
