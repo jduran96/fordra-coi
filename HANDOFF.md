@@ -5,21 +5,37 @@
 
 ---
 
-## ⚠️ PENDING TESTS — one left (updated 2026-07-09)
+## ⚠️ PENDING TESTS — Slack + auth/login (updated 2026-07-09)
 
-Cases 1, 3, 4 of the 2026-07-08 list (standards + new-verification UI, template extras, org/user
-modals) were tested by Jullian on 2026-07-09. Email templates were done 2026-07-08. Remaining:
+All 2026-07-08 UI cases are done: standards/new-verification UI, template extras, org/user
+modals, email templates, admin review without global baseline, and the standards-editor prod
+smoke test all passed by 2026-07-09 evening. Remaining before design partners onboard:
 
-1. **Admin review without global baseline (plan step 6).** Run extraction on the test
-   submission: gap analysis must judge exactly the org's rows (no extra global checks).
-   Publish; the customer results page must show the Loss Payee row with the "Condition" chip.
+1. **Slack intake, against prod** (walkthrough: `Slack/README.md`):
+   - Generate an install link from `/admin/slack` for a test org and install into a personal
+     workspace. Also try an expired/tampered link (must be rejected).
+   - Happy path DM: COI upload → carrier name → requirements as pasted text → `done` → shows
+     as New in `/admin` under the right org and in that org's portal history.
+   - Variants: requirements as a file; rate confirmation attached up front; **template by name
+     with variable collection** (interacts with the reworked templates code); `cancel` mid-flow
+     then restart. Read the bot copy end to end (tone, typos, no em dashes).
+   - Adversarial: non-whitelisted user gets the reply with their Slack ID; revoke from
+     `/admin/slack` kills the bot instantly. Watch for duplicate verifications (dedup via
+     `slack_events_seen`).
+2. **Auth/login:**
+   - Fresh admin-invite flow end to end, opening the email **in Gmail** (repeat-bugs #1/#9
+     territory). Also a customer self-invite from `/app/settings` Team.
+   - Magic-link login at `/login` (customer) and `/admin/login` (admin) on prod; an org-less
+     user sees the "contact admin (727) 729-9594" screen, not an error.
+3. **Quick check of the 2026-07-09 polish batch** (this deploy): manual-entry row heights on
+   `/app/new`; no Condition chip on customer results; "Used template: X" / "Entered manually"
+   provenance in What you submitted; admin "Log a call" pop-up saves into the notes table.
 
-Also worth a quick prod smoke test after the 2026-07-09 deploy (standards editor rework):
-create/edit a standard via the new pop-up editor on both `/admin/settings` and `/app/settings`,
-including a **Variable** row (type the amount's title, no `{braces}`), and one `/app/new`
-submission from the Saved template mode.
+One cross-surface pass: one Slack-originated and one web-originated verification through
+review → extraction → publish → identical rendering on the portal.
 
-Clean up any test rows/users/storage afterwards (or ask the agent to). Delete this section when done.
+Clean up any test rows/users/storage afterwards, including `slack-intake/...` temp objects and
+intake sessions (or ask the agent to). Delete this section when done.
 
 ---
 

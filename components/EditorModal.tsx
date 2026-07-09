@@ -9,10 +9,12 @@ import { C } from '@/lib/theme'
  * backdrop, Escape or backdrop click to close, wide enough for the
  * requirements grid.
  */
-export default function EditorModal({ title, onClose, children }: {
+export default function EditorModal({ title, onClose, children, maxWidth = 880 }: {
   title: string
   onClose: () => void
   children: React.ReactNode
+  /** Dialog width cap; the default fits the requirements grid. */
+  maxWidth?: number
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -28,7 +30,7 @@ export default function EditorModal({ title, onClose, children }: {
     }}>
       <div style={{
         background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28,
-        width: '100%', maxWidth: 880, maxHeight: '88vh', overflowY: 'auto',
+        width: '100%', maxWidth, maxHeight: '88vh', overflowY: 'auto',
         boxShadow: '0 25px 50px -12px rgba(20,20,19,0.25)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>

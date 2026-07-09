@@ -180,12 +180,16 @@ function AutoGrowTextarea({ value, onChange, placeholder, style }: {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    el.style.height = 'auto'
+    // Pin to the shared field height first; only grow when the actual value
+    // overflows it. Measuring from height:auto let a wrapping *placeholder*
+    // (and sub-pixel rounding at some zoom levels) inflate scrollHeight, which
+    // made empty cells render taller than their sibling input/select boxes.
+    el.style.height = `${FIELD_H}px`
+    if (!value) return
     // scrollHeight excludes borders; with box-sizing: border-box the height
     // must include them or the field renders shorter than sibling inputs.
-    // Never shrink below the shared empty-field height.
     const borders = el.offsetHeight - el.clientHeight
-    el.style.height = `${Math.max(FIELD_H, el.scrollHeight + borders)}px`
+    if (el.scrollHeight > el.clientHeight + 4) el.style.height = `${el.scrollHeight + borders}px`
   }, [value])
   return (
     <textarea

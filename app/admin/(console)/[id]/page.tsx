@@ -154,6 +154,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <section>
           <SectionTitle>Verification call notes</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {notes.length === 0 && <Muted>No calls logged yet.</Muted>}
             {notes.length > 0 && (
               <div style={{ ...card(), overflowX: 'auto' }}>
                 <SectionTitle small>Saved notes</SectionTitle>
@@ -267,6 +268,5 @@ function Muted({ children }: { children: React.ReactNode }) {
 const card = () => ({ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 })
 const thN = () => ({ padding: '6px 12px 6px 0', fontWeight: 600 as const })
 const tdN = () => ({ padding: '9px 12px 9px 0', color: C.txt2 })
-const input = () => ({ padding: '9px 11px', fontSize: 14, fontFamily: C.sans, border: `1px solid ${C.border}`, borderRadius: 7, outline: 'none', background: C.surface, color: C.txt, boxSizing: 'border-box' as const })
 const smallBtn = () => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: 'pointer' })
 const primaryBtn = () => ({ padding: '8px 20px', background: C.earthy, color: C.onDark, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer' })

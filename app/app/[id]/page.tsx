@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
-import { ConditionChip } from '@/components/RequirementsEditor'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,12 +66,14 @@ export default async function CustomerVerification({ params }: { params: Promise
     (docs ?? []).map(async d => ({ ...d, url: await signedUrl(d.storage_path).catch(() => null) })),
   )
   // Manually entered standards come in two shapes: web submissions store
-  // { text }, API submissions store [{ type: 'text', value }].
+  // { text }, API submissions store [{ type: 'text', value }]. Template-based
+  // submissions add provenance ({ template_name, ... }) alongside the text.
+  const req = v.requirements as ({ text?: string; template_name?: string } | { type?: string; value?: string }[] | null)
   const requirementsText = (() => {
-    const r = v.requirements as { text?: string } | { type?: string; value?: string }[] | null
-    if (Array.isArray(r)) return r.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n').trim()
-    return (r?.text ?? '').trim()
+    if (Array.isArray(req)) return req.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n').trim()
+    return (req?.text ?? '').trim()
   })()
+  const templateName = (!Array.isArray(req) && req?.template_name) ? String(req.template_name).trim() : ''
 
   const published = !!v.published_at
   const report = v.final_report as ({ narrative_summary?: string } & Gap) | null
@@ -121,9 +122,9 @@ export default async function CustomerVerification({ params }: { params: Promise
                     <div style={{ flex: 1 }}>
                       <p style={{ fontSize: 14, fontWeight: 700, color: C.txt, margin: '0 0 5px' }}>
                         {item.requirement?.coverage_type || 'Requirement'}
-                        {item.requirement?.minimum_limit
-                          ? <span style={{ fontWeight: 400, color: C.txt3 }}> · {item.requirement.minimum_limit}</span>
-                          : <ConditionChip />}
+                        {item.requirement?.minimum_limit && (
+                          <span style={{ fontWeight: 400, color: C.txt3 }}> · {item.requirement.minimum_limit}</span>
+                        )}
                       </p>
                       {item.evidence && (
                         <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: 0 }}>{item.evidence}</p>
@@ -138,7 +139,7 @@ export default async function CustomerVerification({ params }: { params: Promise
 
           {coi && <CertificateCard coi={coi} />}
           <CallNotesCard notes={(Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]} />
-          <SubmittedCard docs={docsWithUrls} requirementsText={requirementsText} />
+          <SubmittedCard docs={docsWithUrls} requirementsText={requirementsText} templateName={templateName} />
         </div>
       )}
     </div>
@@ -186,9 +187,11 @@ function CallNotesCard({ notes }: { notes: CallNote[] }) {
 function SubmittedCard({
   docs,
   requirementsText,
+  templateName,
 }: {
   docs: { id: string; kind: string; file_name: string; url: string | null }[]
   requirementsText: string
+  templateName: string
 }) {
   const byKind = (kind: string) => docs.filter(d => d.kind === kind)
   const rows: [string, { file_name: string; url: string | null }[]][] = [
@@ -196,18 +199,22 @@ function SubmittedCard({
     ['Rate confirmation', byKind('rcs')],
     ['Insurance standards', byKind('requirements')],
   ]
+  // How the standards arrived, shown when no standards file was uploaded.
+  const standardsFallback = templateName
+    ? `Used template: ${templateName}`
+    : requirementsText ? 'Entered manually' : 'Not submitted'
   return (
     <div style={cardC()}>
       <h2 style={h2C()}>What you submitted</h2>
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 20, rowGap: 8 }}>
         {rows.map(([label, files]) => (
           <SubmittedRow key={label} label={label} files={files}
-            fallback={label === 'Insurance standards' && requirementsText ? null : 'Not submitted'} />
+            fallback={label === 'Insurance standards' ? standardsFallback : 'Not submitted'} />
         ))}
       </dl>
       {requirementsText && (
         <div style={{ marginTop: 14 }}>
-          <h3 style={{ fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Insurance standards (entered manually)</h3>
+          <h3 style={{ fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Insurance standards</h3>
           <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>{requirementsText}</p>
         </div>
       )}
@@ -222,14 +229,14 @@ function SubmittedRow({
 }: {
   label: string
   files: { file_name: string; url: string | null }[]
-  fallback: string | null
+  fallback: string
 }) {
   return (
     <>
       <dt style={{ fontSize: 13, color: C.txt3 }}>{label}</dt>
       <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500 }}>
         {files.length === 0
-          ? (fallback ?? 'Entered manually, see below')
+          ? fallback
           : files.map((f, i) => (
               <span key={i}>
                 {i > 0 && ', '}
