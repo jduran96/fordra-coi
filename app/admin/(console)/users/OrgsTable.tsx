@@ -13,9 +13,10 @@ export interface OrgRow {
 
 /**
  * Org management table on /admin/users: rename inline, delete with a
- * two-click confirm. Deleting is server-guarded (refused while the org
- * still has members or verifications), so the confirm here is just
- * against slips of the mouse.
+ * two-click confirm. Deleting an org also deletes its members (their
+ * sign-in accounts included; admins are only unassigned) and its
+ * verifications with their stored documents — the confirm spells out
+ * the counts.
  */
 export default function OrgsTable({ orgs }: { orgs: OrgRow[] }) {
   const [msg, setMsg] = useState<{ ok?: string; error?: string }>({})
@@ -83,8 +84,10 @@ function OrgTableRow({ org, pending, confirming, onRename, onDelete }: {
 }) {
   const [name, setName] = useState(org.name)
   const dirty = name.trim() !== org.name && name.trim().length > 0
-  // Deletion is server-guarded too; disabling here just explains why up front.
-  const blocked = org.members > 0 || org.verifications > 0
+  const cascade = [
+    org.members ? `${org.members} user${org.members === 1 ? '' : 's'}` : '',
+    org.verifications ? `${org.verifications} verification${org.verifications === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(' + ')
 
   return (
     <tr style={{ borderTop: `1px solid ${C.border}` }}>
@@ -109,17 +112,16 @@ function OrgTableRow({ org, pending, confirming, onRename, onDelete }: {
       <td style={{ ...td, color: org.verifications ? C.txt : C.txt3 }}>{org.verifications}</td>
       <td style={{ ...td, textAlign: 'right' as const }}>
         <button
-          type="button" disabled={pending || blocked}
+          type="button" disabled={pending}
           onClick={() => onDelete(org.id)}
-          title={blocked ? 'Remove the org’s members and verifications first' : undefined}
+          title={cascade ? `Also deletes the org's ${cascade}` : undefined}
           style={{
             ...smallBtn,
-            color: blocked ? C.txt3 : '#b3261e',
-            cursor: blocked ? 'not-allowed' : 'pointer',
+            color: '#b3261e',
             ...(confirming ? { background: '#b3261e', color: '#fff', borderColor: '#b3261e' } : {}),
           }}
         >
-          {confirming ? 'Confirm delete?' : 'Delete'}
+          {confirming ? (cascade ? `Delete org + ${cascade}?` : 'Confirm delete?') : 'Delete'}
         </button>
       </td>
     </tr>

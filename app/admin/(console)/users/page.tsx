@@ -72,8 +72,9 @@ export default async function UsersPage() {
       <h2 style={{ fontFamily: C.serif, fontSize: 20, fontWeight: 400, margin: '28px 0 12px' }}>Organizations</h2>
       <OrgsTable orgs={orgRows} />
       <p style={{ color: C.txt3, fontSize: 12, marginTop: 10 }}>
-        Edit a name and Save to rename. An org can only be deleted once it has no members and no
-        verifications; use New Org above to create one.
+        Edit a name and Save to rename; use New Org above to create one. Deleting an org also
+        deletes its members (sign-in accounts included) and its verifications with their stored
+        documents. Admin accounts are never deleted, only unassigned.
       </p>
     </div>
   )

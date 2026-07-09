@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
+import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { runExtractionPipeline } from '@/lib/extraction'
 
@@ -173,10 +174,11 @@ export async function renameOrg(_prev: OrgActionState, formData: FormData): Prom
 }
 
 /**
- * Delete an org. Guarded: refuses while the org still has members or
- * verifications, so history can never disappear by accident. Slack
- * installations (no FK cascade) are removed with the org; api_keys,
- * webhooks, events, and templates cascade in the schema.
+ * Delete an org and everything in it: member users (profile + sign-in
+ * account; admins are only unassigned, never deleted), verifications with
+ * their documents rows and storage objects, Slack installations and intake
+ * sessions (no FK cascade). api_keys, webhooks, events, and templates
+ * cascade in the schema.
  */
 export async function deleteOrg(_prev: OrgActionState, formData: FormData): Promise<OrgActionState> {
   await requireAdmin()
@@ -185,13 +187,44 @@ export async function deleteOrg(_prev: OrgActionState, formData: FormData): Prom
   const orgId = String(formData.get('org_id') || '')
   if (!orgId) return { error: 'Pick an org.' }
 
-  const [{ count: members }, { count: verifications }] = await Promise.all([
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
-    supabase.from('verifications').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
-  ])
-  if (members) return { error: `This org still has ${members} member${members === 1 ? '' : 's'}. Reassign or delete them first.` }
-  if (verifications) return { error: `This org still has ${verifications} verification${verifications === 1 ? '' : 's'}. Delete them first.` }
+  // Members: delete customer accounts outright; admin accounts survive
+  // with org_id cleared (same rule as deleteUser).
+  const { data: members, error: merr } = await supabase
+    .from('profiles').select('id, email').eq('org_id', orgId)
+  if (merr) return { error: merr.message }
+  for (const m of members ?? []) {
+    if (isAdminEmail(m.email)) {
+      const { error } = await supabase.from('profiles').update({ org_id: null }).eq('id', m.id)
+      if (error) return { error: error.message }
+      continue
+    }
+    const { error: perr } = await supabase.from('profiles').delete().eq('id', m.id)
+    if (perr) return { error: perr.message }
+    const { error: aerr } = await supabase.auth.admin.deleteUser(m.id)
+    if (aerr) return { error: `Removed ${m.email}'s profile, but not their sign-in account: ${aerr.message}` }
+  }
 
+  // Verifications: storage objects first (Storage API, not SQL), then rows.
+  const { data: verifs, error: verr } = await supabase
+    .from('verifications').select('id').eq('org_id', orgId)
+  if (verr) return { error: verr.message }
+  const vIds = (verifs ?? []).map(v => v.id)
+  if (vIds.length) {
+    const { data: docs } = await supabase
+      .from('documents').select('storage_path').in('verification_id', vIds)
+    const paths = (docs ?? []).map(d => d.storage_path).filter(Boolean)
+    if (paths.length) {
+      const { error } = await supabase.storage.from(DOCUMENTS_BUCKET).remove(paths)
+      if (error) return { error: `Could not delete stored documents: ${error.message}` }
+    }
+    const { error: derr } = await supabase.from('documents').delete().in('verification_id', vIds)
+    if (derr) return { error: derr.message }
+    const { error: vderr } = await supabase.from('verifications').delete().in('id', vIds)
+    if (vderr) return { error: vderr.message }
+  }
+
+  const { error: sserr } = await supabase.from('slack_intake_sessions').delete().eq('org_id', orgId)
+  if (sserr) return { error: sserr.message }
   const { error: serr } = await supabase.from('slack_installations').delete().eq('org_id', orgId)
   if (serr) return { error: serr.message }
   const { error } = await supabase.from('orgs').delete().eq('id', orgId)
