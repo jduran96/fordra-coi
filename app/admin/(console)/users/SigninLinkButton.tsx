@@ -6,8 +6,10 @@ import { C } from '@/lib/theme'
 
 /**
  * Per-user "Invite link" button in the users table: mints a fresh one-time
- * sign-in link (magic-link token_hash) and shows it in a pop-up to copy.
- * For re-inviting someone whose original invite link expired.
+ * sign-in link and shows it in a pop-up to copy. For re-inviting someone
+ * whose original invite link expired. Minting is last-one-wins per user, so
+ * reopening the pop-up REUSES the already-minted link instead of silently
+ * killing the one the admin may have just sent.
  */
 export default function SigninLinkButton({ email }: { email: string }) {
   const [open, setOpen] = useState(false)
@@ -16,8 +18,9 @@ export default function SigninLinkButton({ email }: { email: string }) {
   const [copied, setCopied] = useState(false)
   const [pending, startTransition] = useTransition()
 
-  function mint() {
+  function mint(force: boolean) {
     setOpen(true)
+    if (link && !force) return // reopen shows the existing link; Regenerate forces a new one
     setLink(''); setError(''); setCopied(false)
     startTransition(async () => {
       const res = await mintSigninLink(email)
@@ -35,7 +38,7 @@ export default function SigninLinkButton({ email }: { email: string }) {
 
   return (
     <>
-      <button type="button" onClick={mint} title={`Mint a fresh one-time sign-in link for ${email}`} style={smallBtn}>
+      <button type="button" onClick={() => mint(false)} title={`Mint a fresh one-time sign-in link for ${email}`} style={smallBtn}>
         Invite link
       </button>
 
@@ -47,27 +50,34 @@ export default function SigninLinkButton({ email }: { email: string }) {
               <button onClick={() => setOpen(false)} aria-label="Close" style={closeBtn}>×</button>
             </div>
             <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: '0 0 16px' }}>
-              Fresh one-time sign-in link for <strong>{email}</strong>. It expires per the auth
-              settings and dies once clicked, so send it straight to them.
+              One-time sign-in link for <strong>{email}</strong>. Only the newest link works:
+              generating another (here, via Invite User, or when they request one at the login
+              page) kills this one.
             </p>
 
             {pending && <p style={{ fontSize: 13, color: C.txt3, fontFamily: C.sans, margin: 0 }}>Generating…</p>}
             {error && <p style={{ color: C.error, fontSize: 13, margin: 0, fontFamily: C.sans }}>{error}</p>}
             {link && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <code style={{
-                  flex: 1, fontSize: 11, fontFamily: C.mono, color: C.txt2, background: C.paper,
-                  border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {link}
-                </code>
-                <button
-                  type="button"
-                  onClick={async () => { await navigator.clipboard.writeText(link); setCopied(true) }}
-                  style={ghostBtn}
-                >
-                  {copied ? 'Copied' : 'Copy'}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <code style={{
+                    flex: 1, fontSize: 11, fontFamily: C.mono, color: C.txt2, background: C.paper,
+                    border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {link}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={async () => { await navigator.clipboard.writeText(link); setCopied(true) }}
+                    style={ghostBtn}
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <button type="button" onClick={() => mint(true)} disabled={pending}
+                  style={{ ...smallBtn, alignSelf: 'flex-start' }}>
+                  Regenerate (invalidates the link above)
                 </button>
               </div>
             )}

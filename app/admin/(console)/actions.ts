@@ -278,12 +278,14 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
   }
 
   // Fallback link in case the invite email does not arrive; for an existing
-  // user this fresh link IS the point of re-inviting.
+  // user this fresh link IS the point of re-inviting. Points at the /auth/link
+  // interstitial, NOT the callback: the token is single-use and link-preview
+  // crawlers would consume a direct callback URL before the human clicks.
   let signinLink: string | undefined
   const { data: linkData } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
   const props = linkData?.properties
   if (props?.hashed_token) {
-    signinLink = `${origin}/auth/callback?token_hash=${props.hashed_token}&type=magiclink`
+    signinLink = `${origin}/auth/link?token_hash=${props.hashed_token}&type=magiclink`
   }
   if (existing && !signinLink) return { error: 'Could not mint a new sign-in link. Try again.' }
 
@@ -307,7 +309,8 @@ export async function mintSigninLink(email: string): Promise<{ signinLink?: stri
   if (error) return { error: error.message }
   const hashed = data?.properties?.hashed_token
   if (!hashed) return { error: 'Supabase returned no link token. Try again.' }
-  return { signinLink: `${origin}/auth/callback?token_hash=${hashed}&type=magiclink` }
+  // /auth/link interstitial, not the callback — see inviteUser.
+  return { signinLink: `${origin}/auth/link?token_hash=${hashed}&type=magiclink` }
 }
 
 export interface DeleteUserState { ok?: boolean; error?: string }

@@ -140,3 +140,23 @@ short, and put button sizing on the `<td>` (bulletproof pattern), never on
 the `<a>`. After pasting into the dashboard, reload the page to confirm the
 save stuck, then send a FRESH email — received emails never re-render. Debug
 with Gmail's Show original: it reveals exactly which markup was sent.
+
+## 10. Admin-minted sign-in links "expired or already used" on first click
+
+**Symptom:** a copied invite/sign-in link fails immediately with the
+/login?error=link screen, even freshly minted and well within expiry.
+
+**Root cause (two-part):** token_hash links are single-use and last-one-wins.
+- Link-preview crawlers (Slack, iMessage, some mail scanners) GET every URL
+  pasted to them; a link pointing straight at /auth/callback is consumed by
+  the crawler before the human clicks.
+- Minting a new magiclink for a user invalidates all their older ones
+  (verified live: older token -> `otp_expired`). The original SigninLinkButton
+  minted on every popup open, silently killing the link the admin just sent.
+  Cross-type is safe: a magiclink mint does NOT kill an emailed invite token.
+
+**Fix (in place):** minted links point at the `/auth/link` interstitial, which
+consumes nothing on GET; its button form-GETs to /auth/callback (crawlers do
+not submit forms). The popup reuses its minted link on reopen and only mints
+again via the explicit Regenerate button. Never hand out raw /auth/callback
+URLs, and never mint a magiclink as a side effect of a repeatable action.
