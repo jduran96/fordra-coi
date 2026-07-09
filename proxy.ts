@@ -16,11 +16,13 @@ import { SESSION_COOKIE, SESSION_MAX_AGE_MS, verifyToken as verifyDemoToken } fr
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public: landing chooser, demo password page, magic-link login, auth callback, demo password POST
+  // Public: landing chooser, demo password page, customer + admin logins,
+  // auth callback, demo password POST
   if (
     pathname === '/' ||
     pathname === '/demo/login' ||
     pathname === '/login' ||
+    pathname === '/admin/login' ||
     pathname.startsWith('/auth/') ||
     pathname.startsWith('/api/auth')
   ) {
@@ -38,12 +40,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Customer portal + admin console — Supabase session
+  // Customer portal + admin console — Supabase session. Each surface has its
+  // own login page (customer /login offers password sign-in; admin is link-only).
   if (pathname.startsWith('/app') || pathname.startsWith('/admin')) {
+    const loginPath = pathname.startsWith('/admin') ? '/admin/login' : '/login'
     const { response, user } = await updateSession(request)
     if (!user) {
       const url = request.nextUrl.clone()
-      url.pathname = '/login'
+      url.pathname = loginPath
       url.searchParams.set('next', pathname)
       return NextResponse.redirect(url)
     }
@@ -54,7 +58,7 @@ export async function proxy(request: NextRequest) {
     const signedInAt = user.last_sign_in_at ? Date.parse(user.last_sign_in_at) : 0
     if (!signedInAt || Date.now() - signedInAt > SESSION_MAX_AGE_MS) {
       const url = request.nextUrl.clone()
-      url.pathname = '/login'
+      url.pathname = loginPath
       url.search = ''
       url.searchParams.set('next', pathname)
       url.searchParams.set('expired', '1')

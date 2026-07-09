@@ -42,7 +42,7 @@ export async function getProfile(): Promise<Profile | null> {
 /** Require an admin (gated by the ADMIN_EMAIL allowlist); else show the error page. */
 export async function requireAdmin() {
   const user = await getSessionUser()
-  if (!user) redirect('/login')
+  if (!user) redirect('/admin/login')
   if (!isAdminEmail(user.email)) redirect('/access-denied')
   return user
 }
