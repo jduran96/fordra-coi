@@ -27,9 +27,8 @@ Auth/invite/rate-limit paths were already machine-verified; these UI flows were 
 4. **Also untested in UI:** New Org modal, Invite User modal, delete-user in Edit User modal
    (added 2026-07-08; server actions verified only by code/typecheck).
 
-Manual dashboard step still owed: paste the fixed `supabase/email-templates/{magic-link,invite}.html`
-into Supabase Dashboard → Authentication → Emails (Gmail was collapsing the buttons; repo copies
-now use bulletproof markup — the dashboard is the live source).
+~~Email templates~~ DONE 2026-07-08 evening: wrap-proof templates pasted into the dashboard and
+verified rendering correctly in Gmail (see repeat-bugs #9 for the root cause).
 
 Clean up any test rows/users/storage afterwards (or ask the agent to). Delete this section when done.
 
