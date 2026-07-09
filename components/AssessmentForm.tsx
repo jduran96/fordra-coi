@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
+import { ConditionChip } from '@/components/RequirementsEditor'
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
 interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string }
@@ -50,7 +51,9 @@ export default function AssessmentForm({
               placeholder="Requirement name"
               style={{ ...input(), flex: 1, fontWeight: 700 }}
             />
-            {item.requirement.minimum_limit ? <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{item.requirement.minimum_limit}</span> : null}
+            {item.requirement.minimum_limit
+              ? <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{item.requirement.minimum_limit}</span>
+              : <ConditionChip />}
             <button type="button" onClick={() => removeRow(item.key)} title="Remove this requirement"
               style={{ ...smallBtn(), color: C.error, padding: '6px 10px' }}>
               Remove

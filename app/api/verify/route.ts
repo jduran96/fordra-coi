@@ -9,6 +9,7 @@ import {
   generateAgentQuestions,
 } from '@/lib/claude';
 import { requireAuth } from '@/lib/auth';
+import { rateLimitAllows, clientIp } from '@/lib/rate-limit';
 import type { Requirement } from '@/lib/types';
 
 export const maxDuration = 60;
@@ -50,6 +51,11 @@ function formatLimit(amount: number): string {
 export async function POST(req: NextRequest) {
   const authError = await requireAuth();
   if (authError) return authError;
+  // Each call fires several Claude requests; keep one demo visitor from
+  // burning the Anthropic budget or its rate limits.
+  if (!await rateLimitAllows(`demo_verify:${clientIp(req)}`, 10, 600)) {
+    return NextResponse.json({ error: 'Too many verifications. Try again in a few minutes.' }, { status: 429 });
+  }
   try {
     const formData = await req.formData();
     const reqFile = formData.get('requirements_file') as File | null;

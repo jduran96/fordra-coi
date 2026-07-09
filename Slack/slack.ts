@@ -79,6 +79,12 @@ export async function oauthAccess(code: string, redirectUri: string) {
 
 /** Download a Slack-hosted file (url_private_download) with the bot token. */
 export async function downloadSlackFile(botToken: string, url: string): Promise<{ bytes: ArrayBuffer; contentType: string }> {
+  // The URL comes from the (signature-verified) event payload; still, never
+  // send the bot token anywhere but Slack itself.
+  const host = new URL(url).hostname
+  if (host !== 'slack.com' && !host.endsWith('.slack.com')) {
+    throw new Error(`Refusing to download from non-Slack host: ${host}`)
+  }
   const res = await fetch(url, { headers: { authorization: `Bearer ${botToken}` } })
   if (!res.ok) throw new Error(`Slack file download failed: ${res.status}`)
   const contentType = res.headers.get('content-type') || 'application/octet-stream'

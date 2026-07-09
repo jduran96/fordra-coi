@@ -12,6 +12,7 @@ import { listTemplates, resolveTemplate, type RequirementTemplate } from '@/lib/
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { downloadSlackFile, postMessage } from './slack'
+import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
 
 interface SlackFile {
   id: string
@@ -135,14 +136,19 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       continue
     }
     const kind = classifyFile(state, name)
+    const check = validateUpload(bytes, f.mimetype || contentType, UPLOAD_ALLOW[kind])
+    if (!check.ok) {
+      await say(`I could not accept "${name}". ${check.error}`)
+      continue
+    }
     const path = `slack-intake/${sessionId}/${kind}-${name}`
     try {
-      await uploadDocument(path, bytes, f.mimetype || contentType)
+      await uploadDocument(path, bytes, check.mimeType)
     } catch {
       // Re-upload of the same filename in one session hits upsert:false; treat as stored.
     }
     state.files = state.files.filter(x => x.storage_path !== path)
-    state.files.push({ kind, storage_path: path, file_name: name, mime_type: f.mimetype || contentType, size_bytes: bytes.byteLength })
+    state.files.push({ kind, storage_path: path, file_name: name, mime_type: check.mimeType, size_bytes: bytes.byteLength })
   }
 
   // The org's saved standards (templates) are offered by name at the

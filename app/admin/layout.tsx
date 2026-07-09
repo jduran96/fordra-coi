@@ -16,7 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           { href: '/admin', label: 'Queue' },
           { href: '/admin/users', label: 'Users' },
           { href: '/admin/slack', label: 'Slack' },
-          { href: '/admin/configs', label: 'Configs' },
+          { href: '/admin/settings', label: 'Settings' },
         ]}
       />
       <main style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 28px' }}>{children}</main>

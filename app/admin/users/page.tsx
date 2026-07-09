@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { C } from '@/lib/theme'
 import EditUserModal from './EditUserModal'
 import InviteUserModal from './InviteUserModal'
+import CreateOrgModal from './CreateOrgModal'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,7 @@ export default async function UsersPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Users</h1>
         <div style={{ display: 'flex', gap: 10 }}>
+          <CreateOrgModal />
           <InviteUserModal orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))} />
           <EditUserModal
             users={rows.map(r => ({ id: r.id, email: r.email }))}

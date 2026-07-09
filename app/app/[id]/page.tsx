@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
+import { ConditionChip } from '@/components/RequirementsEditor'
 
 export const dynamic = 'force-dynamic'
 
@@ -120,7 +121,9 @@ export default async function CustomerVerification({ params }: { params: Promise
                     <div style={{ flex: 1 }}>
                       <p style={{ fontSize: 14, fontWeight: 700, color: C.txt, margin: '0 0 5px' }}>
                         {item.requirement?.coverage_type || 'Requirement'}
-                        {item.requirement?.minimum_limit ? <span style={{ fontWeight: 400, color: C.txt3 }}> · {item.requirement.minimum_limit}</span> : null}
+                        {item.requirement?.minimum_limit
+                          ? <span style={{ fontWeight: 400, color: C.txt3 }}> · {item.requirement.minimum_limit}</span>
+                          : <ConditionChip />}
                       </p>
                       {item.evidence && (
                         <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: 0 }}>{item.evidence}</p>

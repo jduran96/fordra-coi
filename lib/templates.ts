@@ -8,6 +8,33 @@ import type { Requirement } from '@/lib/types'
  * physical-damage limit is "{asset_sale_price}".
  */
 
+/**
+ * Condition rows every logistics broker/factor tends to want on a COI. New
+ * templates start pre-filled with these so orgs can see and tailor them; they
+ * are never merged into a verification automatically. `{carrier_name}` resolves
+ * from the verification's carrier field at submission time.
+ */
+export const STARTER_REQUIREMENTS: Requirement[] = [
+  {
+    coverage_type: 'Matching Policyholder Name',
+    minimum_limit: '',
+    kind: 'condition',
+    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. Owner-operator certificates: if the carrier is not the named insured but appears elsewhere on the certificate (other_named_parties, additional_insured, a scheduled driver or DBA), this is uncertain, and the evidence must say where the name was found. Only a carrier appearing nowhere on the certificate is not met.',
+  },
+  {
+    coverage_type: 'Policy Currently Active',
+    minimum_limit: '',
+    kind: 'condition',
+    notes: 'Every coverage on the COI must be in force today: effective date in the past, expiration date in the future. If any listed coverage is expired or not yet effective, this is not met. If dates are missing or illegible, this is uncertain.',
+  },
+  {
+    coverage_type: 'No Unusual Exclusions',
+    minimum_limit: '',
+    kind: 'condition',
+    notes: 'Review conditions_and_exceptions on each coverage for exclusions that would matter to a freight broker (commodity exclusions, radius restrictions, unattended-vehicle or scheduled-vehicle-only clauses). Met if none are present; not_met if a clearly restrictive exclusion appears; uncertain if the certificate text is ambiguous.',
+  },
+]
+
 export interface TemplateVariable {
   key: string            // token name, e.g. 'asset_sale_price'
   label: string          // shown in the form, e.g. 'Asset sale price'
@@ -76,6 +103,7 @@ export function resolveTemplate(
     (acc, [k, val]) => acc.replaceAll(`{${k}}`, val.trim()), s,
   )
   const requirements: Requirement[] = (template.requirements ?? []).map(r => ({
+    ...r,
     coverage_type: sub(r.coverage_type),
     minimum_limit: sub(r.minimum_limit),
     notes: r.notes ? sub(r.notes) : r.notes,

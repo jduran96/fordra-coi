@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
 import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { emitEvent } from '@/lib/webhooks'
+import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
+import { rateLimitAllows } from '@/lib/rate-limit'
 
 export const maxDuration = 60
 
@@ -67,6 +69,9 @@ function sandboxResult() {
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request)
   if (!auth) return unauthorized()
+  if (!await rateLimitAllows(`v1_create:${auth.orgId}`, 30, 60)) {
+    return apiError('Too many verification submissions. Try again in a minute.', 429, 'rate_limit_error')
+  }
 
   const ct = request.headers.get('content-type') ?? ''
   if (!ct.includes('multipart/form-data')) {
@@ -129,10 +134,13 @@ export async function POST(request: Request) {
   const autoCall = String(form.get('auto_call') || '') === 'true'
   const verificationFiles: VerificationFile[] = []
   for (const { file, kind } of files) {
+    const bytes = await file.arrayBuffer()
+    const check = validateUpload(bytes, file.type, UPLOAD_ALLOW[kind as keyof typeof UPLOAD_ALLOW])
+    if (!check.ok) return apiError(`\`${kind}\` file "${file.name}": ${check.error}`)
     verificationFiles.push({
-      bytes: await file.arrayBuffer(),
+      bytes,
       name: file.name,
-      mimeType: file.type || 'application/octet-stream',
+      mimeType: check.mimeType,
       kind: kind as VerificationFile['kind'],
     })
   }
@@ -150,7 +158,9 @@ export async function POST(request: Request) {
       files: verificationFiles,
     }))
   } catch (e) {
-    return apiError(e instanceof Error ? e.message : 'Could not create verification.', 500, 'api_error')
+    // Internal detail stays in the logs; API clients get a generic failure.
+    console.error('POST /v1/verifications failed:', e)
+    return apiError('Could not create the verification. Please retry.', 500, 'api_error')
   }
 
   // Sandbox: resolve instantly with a canned result and fire the webhook.

@@ -1,24 +1,33 @@
 import { requireAdmin } from '@/lib/auth-helpers'
+import { createServiceClient } from '@/lib/supabase/server'
 import { getExtractionConfig } from '@/lib/config'
 import {
-  DEFAULT_BASELINE_REQUIREMENTS,
   DEFAULT_COI_EXTRACTION_PROMPT,
   DEFAULT_DOC_TEXT_PROMPT,
   DEFAULT_REQUIREMENTS_PARSING_PROMPT,
 } from '@/lib/claude'
+import { STARTER_REQUIREMENTS, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
-import { saveBaselineConfig, savePrompt } from './actions'
+import { savePrompt } from './actions'
+import OrgStandards from './OrgStandards'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminConfigs() {
+export default async function AdminSettings() {
   await requireAdmin()
   const cfg = await getExtractionConfig()
 
-  const baseline = cfg.baselineRequirements?.length ? cfg.baselineRequirements : DEFAULT_BASELINE_REQUIREMENTS
-  const baselineIsDefault = !cfg.baselineRequirements?.length
-  // One trailing empty row = the "add" slot; saving with a name filled in keeps it.
-  const rows = [...baseline, { coverage_type: '', minimum_limit: '', notes: '' }]
+  // Service client (admin scope): list every org and every org's templates so
+  // standards can be authored on a customer's behalf.
+  const svc = createServiceClient()
+  const { data: orgs, error: orgsError } = await svc.from('orgs').select('id, name').order('name')
+  if (orgsError) throw new Error(`Could not load orgs: ${orgsError.message}`)
+  const { data: templates, error: tplError } = await svc
+    .from('requirement_templates')
+    .select(TEMPLATE_SELECT)
+    .order('is_default', { ascending: false })
+    .order('name', { ascending: true })
+  if (tplError) throw new Error(`Could not load templates: ${tplError.message}`)
 
   const prompts = [
     {
@@ -46,36 +55,25 @@ export default async function AdminConfigs() {
 
   return (
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
-      <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Configs</h1>
+      <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Settings</h1>
       <p style={{ color: C.txt2, fontSize: 14, margin: '4px 0 26px', lineHeight: 1.6 }}>
         Runtime settings for the verification pipeline. Changes apply to the next extraction run;
         already-analyzed verifications keep their stored results.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-        {/* Baseline requirements */}
+        {/* Org insurance standards */}
         <section>
-          <SectionTitle>Baseline requirements</SectionTitle>
+          <SectionTitle>Org insurance standards</SectionTitle>
           <p style={hintStyle()}>
-            Checked on every COI, on top of whatever the insurance standards and rate con state.
-            Name is the label shown to customers; criteria tell the analyst (AI or you) exactly how
-            to judge it. Use {'{carrier_name}'} in criteria to reference the verification&apos;s carrier.
-            To delete a row, clear its name and save. Fill the empty bottom row to add one.
-            {baselineIsDefault ? ' Currently using the built-in defaults.' : ' Currently using a custom list.'}
+            Create or edit an insurance requirement standard on behalf of a customer org. It shows up
+            on that org&apos;s Settings page immediately, where they can adjust it like their own.
           </p>
-          <form action={saveBaselineConfig} style={{ ...card(), display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <input type="hidden" name="row_count" value={rows.length} />
-            {rows.map((r, i) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 12, borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input name={`b_${i}_type`} defaultValue={r.coverage_type} placeholder={i === rows.length - 1 ? 'New check name…' : 'Check name'} style={{ ...input(), flex: 2 }} />
-                  <input name={`b_${i}_limit`} defaultValue={r.minimum_limit ?? ''} placeholder="Minimum limit (optional)" style={{ ...input(), flex: 1 }} />
-                </div>
-                <textarea name={`b_${i}_notes`} defaultValue={r.notes ?? ''} rows={2} placeholder="Pass criteria: when is this met, not met, or uncertain?" style={{ ...input(), resize: 'vertical' }} />
-              </div>
-            ))}
-            <button type="submit" style={{ ...smallBtn(), alignSelf: 'flex-start' }}>Save baseline requirements</button>
-          </form>
+          <OrgStandards
+            orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+            templates={(templates ?? []) as unknown as RequirementTemplate[]}
+            starterRows={STARTER_REQUIREMENTS.map(r => ({ ...r }))}
+          />
         </section>
 
         {/* Prompts */}

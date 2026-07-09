@@ -1,9 +1,7 @@
 import Link from 'next/link'
 import { getProfile } from '@/lib/auth-helpers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { listTemplates } from '@/lib/templates'
-import { getExtractionConfig } from '@/lib/config'
-import { DEFAULT_BASELINE_REQUIREMENTS } from '@/lib/claude'
+import { listTemplates, STARTER_REQUIREMENTS } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import SettingsClient from './SettingsClient'
 
@@ -35,20 +33,13 @@ export default async function SettingsPage() {
     .eq('org_id', profile.org_id)
     .order('email')
 
-  // New templates start pre-filled with the baseline checks so orgs can see and
-  // tailor the minimum checks (policyholder name, policy active) per template.
-  const cfg = await getExtractionConfig()
-  const starterRows = (cfg.baselineRequirements?.length ? cfg.baselineRequirements : DEFAULT_BASELINE_REQUIREMENTS)
-    .map(r => ({ ...r }))
+  // New templates start pre-filled with the starter condition checks so orgs can
+  // see and tailor them (policyholder name, policy active) per template.
+  const starterRows = STARTER_REQUIREMENTS.map(r => ({ ...r }))
 
   return (
     <div style={{ maxWidth: 760 }}>
-      <h1 style={h1S()}>Settings</h1>
-      <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 14, margin: '0 0 24px' }}>
-        Save your insurance standards once and reuse them on every verification. Use
-        a <span style={{ fontFamily: C.mono, fontSize: 13 }}>{'{placeholder}'}</span> in a limit for
-        deal-specific values, like <span style={{ fontFamily: C.mono, fontSize: 13 }}>{'{asset_sale_price}'}</span>.
-      </p>
+      <h1 style={{ ...h1S(), marginBottom: 24 }}>Settings</h1>
       <SettingsClient
         templates={templates}
         starterRows={starterRows}

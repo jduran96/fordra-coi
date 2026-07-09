@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
+import { isAdminEmail } from '@/lib/admin-emails'
 
 // ── Demo password gate ────────────────────────────────────────────────────────
 // Shared token logic: signed issued-at timestamp, 24h expiry (lib/demo-token.ts).
@@ -64,10 +65,10 @@ export async function proxy(request: NextRequest) {
       return redirect
     }
     if (pathname.startsWith('/admin')) {
-      const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase()
-      if (!adminEmail || user.email?.toLowerCase() !== adminEmail) {
+      if (!isAdminEmail(user.email)) {
         const url = request.nextUrl.clone()
-        url.pathname = '/app'
+        url.pathname = '/access-denied'
+        url.search = ''
         return NextResponse.redirect(url)
       }
     }

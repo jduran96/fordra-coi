@@ -10,6 +10,17 @@ export interface Requirement {
   coverage_type: string;
   minimum_limit: string;
   notes: string | null;
+  /**
+   * 'limit' = numeric coverage minimum; 'condition' = qualitative check with no
+   * dollar amount (loss payee, name match, endorsements). Older rows predate the
+   * field: treat an empty minimum_limit as 'condition'.
+   */
+  kind?: 'limit' | 'condition';
+}
+
+/** Resolve a row's kind, tolerating rows saved before `kind` existed. */
+export function requirementKind(r: Pick<Requirement, 'minimum_limit' | 'kind'>): 'limit' | 'condition' {
+  return r.kind ?? (r.minimum_limit?.trim() ? 'limit' : 'condition');
 }
 
 export interface COICoverage {

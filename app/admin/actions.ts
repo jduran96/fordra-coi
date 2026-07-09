@@ -121,6 +121,26 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   revalidatePath(`/admin/${verificationId}`)
 }
 
+export interface CreateOrgState { ok?: boolean; error?: string }
+
+/** Create a new customer org. Members are then added via Invite User. */
+export async function createOrg(_prev: CreateOrgState, formData: FormData): Promise<CreateOrgState> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const name = String(formData.get('name') || '').trim()
+  if (!name) return { error: 'Enter an org name.' }
+
+  const { data: existing } = await supabase.from('orgs').select('id').ilike('name', name).maybeSingle()
+  if (existing) return { error: 'An org with that name already exists.' }
+
+  const { error } = await supabase.from('orgs').insert({ name })
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
+}
+
 export interface InviteUserState { ok?: boolean; error?: string; signinLink?: string }
 
 /**

@@ -7,8 +7,6 @@ import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
-import { baselineRequirements } from '@/lib/claude'
-import { getExtractionConfig } from '@/lib/config'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
@@ -87,16 +85,15 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   const coi = (v.coi_extracted ?? null) as COI | null
 
   // The review rows: prefer the admin's saved assessment, then the automated
-  // analysis, then the baseline checklist so a fully manual review is possible.
-  const reviewItems: GapItem[] = await (async () => {
+  // analysis, then the org's parsed requirements so a fully manual review is
+  // possible (the form lets the admin add rows freely when nothing is parsed yet).
+  const reviewItems: GapItem[] = (() => {
     const fromFinal = gapItems(v.final_report as Gap | null)
     if (fromFinal.length) return fromFinal
     const fromGap = gapItems(v.gap_analysis as Gap | null)
     if (fromGap.length) return fromGap
-    const cfg = await getExtractionConfig()
-    return baselineRequirements(v.carrier_name, cfg.baselineRequirements).map(r => ({
-      requirement: r, status: 'uncertain' as const, evidence: '',
-    }))
+    const parsed = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
+    return parsed.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))
   })()
   const summaryDefault = (v.final_report as { narrative_summary?: string } | null)?.narrative_summary ?? ''
 

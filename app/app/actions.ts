@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase/server'
 import { generateApiKey, type KeyMode } from '@/lib/apikeys'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
 import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
+import type { Requirement } from '@/lib/types'
+import { requirementKind } from '@/lib/types'
+import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
 
 export interface SubmitState { error?: string }
 
@@ -29,6 +32,8 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
 
   // Saved standard: resolve the org's template (RLS scopes the lookup) with
   // per-deal variable values into the same { text } shape manual entry produces.
+  // The form may send edited rows (template_rows) — deal-specific tweaks that
+  // override the stored rows for this submission without changing the template.
   const templateId = String(formData.get('template_id') || '').trim()
   let requirements: unknown = requirementsText ? { text: requirementsText } : null
   if (templateId) {
@@ -38,11 +43,36 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
       .eq('id', templateId)
       .single<RequirementTemplate>()
     if (!t) return { error: 'That saved standard could not be found.' }
+
+    let rows = t.requirements
+    const rawRows = String(formData.get('template_rows') || '').trim()
+    if (rawRows) {
+      try {
+        const parsed = JSON.parse(rawRows) as Requirement[]
+        if (!Array.isArray(parsed)) throw new Error('bad shape')
+        const cleaned = parsed
+          .map(r => {
+            const kind = requirementKind(r)
+            return {
+              coverage_type: String(r.coverage_type ?? '').trim(),
+              minimum_limit: kind === 'condition' ? '' : String(r.minimum_limit ?? '').trim(),
+              notes: String(r.notes ?? '').trim() || null,
+              kind,
+            }
+          })
+          .filter(r => r.coverage_type)
+        if (cleaned.length === 0) return { error: 'Add at least one requirement row.' }
+        rows = cleaned
+      } catch {
+        return { error: 'Could not read the adjusted requirement rows.' }
+      }
+    }
+
     // {carrier_name} is auto-filled from the carrier field, never a form input.
     const values: Record<string, string> = { carrier_name: carrier }
     for (const v of t.variables ?? []) values[v.key] = String(formData.get(`template_var_${v.key}`) || '')
     try {
-      const resolved = resolveTemplate(t, values)
+      const resolved = resolveTemplate({ ...t, requirements: rows }, values)
       requirements = { text: resolved.text, ...resolved.provenance }
     } catch (e) {
       return { error: e instanceof Error ? e.message : 'Could not apply the saved standard.' }
@@ -63,12 +93,10 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
   const files: VerificationFile[] = []
   for (const [file, kind] of fileInputs) {
     if (!file || file.size === 0) continue
-    files.push({
-      bytes: await file.arrayBuffer(),
-      name: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      kind,
-    })
+    const bytes = await file.arrayBuffer()
+    const check = validateUpload(bytes, file.type, UPLOAD_ALLOW[kind])
+    if (!check.ok) return { error: `${file.name}: ${check.error}` }
+    files.push({ bytes, name: file.name, mimeType: check.mimeType, kind })
   }
 
   try {

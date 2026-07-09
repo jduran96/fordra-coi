@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import type { Requirement } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
+import RequirementsEditor, { BLANK_REQUIREMENT } from '@/components/RequirementsEditor'
 import { saveTemplate, deleteTemplate, inviteTeammate } from './actions'
 
 interface Member { id: string; email: string; full_name: string | null }
@@ -28,8 +29,6 @@ const pillS = (primary: boolean, disabled = false) => ({
   cursor: disabled ? 'not-allowed' : 'pointer',
 })
 
-const BLANK_ROW: Requirement = { coverage_type: '', minimum_limit: '', notes: '' }
-
 export default function SettingsClient({ templates, starterRows, members, selfId }: {
   templates: RequirementTemplate[]
   starterRows: Requirement[]
@@ -47,19 +46,16 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   function openNew() {
     setEditing('new')
     setName('')
-    setRows([...starterRows.map(r => ({ ...r })), { ...BLANK_ROW }])
+    setRows([...starterRows.map(r => ({ ...r })), { ...BLANK_REQUIREMENT }])
     setIsDefault(templates.length === 0)
     setError('')
   }
   function openEdit(t: RequirementTemplate) {
     setEditing(t.id)
     setName(t.name)
-    setRows(t.requirements.length ? t.requirements.map(r => ({ ...r })) : [{ ...BLANK_ROW }])
+    setRows(t.requirements.length ? t.requirements.map(r => ({ ...r })) : [{ ...BLANK_REQUIREMENT }])
     setIsDefault(t.is_default)
     setError('')
-  }
-  function updateRow(i: number, patch: Partial<Requirement>) {
-    setRows(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
   }
 
   function submit() {
@@ -79,10 +75,15 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
       <section>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ ...labelS, marginBottom: 0 }}>Insurance standards</span>
           <button type="button" onClick={openNew} style={pillS(true)}>+ New template</button>
         </div>
+        <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 13.5, lineHeight: 1.6, margin: '6px 0 12px' }}>
+          Save your insurance standards once and reuse them on every verification. Use
+          a <span style={{ fontFamily: C.mono, fontSize: 12.5 }}>{'{placeholder}'}</span> in a limit for
+          deal-specific values, like <span style={{ fontFamily: C.mono, fontSize: 12.5 }}>{'{asset_sale_price}'}</span>.
+        </p>
 
         {templates.length === 0 && editing === null && (
           <div style={cardS}>
@@ -134,41 +135,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
 
             <div>
               <span style={labelS}>Requirements</span>
-              <div style={{
-                display: 'grid', gridTemplateColumns: '1.4fr 1.2fr 1.6fr 28px', gap: 8, marginBottom: 8,
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-                color: C.txt3, fontFamily: C.sans,
-              }}>
-                <span>Required coverage</span><span>Minimum limit</span><span>Notes</span><span />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {rows.map((row, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.2fr 1.6fr 28px', gap: 8, alignItems: 'center' }}>
-                    <input value={row.coverage_type} onChange={e => updateRow(i, { coverage_type: e.target.value })}
-                      placeholder="e.g. General Liability" style={inputS} />
-                    <input value={row.minimum_limit} onChange={e => updateRow(i, { minimum_limit: e.target.value })}
-                      placeholder={'$1,000,000 or {asset_sale_price}'} style={inputS} />
-                    <input value={row.notes ?? ''} onChange={e => updateRow(i, { notes: e.target.value })}
-                      placeholder="Optional" style={inputS} />
-                    <button type="button" title="Remove row"
-                      onClick={() => setRows(rows.filter((_, idx) => idx !== i))}
-                      style={{
-                        width: 28, height: 28, padding: 0, borderRadius: 6, border: `1px solid ${C.border}`,
-                        background: 'transparent', color: C.txt3, cursor: 'pointer', fontSize: 14, lineHeight: 1,
-                      }}>
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={() => setRows([...rows, { ...BLANK_ROW }])}
-                style={{
-                  marginTop: 8, fontSize: 12, fontWeight: 600, fontFamily: C.sans, padding: '6px 12px',
-                  borderRadius: 6, border: `1px dashed ${C.border}`, background: 'transparent',
-                  color: C.txt2, cursor: 'pointer',
-                }}>
-                + Add requirement
-              </button>
+              <RequirementsEditor rows={rows} onChange={setRows} />
             </div>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: C.txt2, fontFamily: C.sans, cursor: 'pointer' }}>

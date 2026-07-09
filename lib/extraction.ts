@@ -10,7 +10,7 @@ import { getExtractionConfig } from '@/lib/config'
  */
 export async function runExtractionPipeline(verificationId: string): Promise<void> {
   const supabase = createServiceClient()
-  // Admin-editable prompts + baseline checklist (/admin/configs); defaults apply when unset.
+  // Admin-editable prompts (/admin/settings); defaults apply when unset.
   const cfg = await getExtractionConfig()
 
   const { data: v } = await supabase
@@ -52,17 +52,10 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   }
 
   const requirements = reqText.trim() ? await parseRequirements(reqText, cfg.promptRequirementsParsing) : []
-  // Always run the analysis when a COI was extracted: the baseline broker checks
-  // apply even when no insurance-standards document was provided. Template-based
-  // submissions carry their own checklist (templates start pre-filled with the
-  // baseline rows on /app/settings), so the global baseline is not re-merged.
-  const fromTemplate = !!(v as { template_id?: string } | null)?.template_id
-  const gap = coiExtracted
-    ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], {
-        carrierName: (v as { carrier_name?: string } | null)?.carrier_name,
-        includeBaseline: !fromTemplate,
-        baseline: cfg.baselineRequirements,
-      })
+  // Requirements are entirely org-owned: templates and submitted standards carry
+  // the full checklist (including condition rows); nothing is merged in globally.
+  const gap = coiExtracted && requirements.length
+    ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1])
     : null
 
   await supabase.from('verifications').update({

@@ -4,10 +4,31 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { Requirement } from '@/lib/types'
+import { requirementKind } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
-import { DropZone, ManualRequirementsForm, formatCurrencyInput, parseCurrencyAmount } from '@/components/UploadCards'
+import { DropZone, ManualRequirementsForm } from '@/components/UploadCards'
+import RequirementsEditor, { formatCurrencyInput } from '@/components/RequirementsEditor'
 import { submitVerification } from '../actions'
+
+/**
+ * Opt-in condition checks offered in manual mode (pre-checked). These replace
+ * the old always-on global baseline: the user decides per submission.
+ */
+const MANUAL_CHECKS = [
+  {
+    key: 'name_match',
+    label: 'Check the policyholder name matches the carrier',
+    line: (carrier: string) =>
+      `Matching Policyholder Name: the named insured on the COI must be "${carrier}"; minor formatting differences or a DBA explicitly listing the carrier still count as a match`,
+  },
+  {
+    key: 'policy_active',
+    label: 'Check every policy is currently active',
+    line: () =>
+      'Policy Currently Active: every coverage on the COI must be in force today, with the effective date in the past and the expiration date in the future',
+  },
+] as const
 
 export default function NewVerificationForm({ templates }: { templates: RequirementTemplate[] }) {
   const router = useRouter()
@@ -19,29 +40,48 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   // Saved standards are the default entry point when the org has any.
   const [useTemplate, setUseTemplate] = useState(!!defaultTemplate)
   const [templateId, setTemplateId] = useState<string>(defaultTemplate?.id ?? '')
+  // The selected standard's rows, editable for this deal only (the saved
+  // template is not changed). Limits stay plain text so {tokens} pass through.
+  const [tplRows, setTplRows] = useState<Requirement[]>(
+    (defaultTemplate?.requirements ?? []).map(r => ({ ...r })),
+  )
   const [varValues, setVarValues] = useState<Record<string, string>>({})
-  const [reqMode, setReqMode] = useState<'upload' | 'manual'>('upload')
+  const [reqMode, setReqMode] = useState<'upload' | 'manual'>('manual')
   const [reqFile, setReqFile] = useState<File | null>(null)
-  const [manualReqs, setManualReqs] = useState<Requirement[]>([{ coverage_type: '', minimum_limit: '', notes: '' }])
+  const [manualReqs, setManualReqs] = useState<Requirement[]>([{ coverage_type: '', minimum_limit: '', notes: '', kind: 'limit' }])
   const [manualNotes, setManualNotes] = useState('')
+  const [manualChecks, setManualChecks] = useState<Record<string, boolean>>({ name_match: true, policy_active: true })
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const [hover, setHover] = useState(false)
 
   const template = templates.find(t => t.id === templateId) ?? null
-  const varsReady = !template || (template.variables ?? []).every(v => !v.required || !!varValues[v.key]?.trim())
+  const missingVar = template ? (template.variables ?? []).find(v => v.required && !varValues[v.key]?.trim()) : undefined
+  const cleanTplRows = tplRows.filter(r => r.coverage_type.trim())
 
-  const cleanReqs = manualReqs.filter(r => r.coverage_type.trim() && parseCurrencyAmount(r.minimum_limit))
+  // A manual row counts when it has a name and either a limit or is a condition.
+  const cleanReqs = manualReqs.filter(r =>
+    r.coverage_type.trim() && (requirementKind(r) === 'condition' || r.minimum_limit.trim()))
+  const checkedLines = MANUAL_CHECKS.filter(c => manualChecks[c.key])
   const reqReady = useTemplate
-    ? !!template && varsReady
-    : reqMode === 'upload' ? !!reqFile : cleanReqs.length > 0
+    ? !!template && !missingVar && cleanTplRows.length > 0
+    : reqMode === 'upload' ? !!reqFile : (cleanReqs.length > 0 || checkedLines.length > 0)
   const canSubmit = !!carrier.trim() && !!coiFile && reqReady && !pending
+
+  function pickTemplate(id: string) {
+    setTemplateId(id)
+    setVarValues({})
+    const t = templates.find(x => x.id === id)
+    setTplRows((t?.requirements ?? []).map(r => ({ ...r })))
+  }
 
   function serializeStandards(): string {
     const lines = cleanReqs.map(r => {
       const note = (r.notes ?? '').trim()
-      return `${r.coverage_type.trim()}: ${r.minimum_limit.trim()}${note ? ` (${note})` : ''}`
+      const limit = r.minimum_limit.trim()
+      return `${r.coverage_type.trim()}${limit ? `: ${limit}` : ''}${note ? ` (${note})` : ''}`
     })
+    for (const c of checkedLines) lines.push(c.line(carrier.trim()))
     if (manualNotes.trim()) lines.push(`Additional details: ${manualNotes.trim()}`)
     return lines.join('\n')
   }
@@ -52,10 +92,13 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     if (!coiFile) return setError('Upload the carrier COI.')
     if (useTemplate) {
       if (!template) return setError('Pick a saved standard, or switch to entering standards for this deal.')
-      if (!varsReady) return setError('Fill in the deal details for the selected standard.')
+      if (cleanTplRows.length === 0) return setError('The selected standard has no requirement rows left. Add at least one.')
+      if (missingVar) return setError(`Enter ${missingVar.label.toLowerCase()} for the selected standard.`)
     } else {
       if (reqMode === 'upload' && !reqFile) return setError('Upload your insurance standards, or switch to manual entry.')
-      if (reqMode === 'manual' && cleanReqs.length === 0) return setError('Add at least one coverage with a minimum limit.')
+      if (reqMode === 'manual' && cleanReqs.length === 0 && checkedLines.length === 0) {
+        return setError('Add at least one coverage or condition, or keep one of the standard checks selected.')
+      }
     }
 
     setPending(true)
@@ -65,6 +108,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     if (rcsFile) fd.append('rcs_file', rcsFile)
     if (useTemplate && template) {
       fd.append('template_id', template.id)
+      fd.append('template_rows', JSON.stringify(cleanTplRows))
       for (const v of template.variables ?? []) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
     } else if (reqMode === 'upload' && reqFile) {
       fd.append('requirements_file', reqFile)
@@ -78,7 +122,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   }
 
   return (
-    <div style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
         <Label>Carrier name</Label>
         <input
@@ -106,7 +150,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
           <Label noMargin>Insurance Standards</Label>
           {!useTemplate && (
             <div style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
-              {([['upload', 'Upload file'], ['manual', 'Enter manually']] as const).map(([m, label]) => (
+              {([['manual', 'Enter manually'], ['upload', 'Upload file']] as const).map(([m, label]) => (
                 <button key={m} type="button" onClick={() => setReqMode(m)}
                   style={{
                     fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
@@ -139,7 +183,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <select
                 value={templateId}
-                onChange={e => { setTemplateId(e.target.value); setVarValues({}) }}
+                onChange={e => pickTemplate(e.target.value)}
                 style={{
                   flex: 1, padding: '9px 12px', fontSize: 14, fontFamily: C.sans,
                   border: `1.5px solid ${C.border}`, borderRadius: 8, background: C.surface, color: C.txt,
@@ -154,21 +198,19 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
               </Link>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {template.requirements.map((r, i) => (
-                <p key={i} style={{ fontSize: 12.5, color: C.txt2, fontFamily: C.sans, margin: 0 }}>
-                  <span style={{ fontWeight: 600, color: C.txt }}>{r.coverage_type}</span>
-                  {r.minimum_limit ? `: ${r.minimum_limit}` : ''}
-                  {r.notes ? <span style={{ color: C.txt3 }}> — {r.notes}</span> : null}
-                </p>
-              ))}
-            </div>
+            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+              Adjust the rows below for this deal if needed; the saved standard itself is not changed.
+            </p>
+            <RequirementsEditor rows={tplRows} onChange={setTplRows} />
 
             {(template.variables ?? []).length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
                 {(template.variables ?? []).map(v => (
                   <div key={v.key}>
-                    <Label>{v.label}</Label>
+                    <Label>
+                      {v.label}
+                      {v.required && <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>}
+                    </Label>
                     <input
                       value={varValues[v.key] ?? ''}
                       inputMode={v.type === 'currency' ? 'numeric' : undefined}
@@ -197,7 +239,24 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
             onChange={setReqFile}
           />
         ) : (
-          <ManualRequirementsForm rows={manualReqs} onChange={setManualReqs} notes={manualNotes} onNotesChange={setManualNotes} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <ManualRequirementsForm rows={manualReqs} onChange={setManualReqs} notes={manualNotes} onNotesChange={setManualNotes} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {MANUAL_CHECKS.map(c => (
+                <label key={c.key} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 13, color: C.txt2, fontFamily: C.sans, cursor: 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={!!manualChecks[c.key]}
+                    onChange={e => setManualChecks({ ...manualChecks, [c.key]: e.target.checked })}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

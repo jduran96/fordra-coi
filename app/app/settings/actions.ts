@@ -5,8 +5,10 @@ import { headers } from 'next/headers'
 import { getProfile } from '@/lib/auth-helpers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Requirement } from '@/lib/types'
+import { requirementKind } from '@/lib/types'
 import type { TemplateVariable } from '@/lib/templates'
 import { templateTokens } from '@/lib/templates'
+import { rateLimitAllows } from '@/lib/rate-limit'
 
 export interface TemplateState { ok?: boolean; error?: string }
 
@@ -45,11 +47,15 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
     return { error: 'Could not read the requirement rows.' }
   }
   requirements = requirements
-    .map(r => ({
-      coverage_type: (r.coverage_type ?? '').trim(),
-      minimum_limit: (r.minimum_limit ?? '').trim(),
-      notes: (r.notes ?? '').trim() || null,
-    }))
+    .map(r => {
+      const kind = requirementKind(r)
+      return {
+        coverage_type: (r.coverage_type ?? '').trim(),
+        minimum_limit: kind === 'condition' ? '' : (r.minimum_limit ?? '').trim(),
+        notes: (r.notes ?? '').trim() || null,
+        kind,
+      }
+    })
     .filter(r => r.coverage_type)
   if (requirements.length === 0) return { error: 'Add at least one requirement row.' }
 
@@ -107,6 +113,11 @@ export async function inviteTeammate(_prev: InviteState, formData: FormData): Pr
   const email = String(formData.get('email') || '').trim().toLowerCase()
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Enter a valid email address.' }
 
+  // Invites send real email; keep one org from spamming addresses.
+  if (!await rateLimitAllows(`invite:${profile.org_id}`, 10, 3600)) {
+    return { error: 'Too many invites in the last hour. Try again later.' }
+  }
+
   const hdrs = await headers()
   const origin = hdrs.get('origin') || `https://${hdrs.get('host') || 'app.fordra.com'}`
 
@@ -117,10 +128,13 @@ export async function inviteTeammate(_prev: InviteState, formData: FormData): Pr
   if (error) return { error: error.message }
 
   // handle_new_user() created the profile row; link it to the inviter's org.
+  // Only fill an EMPTY org_id: a member must never be able to pull an existing
+  // user out of another org by "inviting" their email.
   if (data.user) {
     const { error: perr } = await svc.from('profiles')
       .update({ org_id: profile.org_id })
       .eq('id', data.user.id)
+      .is('org_id', null)
     if (perr) return { error: `Invited, but could not link the account: ${perr.message}` }
   }
 

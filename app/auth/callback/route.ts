@@ -24,7 +24,10 @@ export async function GET(request: Request) {
       return [c.slice(0, i), decodeURIComponent(c.slice(i + 1))]
     }),
   )
-  const next = url.searchParams.get('next') || cookies['login-next'] || null
+  // Only same-origin relative paths: anything absolute ("https://…") or
+  // protocol-relative ("//…") would be an open redirect off Fordra.
+  const rawNext = url.searchParams.get('next') || cookies['login-next'] || null
+  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null
 
   const supabase = await createClient()
   let authed = false

@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { isAdminEmail } from '@/lib/admin-emails'
+
+export { isAdminEmail }
 
 export interface Profile {
   id: string
@@ -36,14 +39,10 @@ export async function getProfile(): Promise<Profile | null> {
   return data as Profile | null
 }
 
-/** Require the admin (gated by ADMIN_EMAIL); else redirect. */
+/** Require an admin (gated by the ADMIN_EMAIL allowlist); else show the error page. */
 export async function requireAdmin() {
   const user = await getSessionUser()
   if (!user) redirect('/login')
-  if (user.email?.toLowerCase() !== process.env.ADMIN_EMAIL?.toLowerCase()) redirect('/app')
+  if (!isAdminEmail(user.email)) redirect('/access-denied')
   return user
-}
-
-export function isAdminEmail(email: string | undefined | null): boolean {
-  return !!email && email.toLowerCase() === process.env.ADMIN_EMAIL?.toLowerCase()
 }

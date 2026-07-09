@@ -33,6 +33,8 @@ export async function emitEvent(orgId: string, type: string, object: unknown) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Fordra-Signature': signature },
         body,
+        // A slow customer endpoint must not pin the triggering request open.
+        signal: AbortSignal.timeout(5000),
       })
     } catch {
       // best-effort delivery for the pilot; retry/backoff is a later hardening

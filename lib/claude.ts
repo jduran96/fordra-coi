@@ -235,54 +235,11 @@ export async function extractCOIFields(
 
 // ─── 4. Gap analysis ─────────────────────────────────────────────────────────
 
-/**
- * Baseline checks every logistics broker/factor needs on a COI, regardless of
- * what the insurance-standards document says. Passed to analyzeGaps as extra
- * requirement rows so they show up in the same met/not_met/uncertain report.
- */
-export const DEFAULT_BASELINE_REQUIREMENTS: Requirement[] = [
-  {
-    coverage_type: 'Matching Policyholder Name',
-    minimum_limit: '',
-    notes: 'The named insured on the COI must be the carrier "{carrier_name}". Minor formatting differences (punctuation, casing, LLC vs L.L.C.) still count as a match; a DBA explicitly listing the carrier also counts. Owner-operator certificates: if the carrier is not the named insured but appears elsewhere on the certificate (other_named_parties, additional_insured, a scheduled driver or DBA), this is uncertain, and the evidence must say where the name was found. Only a carrier appearing nowhere on the certificate is not met.',
-  },
-  {
-    coverage_type: 'Policy Currently Active',
-    minimum_limit: '',
-    notes: 'Every coverage on the COI must be in force today: effective date in the past, expiration date in the future. If any listed coverage is expired or not yet effective, this is not met. If dates are missing or illegible, this is uncertain.',
-  },
-  {
-    coverage_type: 'No Unusual Exclusions',
-    minimum_limit: '',
-    notes: 'Review conditions_and_exceptions on each coverage for exclusions that would matter to a freight broker (commodity exclusions, radius restrictions, unattended-vehicle or scheduled-vehicle-only clauses). Met if none are present; not_met if a clearly restrictive exclusion appears; uncertain if the certificate text is ambiguous.',
-  },
-]
-
-/**
- * Resolve the baseline checklist: admin-configured overrides (app_config, via
- * /admin/configs) or the defaults above. `{carrier_name}` in notes is replaced
- * with the verification's carrier; items that need the carrier name are dropped
- * when it is unknown.
- */
-export function baselineRequirements(carrierName?: string, overrides?: Requirement[]): Requirement[] {
-  const source = overrides?.length ? overrides : DEFAULT_BASELINE_REQUIREMENTS
-  const name = carrierName?.trim()
-  return source
-    .filter(r => name || !r.notes?.includes('{carrier_name}'))
-    .map(r => ({
-      ...r,
-      notes: r.notes ? r.notes.replaceAll('{carrier_name}', name ?? '') : r.notes,
-    }))
-}
-
 export async function analyzeGaps(
   requirements: Requirement[],
   extracted: COIExtracted,
-  opts?: { carrierName?: string; includeBaseline?: boolean; baseline?: Requirement[] },
 ): Promise<GapAnalysis> {
-  const allRequirements = opts?.includeBaseline
-    ? [...baselineRequirements(opts.carrierName, opts.baseline), ...requirements]
-    : requirements
+  const allRequirements = requirements
   const system = `You are a COI compliance analyst for a trucking freight factoring company.
 Today's date is ${new Date().toISOString().slice(0, 10)} — use it when judging whether policy dates are current.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
@@ -297,7 +254,7 @@ CRITICAL — the evidence MUST be consistent with the status; never contradict i
 - status "not_met": state plainly what falls short, e.g. "You require $1M cargo; the policy shows only $100,000."
 - status "uncertain": state exactly what could not be confirmed and why — and only then.
 Judge each requirement on the coverage type and limit. Do not introduce a separate concern (e.g. effective dates) that conflicts with the status you chose.
-Some requirements are baseline checks (no minimum_limit) whose pass criteria are spelled out in their "notes" field — judge those strictly by the notes.
+Some requirements are qualitative conditions (no minimum_limit) whose pass criteria are spelled out in their "notes" field — judge those strictly by the notes.
 Each requirement must appear EXACTLY ONCE across the three arrays. If the evidence is mixed (e.g. one coverage is active and another is expired), choose the single most severe status (not_met over uncertain over met) and explain the split in the evidence sentence. Never place the same requirement in two arrays.`;
 
   const messages: Anthropic.MessageParam[] = [
