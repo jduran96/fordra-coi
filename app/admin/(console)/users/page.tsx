@@ -5,6 +5,7 @@ import EditUserModal from './EditUserModal'
 import InviteUserModal from './InviteUserModal'
 import CreateOrgModal from './CreateOrgModal'
 import OrgsTable from './OrgsTable'
+import SigninLinkButton from './SigninLinkButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +52,7 @@ export default async function UsersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              <th style={th()}>User email</th><th style={th()}>Role</th><th style={th()}>Org</th><th style={th()}>Last activity</th>
+              <th style={th()}>User email</th><th style={th()}>Role</th><th style={th()}>Org</th><th style={th()}>Last activity</th><th style={th()} />
             </tr>
           </thead>
           <tbody>
@@ -63,6 +64,7 @@ export default async function UsersPage() {
                 <td style={{ ...td(), textTransform: 'capitalize' }}>{isAdminEmail(p.email) ? 'admin' : 'customer'}</td>
                 <td style={{ ...td(), color: p.org_id ? C.txt : C.txt3 }}>{p.orgs?.name ?? 'unassigned'}</td>
                 <td style={{ ...td(), color: C.txt3 }}>{fmt(lastSeen.get(p.id))}</td>
+                <td style={{ ...td(), textAlign: 'right' }}><SigninLinkButton email={p.email} /></td>
               </tr>
             ))}
           </tbody>

@@ -234,12 +234,14 @@ export async function deleteOrg(_prev: OrgActionState, formData: FormData): Prom
   return { ok: true }
 }
 
-export interface InviteUserState { ok?: boolean; error?: string; signinLink?: string }
+export interface InviteUserState { ok?: boolean; error?: string; signinLink?: string; existing?: boolean }
 
 /**
  * Invite a new user by email and assign them to an org in one step.
  * Also mints a direct sign-in link (generateLink token_hash, accepted by
  * /auth/callback) so the admin can hand it over when email delivery is flaky.
+ * Re-inviting an existing user (e.g. their original link expired) is not an
+ * error: it re-links the org and returns a fresh sign-in link.
  */
 export async function inviteUser(_prev: InviteUserState, formData: FormData): Promise<InviteUserState> {
   await requireAdmin()
@@ -256,24 +258,56 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${origin}/auth/callback`,
   })
-  if (error) return { error: error.message }
 
-  // handle_new_user() created the profile row; link it to the chosen org.
-  if (data.user) {
+  // Already registered (their first invite link expired, or they were added
+  // another way): not an error — re-link the org and mint a fresh link below.
+  const existing = !!error && (error.code === 'email_exists' || /already.*registered/i.test(error.message))
+  if (error && !existing) return { error: error.message }
+
+  if (existing) {
+    const { data: prof, error: perr } = await supabase
+      .from('profiles').select('id').eq('email', email).maybeSingle()
+    if (perr) return { error: perr.message }
+    if (!prof) return { error: 'This email has a sign-in account but no profile. Contact support.' }
+    const { error: uerr } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', prof.id)
+    if (uerr) return { error: `Could not link the account: ${uerr.message}` }
+  } else if (data.user) {
+    // handle_new_user() created the profile row; link it to the chosen org.
     const { error: perr } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', data.user.id)
     if (perr) return { error: `Invited, but could not link the account: ${perr.message}` }
   }
 
-  // Fallback link in case the invite email does not arrive.
+  // Fallback link in case the invite email does not arrive; for an existing
+  // user this fresh link IS the point of re-inviting.
   let signinLink: string | undefined
   const { data: linkData } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
   const props = linkData?.properties
   if (props?.hashed_token) {
     signinLink = `${origin}/auth/callback?token_hash=${props.hashed_token}&type=magiclink`
   }
+  if (existing && !signinLink) return { error: 'Could not mint a new sign-in link. Try again.' }
 
   revalidatePath('/admin/users')
-  return { ok: true, signinLink }
+  return { ok: true, signinLink, existing }
+}
+
+/**
+ * Mint a fresh one-time sign-in link for an existing user (e.g. their invite
+ * expired). Same token_hash flow the invite fallback uses; accepted by
+ * /auth/callback from any browser.
+ */
+export async function mintSigninLink(email: string): Promise<{ signinLink?: string; error?: string }> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+
+  const hdrs = await headers()
+  const origin = hdrs.get('origin') || `https://${hdrs.get('host') || 'app.fordra.com'}`
+
+  const { data, error } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
+  if (error) return { error: error.message }
+  const hashed = data?.properties?.hashed_token
+  if (!hashed) return { error: 'Supabase returned no link token. Try again.' }
+  return { signinLink: `${origin}/auth/callback?token_hash=${hashed}&type=magiclink` }
 }
 
 export interface DeleteUserState { ok?: boolean; error?: string }

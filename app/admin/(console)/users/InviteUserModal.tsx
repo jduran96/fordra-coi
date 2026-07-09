@@ -42,7 +42,9 @@ function InviteDialog({ orgs, onClose }: { orgs: { id: string; name: string }[];
         {state.ok ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, margin: 0 }}>
-              Invitation sent. If the email does not arrive, hand them this one-time sign-in link:
+              {state.existing
+                ? 'This user already has an account (no new email was sent). Hand them this fresh one-time sign-in link:'
+                : 'Invitation sent. If the email does not arrive, hand them this one-time sign-in link:'}
             </p>
             {state.signinLink && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
