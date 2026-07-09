@@ -256,7 +256,7 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
   const origin = hdrs.get('origin') || `https://${hdrs.get('host') || 'app.fordra.com'}`
 
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origin}/auth/callback`,
+    redirectTo: `${origin}/auth/link`,
   })
 
   // Already registered (their first invite link expired, or they were added

@@ -56,7 +56,7 @@ function LoginForm() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         // Invite-only: a link never creates a brand-new account.
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback`, shouldCreateUser: false },
+        options: { emailRedirectTo: `${window.location.origin}/auth/link`, shouldCreateUser: false },
       })
       if (error) {
         setError(/signup|not allowed|not found/i.test(error.message)

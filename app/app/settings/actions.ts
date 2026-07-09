@@ -95,7 +95,7 @@ export async function inviteTeammate(_prev: InviteState, formData: FormData): Pr
 
   const svc = createServiceClient()
   const { data, error } = await svc.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origin}/auth/callback`,
+    redirectTo: `${origin}/auth/link`,
   })
   if (error) return { error: error.message }
 

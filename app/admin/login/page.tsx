@@ -34,7 +34,7 @@ function AdminLoginForm() {
         : 'login-next=; path=/; max-age=0'
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback`, shouldCreateUser: false },
+        options: { emailRedirectTo: `${window.location.origin}/auth/link`, shouldCreateUser: false },
       })
       if (error) {
         setError(/signup|not allowed|not found/i.test(error.message)
