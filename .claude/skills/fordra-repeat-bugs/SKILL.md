@@ -116,3 +116,23 @@ server action). Any new route/page that triggers `runExtractionPipeline`
 - `requirement_templates` has a partial unique index (one `is_default` per
   org): clear the existing default before setting a new one, as
   `saveTemplate` in `app/app/settings/actions.ts` does.
+
+## 9. Email buttons render tiny/collapsed in Gmail
+
+**Symptom:** the Sign in / Accept invitation button in auth emails is a thin
+pill hugging the text in Gmail; the Supabase dashboard preview looks perfect.
+
+**Root cause (two-part):**
+- The send pipeline hard-wraps long HTML lines, and a wrap landing inside a
+  quoted CSS string (e.g. `'Segoe UI'`) is invalid CSS — Gmail's sanitizer
+  then drops the element's styles entirely, while browser previews forgive it.
+- Dashboard template edits silently fail to persist if Save isn't clicked on
+  that specific tab; the old mangled template keeps being sent, so "I fixed
+  the template" appears to change nothing.
+
+**Fix:** templates in `supabase/email-templates/` use only unquoted font
+stacks (`Georgia,serif`, `Arial,Helvetica,sans-serif`), keep attribute values
+short, and put button sizing on the `<td>` (bulletproof pattern), never on
+the `<a>`. After pasting into the dashboard, reload the page to confirm the
+save stuck, then send a FRESH email — received emails never re-render. Debug
+with Gmail's Show original: it reveals exactly which markup was sent.
