@@ -5,21 +5,18 @@
 
 ---
 
-## ⚠️ PENDING — reject feature + polish batch (updated 2026-07-09)
+## ⚠️ PENDING — smoke-test the 2026-07-09 batches (updated late 2026-07-09)
 
-All previously pending tests passed by 2026-07-09: Slack intake against prod (happy path,
-variants, adversarial cases), auth/login flows (Gmail invite, magic links, org-less screen),
-and the polish batch. Test data for the Fordra Testing org was identified for cleanup.
-Remaining:
+Everything below is deployed and Ready through commit `d698e93`; migration `0015` is applied,
+Fordra Testing test data is cleaned, and the 24-hour email templates are pasted into the
+dashboard. One prod smoke test remains:
 
-Migration `0015` (rejected enum) is applied and the Fordra Testing test data is cleaned
-(2026-07-09). Remaining:
-
-1. **Smoke-test the 2026-07-09 second batch after deploy:** password show/hide eye on
-   `/app/settings`; "e.g. Cargo" placeholder in `/app/new` manual entry; org
-   rename/create/delete table on `/admin/users` (delete refuses while an org has members or
-   verifications); admin Reject button (moves the request to the Completed queue with a red
-   Rejected pill; Save draft or Publish un-rejects).
+- Password show/hide eye on `/app/settings`; "e.g. Cargo" placeholder in `/app/new` manual
+  entry; org create/rename/delete table on `/admin/users` (**delete cascades** — members,
+  verifications, documents, Slack rows; test with a scratch org); admin Reject button (red
+  Rejected pill, Completed queue, Save draft un-rejects); one fresh magic-link AND invite-link
+  sign-in end to end from Gmail (via the new `/auth/link` interstitial, repeat-bug #10); the
+  reworded error copy where convenient.
 
 Delete this section when done.
 
