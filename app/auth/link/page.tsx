@@ -9,8 +9,10 @@ export const dynamic = 'force-dynamic'
  * link-preview crawlers (Slack, iMessage, mail scanners) GET every URL they
  * see, and a direct callback link would be consumed before the human clicks.
  * This page consumes nothing on GET. Real browsers auto-continue via JS
- * (AutoContinue), so humans just see a brief flash; crawlers don't run JS,
- * and the no-JS fallback is the form button.
+ * (AutoContinue), so humans just see a brief "Signing you in…" flash with a
+ * spinner; crawlers don't run JS and see only static text, so the token
+ * survives them. Deliberately no button or link to the callback here — any
+ * clickable/submittable path is one a scanner could follow.
  */
 export default async function AuthLinkPage({ searchParams }: {
   searchParams: Promise<{ token_hash?: string; type?: string; next?: string }>
@@ -36,23 +38,18 @@ export default async function AuthLinkPage({ searchParams }: {
         <p style={{ fontFamily: C.mono, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.txt3, margin: '0 0 10px' }}>
           Fordra
         </p>
-        <h1 style={{ fontFamily: C.serif, fontSize: 26, fontWeight: 400, color: C.txt, margin: tokenHash ? '0 0 24px' : '0 0 10px' }}>
+        <h1 style={{ fontFamily: C.serif, fontSize: 26, fontWeight: 400, color: C.txt, margin: tokenHash ? '0 0 18px' : '0 0 10px' }}>
           {tokenHash ? 'Signing you in…' : 'Sign in to Fordra'}
         </h1>
         {tokenHash ? (
           <>
             <AutoContinue href={callbackHref} />
-            <form action="/auth/callback" method="get">
-              <input type="hidden" name="token_hash" value={tokenHash} />
-              <input type="hidden" name="type" value={type} />
-              {next && <input type="hidden" name="next" value={next} />}
-              <button type="submit" style={{
-                padding: '12px 32px', background: C.earthy, color: C.onDark, fontSize: 15,
-                fontWeight: 600, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer',
-              }}>
-                Sign in
-              </button>
-            </form>
+            <style>{`@keyframes fdr-spin{to{transform:rotate(360deg)}}`}</style>
+            <span aria-label="Signing you in" style={{
+              width: 18, height: 18, borderRadius: '50%',
+              border: `2px solid ${C.earthy}`, borderTopColor: 'transparent',
+              display: 'inline-block', animation: 'fdr-spin 0.7s linear infinite',
+            }} />
           </>
         ) : (
           <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.6, margin: 0 }}>

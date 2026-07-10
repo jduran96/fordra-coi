@@ -9,9 +9,10 @@ import { C } from '@/lib/theme'
  * Shared requirements grid used by /app/settings templates, the admin
  * org-standard editor, and the new-verification form. Each row is one of:
  * - limit: a coverage with a fixed dollar minimum
- * - variable: a coverage whose dollar amount changes per deal — the Amount cell
- *   holds the human title ("Asset Sale Price"); normalizeRequirementRows turns
- *   it into an {asset_sale_price} token at save time
+ * - variable: a coverage whose value changes per deal (a dollar amount, a
+ *   make/model/VIN, etc.) — the Amount cell holds the human title ("Asset Sale
+ *   Price"); normalizeRequirementRows turns it into an {asset_sale_price}
+ *   token at save time
  * - condition: a qualitative check with no dollar amount, judged by its notes
  */
 
@@ -104,7 +105,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
               style={inputS}
             />
             <select value={kind} onChange={e => setKind(i, e.target.value as 'limit' | 'condition' | 'variable')}
-              title="Limit: fixed dollar minimum. Variable: dollar amount entered on each deal. Condition: no dollar amount, judged by its notes."
+              title="Limit: fixed dollar minimum. Variable: value entered on each deal. Condition: no dollar amount, judged by its notes."
               style={{ ...inputS, padding: '10px 8px', color: C.txt2 }}>
               <option value="limit">Limit</option>
               <option value="variable">Variable</option>
@@ -117,7 +118,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
               <input value={row.minimum_limit}
                 onChange={e => updateRow(i, { minimum_limit: e.target.value })}
                 placeholder="e.g. Asset Sale Price"
-                title="Name what the amount depends on; the dollar value is entered on each new verification"
+                title="Name what the value depends on; it is entered on each new verification"
                 style={inputS} />
             ) : (
               <input value={row.minimum_limit}
@@ -128,7 +129,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
             <AutoGrowTextarea
               value={row.notes ?? ''}
               onChange={v => updateRow(i, { notes: v })}
-              placeholder={kind === 'condition' ? 'Describe the condition and when it passes' : 'Optional'}
+              placeholder="Specify what a 'pass' means"
               style={inputS}
             />
             <div style={{ display: 'flex', gap: 4, paddingTop: 9 }}>

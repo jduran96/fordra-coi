@@ -9,7 +9,7 @@ import type { RequirementTemplate } from '@/lib/templates'
 import { editableRows, normalizeRequirementRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import { DropZone, ManualRequirementsForm } from '@/components/UploadCards'
-import RequirementsEditor, { formatCurrencyInput } from '@/components/RequirementsEditor'
+import RequirementsEditor from '@/components/RequirementsEditor'
 import { submitVerification } from '../actions'
 
 /**
@@ -234,12 +234,8 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
                     </Label>
                     <input
                       value={varValues[v.key] ?? ''}
-                      inputMode={v.type === 'currency' ? 'numeric' : undefined}
-                      onChange={e => setVarValues({
-                        ...varValues,
-                        [v.key]: v.type === 'currency' ? formatCurrencyInput(e.target.value) : e.target.value,
-                      })}
-                      placeholder={v.type === 'currency' ? 'e.g. $85,000' : ''}
+                      onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
+                      placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
                       style={{
                         width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
                         fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',

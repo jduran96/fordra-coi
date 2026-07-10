@@ -23,6 +23,8 @@ export const STARTER_REQUIREMENTS: Requirement[] = [
 export interface TemplateVariable {
   key: string            // token name, e.g. 'asset_sale_price'
   label: string          // shown in the form, e.g. 'Asset sale price'
+  /** Always 'text' now: per-deal values are free-form (dollar amounts, make/model/VIN, …).
+   * 'currency' survives in rows saved before 2026-07-10; render those as text too. */
   type: 'currency' | 'text'
   required: boolean
 }
@@ -102,13 +104,13 @@ export function normalizeRequirementRows(raw: Requirement[]): {
       if (!key) {
         return {
           requirements: [], variables: [],
-          error: `Name the per-deal amount for "${coverage_type}" (for example "Asset Sale Price").`,
+          error: `Name the per-deal value for "${coverage_type}" (for example "Asset Sale Price").`,
         }
       }
       minimum_limit = `{${key}}`
       if (!seen.has(key)) {
         seen.add(key)
-        variables.push({ key, label: token ? humanizeToken(key) : (r.minimum_limit ?? '').trim(), type: 'currency', required: true })
+        variables.push({ key, label: token ? humanizeToken(key) : (r.minimum_limit ?? '').trim(), type: 'text', required: true })
       }
     }
     requirements.push({ coverage_type, minimum_limit, notes: (r.notes ?? '').trim() || null, kind })
@@ -120,7 +122,7 @@ export function normalizeRequirementRows(raw: Requirement[]): {
     variables.push({
       key,
       label: humanizeToken(key),
-      type: /price|amount|limit|value/.test(key) ? 'currency' : 'text',
+      type: 'text',
       required: true,
     })
   }
