@@ -107,6 +107,23 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   await requireAdmin()
   const supabase = createServiceClient()
 
+  // Edit Status on a closed (published or rejected) case: reopen it into the
+  // review queue WITHOUT touching final_report. The closed form's fields are
+  // disabled and absent from the submission, so parsing them here would wipe
+  // the saved verdicts.
+  if (String(formData.get('intent') || '') === 'reopen') {
+    const { error } = await supabase.from('verifications')
+      .update({ case_status: 'report_ready', status: 'pending', published_at: null })
+      .eq('id', verificationId)
+    if (error) {
+      console.error('saveAssessment: reopen failed', error)
+      return { error: 'Could not save. Nothing was changed. Please retry.' }
+    }
+    revalidatePath('/admin')
+    revalidatePath(`/admin/${verificationId}`)
+    return
+  }
+
   const count = Number(formData.get('row_count') || 0)
   const report = { met: [] as AssessmentItem[], not_met: [] as AssessmentItem[], uncertain: [] as AssessmentItem[] }
   for (let i = 0; i < count; i++) {

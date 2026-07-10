@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
-import DownloadReportButton from '@/components/DownloadReportButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,7 +99,15 @@ export default async function CustomerVerification({ params }: { params: Promise
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize' }}>{displayStatus}</span>
-        {published && !rejected && <DownloadReportButton />}
+        {published && !rejected && (
+          <a href={`/app/${id}/pdf`} className="no-print" style={{
+            marginLeft: 'auto', padding: '8px 18px', fontSize: 13, fontWeight: 600,
+            fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
+            color: C.txt2, textDecoration: 'none', whiteSpace: 'nowrap',
+          }}>
+            Download PDF
+          </a>
+        )}
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {new Date(v.created_at).toLocaleString()}</p>
 

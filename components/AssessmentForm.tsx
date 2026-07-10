@@ -29,6 +29,9 @@ export default function AssessmentForm({
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
   const [error, setError] = useState('')
+  // Published and rejected cases are closed: the form is read-only and the
+  // only action is Edit Status, which reopens the case into the review queue.
+  const closed = published || rejected
 
   // Publish/reject redirect on success; a returned error means nothing was
   // written and must be shown, never silently swallowed.
@@ -60,18 +63,21 @@ export default function AssessmentForm({
               value={item.requirement.coverage_type ?? ''}
               onChange={e => editName(item.key, e.target.value)}
               placeholder="Requirement name"
+              disabled={closed}
               style={{ ...input(), flex: 1, fontWeight: 700 }}
             />
             {item.requirement.minimum_limit
               ? <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{item.requirement.minimum_limit}</span>
               : <ConditionChip />}
-            <button type="button" onClick={() => removeRow(item.key)} title="Remove this requirement"
-              style={{ ...smallBtn(), color: C.error, padding: '6px 10px' }}>
-              Remove
-            </button>
+            {!closed && (
+              <button type="button" onClick={() => removeRow(item.key)} title="Remove this requirement"
+                style={{ ...smallBtn(), color: C.error, padding: '6px 10px' }}>
+                Remove
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <select name={`req_${i}_status`} defaultValue={item.status} style={{ ...input(), width: 160, flexShrink: 0 }}>
+            <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={{ ...input(), width: 160, flexShrink: 0 }}>
               <option value="met">Passed</option>
               <option value="not_met">Discrepancy</option>
               <option value="uncertain">Unconfirmed</option>
@@ -80,12 +86,13 @@ export default function AssessmentForm({
               name={`req_${i}_evidence`}
               defaultValue={item.evidence ?? ''}
               placeholder="Reason / evidence shown to the customer"
+              disabled={closed}
               style={{ ...input(), flex: 1 }}
             />
           </div>
         </div>
       ))}
-      <button type="button" onClick={addRow} style={{ ...smallBtn(), alignSelf: 'flex-start' }}>+ Add requirement</button>
+      {!closed && <button type="button" onClick={addRow} style={{ ...smallBtn(), alignSelf: 'flex-start' }}>+ Add requirement</button>}
       <div>
         <h3 style={{ fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Summary</h3>
         <textarea
@@ -93,44 +100,39 @@ export default function AssessmentForm({
           defaultValue={summaryDefault}
           rows={4}
           placeholder="Overall verdict in plain language: what passed, what did not, what remains unconfirmed…"
+          disabled={closed}
           style={{ ...input(), width: '100%', resize: 'vertical' }}
         />
       </div>
       {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
-      {rejected ? (
-        // A rejected request is closed: no draft, reject, or publish. Edit
-        // Status (a draft save under the hood) un-rejects it back into the
-        // review queue, keeping whatever is in the form.
+      {closed ? (
+        // A published or rejected case is closed: read-only, and the only
+        // action is reopening it. The reopen intent never writes final_report
+        // (the disabled fields above are not submitted), so the saved report
+        // is untouched until the admin edits and saves after reopening.
         <>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <PendingButton name="intent" value="save" pendingLabel="Reopening…" style={primaryBtn()}>
+            <PendingButton name="intent" value="reopen" pendingLabel="Reopening…" style={primaryBtn()}>
               Edit Status
             </PendingButton>
           </div>
           <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-            This request is rejected. The customer sees the rejected notice. Edit Status returns it to the review queue.
+            {rejected
+              ? 'This request is rejected. The customer sees the rejected notice. Edit Status returns it to the review queue.'
+              : 'This report is live for the customer. Edit Status takes it down and returns it to the review queue.'}
           </p>
         </>
       ) : (
-        <>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>
-              {published ? 'Save draft (unpublishes)' : 'Save draft'}
-            </PendingButton>
-            <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
-              style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
-              Reject
-            </PendingButton>
-            <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
-              {published ? 'Republish to customer' : 'Publish to customer'}
-            </PendingButton>
-          </div>
-          {published && (
-            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-              This report is live for the customer. Saving a draft or rejecting takes it down until you republish.
-            </p>
-          )}
-        </>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
+          <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
+            style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
+            Reject
+          </PendingButton>
+          <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
+            Publish to customer
+          </PendingButton>
+        </div>
       )}
     </form>
   )
