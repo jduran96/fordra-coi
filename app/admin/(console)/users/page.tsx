@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/admin-emails'
+import { pacificDateTime } from '@/lib/dates'
 import { C } from '@/lib/theme'
 import EditUserModal from './EditUserModal'
 import InviteUserModal from './InviteUserModal'
@@ -32,7 +33,7 @@ export default async function UsersPage() {
   }))
   const lastSeen = new Map<string, string | null>()
   for (const u of authData?.users ?? []) lastSeen.set(u.id, u.last_sign_in_at ?? null)
-  const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : '—')
+  const fmt = (iso: string | null | undefined) => (iso ? pacificDateTime(iso) : '—')
 
   return (
     <div style={{ maxWidth: 920, fontFamily: C.sans, color: C.txt }}>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth-helpers'
 import { C, statusColor } from '@/lib/theme'
+import { pacificDate } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,7 @@ export default async function PortalDashboard() {
                   <td style={td()}>{r.carrier_name}</td>
                   <td style={td()}><Pill status={r.case_status === 'rejected' ? 'rejected' : r.status} /></td>
                   <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
-                  <td style={{ ...td(), color: C.txt3 }}>{new Date(r.created_at).toLocaleDateString()}</td>
+                  <td style={{ ...td(), color: C.txt3 }}>{pacificDate(r.created_at)}</td>
                 </tr>
               ))}
             </tbody>

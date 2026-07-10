@@ -7,6 +7,7 @@ import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
+import { pacificDateTime } from '@/lib/dates'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
@@ -106,7 +107,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>{adminStatus}</span>
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 22px' }}>
-        {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {new Date(v.created_at).toLocaleString()}
+        {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
@@ -168,7 +169,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                   <tbody>
                     {notes.slice().reverse().map((n, i) => (
                       <tr key={i} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
-                        <td style={{ ...tdN(), whiteSpace: 'nowrap', color: C.txt3 }}>{new Date(n.at).toLocaleString()}</td>
+                        <td style={{ ...tdN(), whiteSpace: 'nowrap', color: C.txt3 }}>{pacificDateTime(n.at)}</td>
                         <td style={tdN()}>{n.contact?.name?.trim() || '—'}</td>
                         <td style={{ ...tdN(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
                         <td style={tdN()}>{n.contact?.email?.trim() || '—'}</td>

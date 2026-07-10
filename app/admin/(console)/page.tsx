@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
+import { pacificDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,7 +88,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
                 <AdminStatusPill row={r} />
               </td>
               <td style={{ ...td(), color: C.txt3 }}>
-                {new Date(showPublished && r.published_at ? r.published_at : r.created_at).toLocaleString()}
+                {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
               </td>
             </tr>
           ))}

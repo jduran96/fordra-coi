@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
+import { pacificDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,7 +110,7 @@ export default async function CustomerVerification({ params }: { params: Promise
           </a>
         )}
       </div>
-      <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {new Date(v.created_at).toLocaleString()}</p>
+      <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {pacificDateTime(v.created_at)}</p>
 
       {rejected ? (
         <div style={cardC()}>
@@ -189,7 +190,7 @@ function CallNotesCard({ notes }: { notes: CallNote[] }) {
             <tbody>
               {notes.slice().reverse().map((n, i) => (
                 <tr key={i} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
-                  <td style={{ ...tdC(), whiteSpace: 'nowrap', color: C.txt3 }}>{new Date(n.at).toLocaleString()}</td>
+                  <td style={{ ...tdC(), whiteSpace: 'nowrap', color: C.txt3 }}>{pacificDateTime(n.at)}</td>
                   <td style={tdC()}>{n.contact?.name?.trim() || '—'}</td>
                   <td style={{ ...tdC(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
                   <td style={tdC()}>{n.contact?.email?.trim() || '—'}</td>

@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit'
+import { pacificDate, pacificDateTime } from '@/lib/dates'
 
 /**
  * Renders a published verification report as a downloadable PDF. Mirrors the
@@ -85,7 +86,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     doc.font('Helvetica').fontSize(13).fillColor(INK).text(v.carrier_name)
     doc.moveDown(0.3)
     doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(
-      `${v.display_id}   ·   Submitted ${new Date(v.created_at).toLocaleDateString()}   ·   Published ${new Date(v.published_at).toLocaleDateString()}`,
+      `${v.display_id}   ·   Submitted ${pacificDate(v.created_at)}   ·   Published ${pacificDate(v.published_at)}`,
     )
     rule()
 
@@ -177,7 +178,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       for (const n of notes.slice().reverse()) {
         const who = [n.contact?.name, n.contact?.phone, n.contact?.email].map(s => s?.trim()).filter(Boolean).join('  ·  ')
         doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
-          .text(`${n.at ? new Date(n.at).toLocaleString() : ''}${who ? `   ·   ${who}` : ''}`)
+          .text(`${n.at ? pacificDateTime(n.at) : ''}${who ? `   ·   ${who}` : ''}`)
         doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text((n.text ?? '').trim(), { width, lineGap: 2 })
         doc.moveDown(0.45)
       }
