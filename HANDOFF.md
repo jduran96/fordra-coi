@@ -146,24 +146,31 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
 - **Sessions expire after 24h everywhere:** the demo gate token carries a signed issued-at
   (`lib/demo-token.ts`), and the proxy rejects Supabase sessions on `/app` + `/admin` once
   `user.last_sign_in_at` is older than 24h (redirect to `/login?expired=1`, sb-cookies cleared).
-- **Gap analysis always includes baseline broker checks** (`baselineRequirements()` in
-  `lib/claude.ts`): policyholder-name match, policy currently active, no unusual exclusions —
-  merged with the stated requirements when the admin runs extraction, even if no
-  insurance-standards doc was provided. **Both the baseline list and the three OCR prompts
-  (COI vision extraction, rate-con/standards text extraction, requirements parsing) are
-  admin-editable at `/admin/configs`**, stored in the `app_config` key/value table (migration
-  `0007`) and loaded by `getExtractionConfig()` (`lib/config.ts`); unset keys fall back to the
-  `DEFAULT_*` constants in `lib/claude.ts`. Baseline criteria may use `{carrier_name}`.
+- **Requirements are entirely org-owned** (the global baseline merge was removed by migration
+  `0012`): templates and submitted standards carry the full checklist; manual mode offers two
+  opt-in standard checks (policyholder-name match, policy active) pre-checked on the form.
+  **The three OCR prompts (COI vision extraction, rate-con/standards text extraction,
+  requirements parsing) are admin-editable at `/admin/settings`**, stored in the `app_config`
+  key/value table (migration `0007`) and loaded by `getExtractionConfig()` (`lib/config.ts`);
+  unset keys fall back to the `DEFAULT_*` constants in `lib/claude.ts`.
 - **`/admin`** (review console): queue lists ALL verifications across orgs (source of truth):
   awaiting-review section + completed section. Admin-facing status is derived, not stored
   (`lib/admin-status.ts`): **New** (no admin action) → **In Progress** (extraction/notes/draft
-  exist) → **Complete** (published), plus **Rejected** (`case_status = 'rejected'`, set by the
-  Assessment Reject button; closes the request into the Completed queue without publishing —
-  the customer keeps seeing `pending`. Save draft or Publish un-rejects). Detail page stacks vertically: **Uploads** (signed URLs) →
-  **OCR Analysis** (Run extraction; insurer-contact card + raw JSON) → **Verification call notes**
-  (`call_notes` is an append-only jsonb array of `{at, text}`; insurer contact saved alongside) →
-  **Assessment** (per-requirement verdict Passed/Discrepancy/Unconfirmed + evidence + summary;
-  Save draft or Publish). Publishing writes `final_report` in the same
+  exist) → **Complete** (published), plus **Rejected** (`case_status = 'rejected'`).
+  **Assessment state machine (2026-07-10):** published and rejected cases are CLOSED — the
+  assessment form is read-only with a single **Edit Status** button (intent `reopen`, which
+  only flips the case back to pending in the review queue and never writes `final_report`;
+  the closed form's fields are disabled and absent from the submission, so parsing them
+  would wipe verdicts). Save draft / Reject / Publish appear only on open cases; draft and
+  reject both clear `published_at` (customers only ever see the last published assessment),
+  and reject shows the customer a red Rejected pill + "rejected by a Fordra admin" notice
+  (list + detail read `case_status` from the view). Detail page stacks vertically:
+  **Uploads** (signed URLs) → **OCR Analysis** (Run extraction; insurer-contact card + raw
+  JSON) → **Verification call notes** (append/delete via atomic RPCs
+  `admin_append_call_note`/`admin_delete_call_note`, migration `0016`, service-role only —
+  never read-modify-write `call_notes`; per-note two-click Delete button; failed saves keep
+  the dialog open with the text) → **Assessment** (per-requirement verdict
+  Passed/Discrepancy/Unconfirmed + evidence + summary). Publishing writes `final_report` in the same
   `{met, not_met, uncertain, narrative_summary}` shape the pipeline produces; the customer page
   prefers `final_report` over `gap_analysis`, so manual and automated verdicts render identically.
   `/admin/users` manages users AND orgs: invite (re-inviting an existing user mints a fresh
@@ -224,6 +231,57 @@ Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Verc
   the stray `SUPABASE_SECRET_KEY` env var were deleted.
 - **Known-bug checklist:** `.claude/skills/fordra-repeat-bugs/SKILL.md` — consult before
   debugging auth/empty-page/extraction issues; append new recurring bugs there.
+
+## Added 2026-07-10 (production audit + hardening)
+
+A four-area code audit (auth/session, /app portal, /admin console, pipeline//v1) ran this
+session; confirmed fixes shipped, the rest is listed under "Outstanding audit findings".
+
+- **Publish state machine** (see the /admin section above): closed cases (published or
+  rejected) are read-only with Edit Status; draft/reject unpublish; `saveAssessment` errors
+  are surfaced in the form, never swallowed.
+- **Call notes are race-proof** (migration `0016` RPCs) with admin-only per-note delete.
+- **Rejected verifications are customer-visible**: red Rejected pill on /app list + detail,
+  notice copy "This verification request was rejected by a Fordra admin. Contact us to learn
+  more." (exact copy is owner-approved; do not reword casually).
+- **PDF download**: `/app/[id]/pdf` route (session client through `my_verifications`, so RLS
+  + publish gating hold) renders `lib/report-pdf.ts` via pdfkit — kept external in
+  `next.config.ts` (`serverExternalPackages`) so its runtime font files resolve.
+- **Pacific timestamps**: all verification timestamps format through `lib/dates.ts`
+  ("7/10/2026, 6:00 PM (Pacific US)"). Server components render in UTC on Vercel, so never
+  use unpinned `toLocaleString` for display.
+- **/app/new template UX**: requirements render as a read-only bulleted list + Edit modal
+  (drafts validated on Apply via `normalizeRequirementRows`, which is now non-destructive on
+  error — repeat-bug #11); per-deal variable inputs live in their own card and are FREE TEXT
+  everywhere (legacy stored `type: 'currency'` rows are rendered as text too — never run
+  variable values through `formatCurrencyInput`).
+- **/auth/link is spinner-only** (no button/form): nothing on the interstitial is followable
+  without executing JS.
+
+**Outstanding audit findings (next session, roughly in order):**
+
+1. `/auth/callback` parses every cookie with `decodeURIComponent` and 500s on any malformed
+   value (`app/auth/callback/route.ts:21-25`) — decode only `login-next` in a try/catch.
+2. `/access-denied` "Sign out" is a GET link to the POST-only signout route → 405 dead end.
+3. `users/page.tsx` is the one /admin page missing `requireAdmin()` before
+   `createServiceClient()`.
+4. `.docx`/`.txt` standards files are accepted but crash extraction (`fileContentBlock` in
+   `lib/claude.ts` sends non-PDF as an image block) — route docx through mammoth like the
+   frozen demo does, pass text straight through.
+5. `createVerification` (`lib/verifications.ts`) has no compensation on partial failure
+   (orphaned pending verifications; /v1 tells clients to retry, minting more) and puts the
+   raw filename in the storage key.
+6. /app/new submit has no try/catch around the action and no client-side size checks → a
+   transport error (e.g. combined body over the 30MB proxy cap) bricks the form spinner.
+7. Swallowed-Supabase-error sweep (~15 sites: /app list, docs page, settings, admin users
+   page, extraction reads, `GET /v1/verifications`, Slack revoke…) — each renders a lying
+   empty state today.
+8. No `error.tsx`/`not-found.tsx` anywhere; a non-UUID `/app/<x>` URL is an unstyled 500.
+9. Webhooks: live publish payload is a subset of the sandbox payload (integrators break at
+   go-live), deliveries are unrecorded, signature is replayable, endpoint URLs unvalidated.
+10. Mail scanners that execute JS (Outlook SafeLinks, Proofpoint) will still consume sign-in
+    tokens through the interstitial — if an enterprise pilot user reports "always already
+    used", the fix is requiring a human click.
 
 ## Deferred (not built yet)
 
