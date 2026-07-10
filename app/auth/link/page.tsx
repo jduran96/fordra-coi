@@ -36,15 +36,12 @@ export default async function AuthLinkPage({ searchParams }: {
         <p style={{ fontFamily: C.mono, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.txt3, margin: '0 0 10px' }}>
           Fordra
         </p>
-        <h1 style={{ fontFamily: C.serif, fontSize: 26, fontWeight: 400, color: C.txt, margin: '0 0 10px' }}>
-          Sign in to Fordra
+        <h1 style={{ fontFamily: C.serif, fontSize: 26, fontWeight: 400, color: C.txt, margin: tokenHash ? '0 0 24px' : '0 0 10px' }}>
+          {tokenHash ? 'Signing you in…' : 'Sign in to Fordra'}
         </h1>
         {tokenHash ? (
           <>
             <AutoContinue href={callbackHref} />
-            <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.6, margin: '0 0 24px' }}>
-              Signing you in… If nothing happens, click the button below.
-            </p>
             <form action="/auth/callback" method="get">
               <input type="hidden" name="token_hash" value={tokenHash} />
               <input type="hidden" name="type" value={type} />
