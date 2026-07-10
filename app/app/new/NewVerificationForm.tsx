@@ -9,7 +9,8 @@ import type { RequirementTemplate } from '@/lib/templates'
 import { editableRows, normalizeRequirementRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import { DropZone, ManualRequirementsForm } from '@/components/UploadCards'
-import RequirementsEditor from '@/components/RequirementsEditor'
+import RequirementsEditor, { BLANK_REQUIREMENT } from '@/components/RequirementsEditor'
+import EditorModal from '@/components/EditorModal'
 import { submitVerification } from '../actions'
 
 /**
@@ -56,6 +57,14 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const [hover, setHover] = useState(false)
+  // Deal-only standards editing happens in a modal on DRAFT copies; Apply
+  // validates via normalizeRequirementRows before committing to tplRows, so
+  // the saved rows are always complete and every variable has its per-deal
+  // prompt (an in-progress row can never half-derive into the page).
+  const [stdEditorOpen, setStdEditorOpen] = useState(false)
+  const [draftRows, setDraftRows] = useState<Requirement[]>([])
+  const [draftDetails, setDraftDetails] = useState('')
+  const [modalError, setModalError] = useState('')
 
   const template = templates.find(t => t.id === templateId) ?? null
   // Variables derive live from the (possibly edited) rows, so renaming or
@@ -64,6 +73,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const tplVars = normalizedTpl.variables
   const missingVar = tplVars.find(v => v.required && !varValues[v.key]?.trim())
   const cleanTplRows = normalizedTpl.requirements
+  const listRows = tplRows.filter(r => r.coverage_type.trim())
 
   // A manual row counts when it has a name and either a limit or is a condition.
   const cleanReqs = manualReqs.filter(r =>
@@ -80,6 +90,26 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     const t = templates.find(x => x.id === id)
     setTplRows(t ? editableRows(t) : [])
     setTplDetails(t?.details ?? '')
+  }
+
+  function openStdEditor() {
+    setDraftRows(tplRows.length ? tplRows.map(r => ({ ...r })) : [{ ...BLANK_REQUIREMENT }])
+    setDraftDetails(tplDetails)
+    setModalError('')
+    setStdEditorOpen(true)
+  }
+
+  function applyStdEdits() {
+    const n = normalizeRequirementRows(draftRows)
+    if (n.error) return setModalError(n.error)
+    if (n.requirements.length === 0) return setModalError('Add at least one requirement row.')
+    setTplRows(draftRows.filter(r => r.coverage_type.trim()))
+    setTplDetails(draftDetails)
+    // Drop values for variables that no longer exist so stale entries never
+    // resolve into a submission.
+    const keys = new Set(n.variables.map(v => v.key))
+    setVarValues(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => keys.has(k))))
+    setStdEditorOpen(false)
   }
 
   function serializeStandards(): string {
@@ -198,54 +228,45 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
             </div>
 
             <div>
-              <Label>This standard&apos;s requirements</Label>
-              <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '0 0 10px' }}>
-                You can edit the inputs below. The saved standard will not be changed.
-              </p>
-              <RequirementsEditor rows={tplRows} onChange={setTplRows} reorderable={false} />
-            </div>
-
-            <div>
-              <Label>Other required coverage details <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></Label>
-              <textarea
-                value={tplDetails}
-                onChange={e => setTplDetails(e.target.value)}
-                placeholder="Anything the rows above didn't capture: extra coverages, conditions, endorsements, etc."
-                rows={2}
-                style={{
-                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13,
-                  fontFamily: C.sans, borderRadius: 6, border: `1.5px solid ${C.border}`,
-                  background: C.surface, color: C.txt, outline: 'none',
-                  resize: 'vertical', minHeight: 48,
-                }}
-              />
-            </div>
-
-            {tplVars.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-                  This standard needs the following for each deal:
-                </p>
-                {tplVars.map(v => (
-                  <div key={v.key}>
-                    <Label>
-                      {v.label}
-                      {v.required && <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>}
-                    </Label>
-                    <input
-                      value={varValues[v.key] ?? ''}
-                      onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
-                      placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
-                      style={{
-                        width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
-                        fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
-                        background: C.surface, color: C.txt,
-                      }}
-                    />
-                  </div>
-                ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Label noMargin>Requirements checked on this deal</Label>
+                <button type="button" onClick={openStdEditor} style={{
+                  padding: '5px 14px', fontSize: 12, fontWeight: 600, fontFamily: C.sans,
+                  borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent',
+                  color: C.txt2, cursor: 'pointer',
+                }}>
+                  Edit
+                </button>
               </div>
-            )}
+              {listRows.length > 0 || tplDetails.trim() ? (
+                <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {listRows.map((r, i) => {
+                    const kind = requirementKind(r)
+                    const note = (r.notes ?? '').trim()
+                    return (
+                      <li key={i} style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.55 }}>
+                        <strong style={{ color: C.txt, fontWeight: 600 }}>{r.coverage_type.trim()}</strong>
+                        {kind === 'limit' && r.minimum_limit.trim() ? `: ${r.minimum_limit.trim()}` : ''}
+                        {kind === 'variable' && (
+                          <>: <em>{r.minimum_limit.trim()}</em> <span style={{ color: C.txt3 }}>(entered below)</span></>
+                        )}
+                        {note ? <span style={{ color: C.txt3 }}> ({note})</span> : null}
+                      </li>
+                    )
+                  })}
+                  {tplDetails.trim() && (
+                    <li style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.55 }}>
+                      <strong style={{ color: C.txt, fontWeight: 600 }}>Additional details</strong>
+                      <span style={{ color: C.txt3 }}>: {tplDetails.trim()}</span>
+                    </li>
+                  )}
+                </ul>
+              ) : (
+                <p style={{ fontSize: 13, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+                  This standard has no requirement rows yet. Click Edit to add them for this deal.
+                </p>
+              )}
+            </div>
           </div>
         ) : reqMode === 'upload' ? (
           <DropZone
@@ -283,6 +304,35 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         )}
       </div>
 
+      {reqMode === 'template' && template && tplVars.length > 0 && (
+        <div style={{
+          border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
+          background: C.surface, display: 'flex', flexDirection: 'column', gap: 10,
+        }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: C.txt, fontFamily: C.sans, margin: 0 }}>
+            This standard needs the following for each deal:
+          </p>
+          {tplVars.map(v => (
+            <div key={v.key}>
+              <Label>
+                {v.label}
+                {v.required && <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>}
+              </Label>
+              <input
+                value={varValues[v.key] ?? ''}
+                onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
+                placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
+                  fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
+                  background: C.surface, color: C.txt,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       <DropZone
         boxTitle="Rate Confirmation Sheet (optional)"
         hint="PDF, JPG, or PNG of the rate confirmation"
@@ -310,6 +360,47 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         </button>
         <Link href="/app" style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, textDecoration: 'none' }}>Cancel</Link>
       </div>
+
+      {stdEditorOpen && (
+        <EditorModal title="Edit standards for this deal" onClose={() => setStdEditorOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+              You can edit the inputs below. The saved standard will not be changed.
+            </p>
+            <RequirementsEditor rows={draftRows} onChange={setDraftRows} reorderable={false} />
+            <div>
+              <Label>Other required coverage details <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></Label>
+              <textarea
+                value={draftDetails}
+                onChange={e => setDraftDetails(e.target.value)}
+                placeholder="Anything the rows above didn't capture: extra coverages, conditions, endorsements, etc."
+                rows={2}
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13,
+                  fontFamily: C.sans, borderRadius: 6, border: `1.5px solid ${C.border}`,
+                  background: C.surface, color: C.txt, outline: 'none',
+                  resize: 'vertical', minHeight: 48,
+                }}
+              />
+            </div>
+            {modalError && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{modalError}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={applyStdEdits} style={{
+                padding: '9px 18px', fontSize: 13, fontWeight: 600, fontFamily: C.sans,
+                borderRadius: 9999, border: 'none', background: C.txt, color: C.onDark, cursor: 'pointer',
+              }}>
+                Apply changes
+              </button>
+              <button type="button" onClick={() => setStdEditorOpen(false)} style={{
+                padding: '9px 18px', fontSize: 13, fontWeight: 600, fontFamily: C.sans,
+                borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent', color: C.txt2, cursor: 'pointer',
+              }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </EditorModal>
+      )}
     </div>
   )
 }

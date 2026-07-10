@@ -129,7 +129,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
             <AutoGrowTextarea
               value={row.notes ?? ''}
               onChange={v => updateRow(i, { notes: v })}
-              placeholder="Specify what a 'pass' means"
+              placeholder="Required"
               style={inputS}
             />
             <div style={{ display: 'flex', gap: 4, paddingTop: 9 }}>
