@@ -93,6 +93,7 @@ export function normalizeRequirementRows(raw: Requirement[]): {
   const requirements: Requirement[] = []
   const variables: TemplateVariable[] = []
   const seen = new Set<string>(['carrier_name'])
+  let error: string | undefined
   for (const r of raw) {
     const coverage_type = (r.coverage_type ?? '').trim()
     if (!coverage_type) continue
@@ -102,10 +103,13 @@ export function normalizeRequirementRows(raw: Requirement[]): {
       const token = minimum_limit.match(VARIABLE_TOKEN_RE)
       const key = token ? token[1].toLowerCase() : slugifyVariable(minimum_limit)
       if (!key) {
-        return {
-          requirements: [], variables: [],
-          error: `Name the per-deal value for "${coverage_type}" (for example "Asset Sale Price").`,
-        }
+        // In-progress Variable row: title typed, value name still empty. Record
+        // the error and skip ONLY this row — the /app/new form derives its
+        // per-deal inputs from this function on every keystroke, and wiping all
+        // rows/variables here made every prompt vanish mid-edit. All callers
+        // treat `error` as blocking, so saving/submitting still can't proceed.
+        error ??= `Name the per-deal value for "${coverage_type}" (for example "Asset Sale Price").`
+        continue
       }
       minimum_limit = `{${key}}`
       if (!seen.has(key)) {
@@ -126,7 +130,7 @@ export function normalizeRequirementRows(raw: Requirement[]): {
       required: true,
     })
   }
-  return { requirements, variables }
+  return { requirements, variables, error }
 }
 
 /**

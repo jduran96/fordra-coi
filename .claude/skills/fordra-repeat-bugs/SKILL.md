@@ -166,3 +166,27 @@ popup reuses its minted link on reopen and only mints again via the explicit
 Regenerate button. Never hand out raw /auth/callback URLs, never point
 emailRedirectTo at /auth/callback, and never mint a magiclink as a side
 effect of a repeatable action.
+
+## 11. Editing template rows on /app/new makes all per-deal variable prompts vanish
+
+**Symptom:** with a saved standard selected on the new-verification form, adding
+a Variable row (or switching a row's Type to Variable) makes the entire "This
+standard needs the following for each deal:" section disappear, including the
+prompts for OTHER, untouched variable rows. Deleting rows alone looks fine.
+
+**Root cause:** the form derives the per-deal inputs live on every keystroke via
+`normalizeRequirementRows(tplRows)` (`app/app/new/NewVerificationForm.tsx`). A
+freshly added Variable row is inherently incomplete (`setKind` clears the Amount
+cell), and `normalizeRequirementRows` used to bail on the first incomplete
+variable row by returning `{ requirements: [], variables: [], error }` — wiping
+every derived variable, so the whole section unmounted mid-edit.
+
+**Fix (in place — keep this contract):** `normalizeRequirementRows`
+(`lib/templates.ts`) is non-destructive on error: it records the FIRST error,
+skips only the offending row, and still returns the requirements/variables
+accumulated from all valid rows. Every caller (settings save, admin org
+standards, `submitVerification`, the live form derivation) treats a set `error`
+as blocking, so nothing incomplete can be saved or submitted. When adding a new
+validation rule to this function, follow the same pattern: set `error` and
+`continue`; never return empty arrays, because the live form derivation renders
+from them while the user is mid-edit.
