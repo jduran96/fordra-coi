@@ -16,16 +16,24 @@ import EditorModal from '@/components/EditorModal'
 export default function CallNoteForm({
   action,
 }: {
-  action: (formData: FormData) => Promise<void>
+  action: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
+  const [error, setError] = useState('')
 
   async function submit(formData: FormData) {
-    await action(formData)
+    setError('')
+    const res = await action(formData)
+    // On failure the dialog stays open with everything typed: a call write-up
+    // is only cleared once it is actually saved.
+    if (res?.error) {
+      setError(res.error)
+      return
+    }
     setName('')
     setPhone('')
     setEmail('')
@@ -49,6 +57,7 @@ export default function CallNoteForm({
             <input name="contact_phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={input()} />
             <input name="contact_email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={input()} />
             <textarea name="note" value={note} onChange={e => setNote(e.target.value)} rows={5} placeholder="What the insurer confirmed on this call…" style={{ ...input(), resize: 'vertical' }} />
+            {error && <p style={{ fontSize: 13, color: C.error, margin: 0 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
               <PendingButton pendingLabel="Saving…" style={{
                 padding: '8px 20px', background: C.txt, color: C.onDark, fontSize: 13, fontWeight: 600,

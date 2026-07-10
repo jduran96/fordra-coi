@@ -10,7 +10,7 @@ export default async function PortalDashboard() {
   const supabase = await createClient()
   const { data: rows } = await supabase
     .from('my_verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at')
+    .select('id, display_id, carrier_name, status, case_status, source, created_at, published_at')
     .order('created_at', { ascending: false })
 
   if (!profile?.org_id) {
@@ -50,7 +50,7 @@ export default async function PortalDashboard() {
                 <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
                   <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
                   <td style={td()}>{r.carrier_name}</td>
-                  <td style={td()}><Pill status={r.status} /></td>
+                  <td style={td()}><Pill status={r.case_status === 'rejected' ? 'rejected' : r.status} /></td>
                   <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
                   <td style={{ ...td(), color: C.txt3 }}>{new Date(r.created_at).toLocaleDateString()}</td>
                 </tr>

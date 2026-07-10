@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
+import DownloadReportButton from '@/components/DownloadReportButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,6 +77,10 @@ export default async function CustomerVerification({ params }: { params: Promise
   const templateName = (!Array.isArray(req) && req?.template_name) ? String(req.template_name).trim() : ''
 
   const published = !!v.published_at
+  // Rejection wins over any leftover published state: the admin closed this
+  // request, so no report renders. The view exposes case_status; the analysis
+  // columns are already nulled because reject clears published_at.
+  const rejected = v.case_status === 'rejected'
   const report = v.final_report as ({ narrative_summary?: string } & Gap) | null
   const coi = (v.coi_extracted ?? null) as COI | null
   // The customer always sees one format, whichever produced the verdicts:
@@ -83,16 +88,29 @@ export default async function CustomerVerification({ params }: { params: Promise
   const finalItems = gapItems(report)
   const items: GapItem[] = finalItems.length ? finalItems : gapItems((v.gap_analysis ?? null) as Gap | null)
 
+  const displayStatus = rejected ? 'rejected' : v.status
+
   return (
     <div style={{ maxWidth: 760, fontFamily: C.sans, color: C.txt }}>
-      <Link href="/app" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Verifications</Link>
+      <style>{`@media print {
+        header, .no-print { display: none !important; }
+        body { background: #fff !important; }
+      }`}</style>
+      <Link href="/app" className="no-print" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Verifications</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
-        <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(v.status), background: `${statusColor(v.status)}1a`, padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize' }}>{v.status}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize' }}>{displayStatus}</span>
+        {published && !rejected && <DownloadReportButton />}
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {new Date(v.created_at).toLocaleString()}</p>
 
-      {!published ? (
+      {rejected ? (
+        <div style={cardC()}>
+          <p style={{ color: C.txt2, fontSize: 14.5, lineHeight: 1.6, margin: 0 }}>
+            This verification request was rejected by a Fordra admin. Contact us to learn more.
+          </p>
+        </div>
+      ) : !published ? (
         <div style={cardC()}>
           <p style={{ color: C.txt2, fontSize: 14.5, lineHeight: 1.6, margin: 0 }}>
             This verification is <strong style={{ color: C.txt }}>in review</strong>. We’re confirming

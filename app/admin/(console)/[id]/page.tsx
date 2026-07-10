@@ -10,7 +10,8 @@ import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
-import { runExtraction, saveCallNote, saveAssessment } from '../actions'
+import { runExtraction, saveCallNote, saveAssessment, deleteCallNote } from '../actions'
+import DeleteNoteButton from './DeleteNoteButton'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -161,7 +162,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      <th style={thN()}>When</th><th style={thN()}>Contact</th><th style={thN()}>Phone</th><th style={thN()}>Email</th><th style={thN()}>Note</th>
+                      <th style={thN()}>When</th><th style={thN()}>Contact</th><th style={thN()}>Phone</th><th style={thN()}>Email</th><th style={thN()}>Note</th><th style={thN()} />
                     </tr>
                   </thead>
                   <tbody>
@@ -172,6 +173,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                         <td style={{ ...tdN(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
                         <td style={tdN()}>{n.contact?.email?.trim() || '—'}</td>
                         <td style={{ ...tdN(), color: C.txt, whiteSpace: 'pre-wrap', minWidth: 220, lineHeight: 1.55 }}>{n.text}</td>
+                        <td style={{ ...tdN(), textAlign: 'right' }}>
+                          <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -198,6 +202,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             items={reviewItems}
             summaryDefault={summaryDefault}
             published={!!v.published_at}
+            rejected={v.case_status === 'rejected'}
           />
         </section>
       </div>

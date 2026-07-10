@@ -23,9 +23,13 @@ export async function runExtraction(verificationId: string) {
 
 /**
  * Save the insurer contact + append a timestamped call note.
- * call_notes is an append-only jsonb array: [{ at, text, contact }].
+ * call_notes is an append-only jsonb array: [{ at, text, contact }]. The
+ * append happens in the admin_append_call_note RPC (migration 0016) as one
+ * atomic UPDATE: no read-modify-write, so a bad read or a concurrent save can
+ * never wipe or drop notes. Failures return { error } so the dialog keeps the
+ * typed note instead of clearing it.
  */
-export async function saveCallNote(verificationId: string, formData: FormData) {
+export async function saveCallNote(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
 
@@ -34,30 +38,48 @@ export async function saveCallNote(verificationId: string, formData: FormData) {
     phone: String(formData.get('contact_phone') || '').trim(),
     email: String(formData.get('contact_email') || '').trim(),
   }
-  const update: Record<string, unknown> = {}
   // The form clears after each save; an all-blank contact means "keep the
   // previously saved one", not "erase it".
-  if (Object.values(insurance_contact).some(Boolean)) update.insurance_contact = insurance_contact
+  const hasContact = Object.values(insurance_contact).some(Boolean)
+  if (hasContact) {
+    const { error } = await supabase.from('verifications')
+      .update({ insurance_contact })
+      .eq('id', verificationId)
+    if (error) {
+      console.error('saveCallNote: contact update failed', error)
+      return { error: 'Could not save. Your note is still here. Please retry.' }
+    }
+  }
 
   const text = String(formData.get('note') || '').trim()
   if (text) {
-    const { data: v } = await supabase
-      .from('verifications')
-      .select('call_notes, insurance_contact')
-      .eq('id', verificationId)
-      .single()
-    const existing = Array.isArray(v?.call_notes) ? v.call_notes : []
-    // Snapshot the contact into the note so each entry records who was spoken to,
-    // even if the insurer contact fields change later. Blank form → snapshot the
-    // previously saved contact.
-    const snapshot = Object.values(insurance_contact).some(Boolean)
-      ? insurance_contact
-      : (v?.insurance_contact ?? insurance_contact)
-    update.call_notes = [...existing, { at: new Date().toISOString(), text, contact: snapshot }]
+    // The RPC snapshots the contact into the note (form contact if given,
+    // otherwise the saved insurer contact) so each entry records who was
+    // spoken to even if the contact fields change later.
+    const { error } = await supabase.rpc('admin_append_call_note', {
+      vid: verificationId,
+      note_text: text,
+      contact: hasContact ? insurance_contact : null,
+    })
+    if (error) {
+      console.error('saveCallNote: append failed', error)
+      return { error: 'Could not save. Your note is still here. Please retry.' }
+    }
   }
+  revalidatePath(`/admin/${verificationId}`)
+}
 
-  if (Object.keys(update).length > 0) {
-    await supabase.from('verifications').update(update).eq('id', verificationId)
+/** Remove one saved call note, identified by its timestamp. Admin only. */
+export async function deleteCallNote(verificationId: string, noteAt: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const { error } = await supabase.rpc('admin_delete_call_note', {
+    vid: verificationId,
+    note_at: noteAt,
+  })
+  if (error) {
+    console.error('deleteCallNote failed', error)
+    return { error: 'Could not delete this note. Please retry.' }
   }
   revalidatePath(`/admin/${verificationId}`)
 }
@@ -73,8 +95,15 @@ interface AssessmentItem {
  * Writes final_report in the same { met, not_met, uncertain, narrative_summary }
  * shape the automated pipeline produces, so the customer view renders identically
  * whether the verdicts came from OCR or from the admin.
+ *
+ * State machine (customers only ever see the last thing that was PUBLISHED):
+ *  - draft:   working copy; clears published_at, so editing a published report
+ *             takes it out of the customer's view until it is republished
+ *  - publish: releases exactly this assessment (sets published_at + completed)
+ *  - reject:  closes the request without a report; clears published_at and the
+ *             customer sees the rejected notice
  */
-export async function saveAssessment(verificationId: string, formData: FormData) {
+export async function saveAssessment(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
 
@@ -107,15 +136,24 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   if (publish) {
     update.status = 'completed'
     update.published_at = new Date().toISOString()
+  } else {
+    // Draft and reject both take the report out of the customer's view: what
+    // customers see must always be exactly the last published assessment.
+    update.status = 'pending'
+    update.published_at = null
   }
 
-  const { data: v } = await supabase.from('verifications')
+  const { data: v, error } = await supabase.from('verifications')
     .update(update)
     .eq('id', verificationId)
     .select('id, org_id, display_id, carrier_name, status, published_at')
     .single()
+  if (error || !v) {
+    console.error('saveAssessment: update failed', error)
+    return { error: 'Could not save. Nothing was changed. Please retry.' }
+  }
 
-  if (publish && v) {
+  if (publish) {
     await emitEvent(v.org_id, 'verification.updated', {
       object: 'verification', id: v.id, display_id: v.display_id,
       carrier_name: v.carrier_name, status: v.status, published_at: v.published_at,

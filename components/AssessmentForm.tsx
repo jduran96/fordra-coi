@@ -18,14 +18,25 @@ export default function AssessmentForm({
   items,
   summaryDefault,
   published,
+  rejected,
 }: {
-  action: (formData: FormData) => Promise<void>
+  action: (formData: FormData) => Promise<{ error?: string } | void>
   items: Item[]
   summaryDefault: string
   published: boolean
+  rejected: boolean
 }) {
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
+  const [error, setError] = useState('')
+
+  // Publish/reject redirect on success; a returned error means nothing was
+  // written and must be shown, never silently swallowed.
+  async function submit(formData: FormData) {
+    setError('')
+    const res = await action(formData)
+    if (res?.error) setError(res.error)
+  }
 
   function addRow() {
     setRows(r => [...r, { requirement: { coverage_type: '', minimum_limit: '', notes: null }, status: 'uncertain' as const, evidence: '', key: nextKey }])
@@ -39,7 +50,7 @@ export default function AssessmentForm({
   }
 
   return (
-    <form action={action} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <form action={submit} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <input type="hidden" name="row_count" value={rows.length} />
       {rows.map((item, i) => (
         <div key={item.key} style={{ paddingBottom: 14, borderBottom: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -85,16 +96,42 @@ export default function AssessmentForm({
           style={{ ...input(), width: '100%', resize: 'vertical' }}
         />
       </div>
-      <div style={{ display: 'flex', gap: 10 }}>
-        <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
-        <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
-          style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
-          Reject
-        </PendingButton>
-        <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
-          {published ? 'Republish to customer' : 'Publish to customer'}
-        </PendingButton>
-      </div>
+      {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
+      {rejected ? (
+        // A rejected request is closed: no draft, reject, or publish. Edit
+        // Status (a draft save under the hood) un-rejects it back into the
+        // review queue, keeping whatever is in the form.
+        <>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <PendingButton name="intent" value="save" pendingLabel="Reopening…" style={primaryBtn()}>
+              Edit Status
+            </PendingButton>
+          </div>
+          <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+            This request is rejected. The customer sees the rejected notice. Edit Status returns it to the review queue.
+          </p>
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>
+              {published ? 'Save draft (unpublishes)' : 'Save draft'}
+            </PendingButton>
+            <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
+              style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
+              Reject
+            </PendingButton>
+            <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
+              {published ? 'Republish to customer' : 'Publish to customer'}
+            </PendingButton>
+          </div>
+          {published && (
+            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+              This report is live for the customer. Saving a draft or rejecting takes it down until you republish.
+            </p>
+          )}
+        </>
+      )}
     </form>
   )
 }
