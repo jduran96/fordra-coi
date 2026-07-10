@@ -5,23 +5,6 @@
 
 ---
 
-## ⚠️ PENDING — smoke-test the 2026-07-09 batches (updated late 2026-07-09)
-
-Everything below is deployed and Ready through commit `d698e93`; migration `0015` is applied,
-Fordra Testing test data is cleaned, and the 24-hour email templates are pasted into the
-dashboard. One prod smoke test remains:
-
-- Password show/hide eye on `/app/settings`; "e.g. Cargo" placeholder in `/app/new` manual
-  entry; org create/rename/delete table on `/admin/users` (**delete cascades** — members,
-  verifications, documents, Slack rows; test with a scratch org); admin Reject button (red
-  Rejected pill, Completed queue, Save draft un-rejects); one fresh magic-link AND invite-link
-  sign-in end to end from Gmail (via the new `/auth/link` interstitial, repeat-bug #10); the
-  reworded error copy where convenient.
-
-Delete this section when done.
-
----
-
 ## What this app is
 
 **Fordra** is a COI (Certificate of Insurance) verification platform for freight factoring
@@ -147,7 +130,9 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
 
 - **Auth/routing**: `proxy.ts` routes the 3 browser surfaces + passes `/v1` through;
   `lib/supabase/{server,client,proxy}.ts`, `lib/auth-helpers.ts`; `/login` magic link →
-  `/auth/callback` (role-based redirect) → `/auth/signout`.
+  **`/auth/link`** (crawler-proof interstitial, JS auto-continue; repeat-bug #10) →
+  `/auth/callback` (role-based redirect) → `/auth/signout`. ALL sign-in links (emails and
+  admin-minted) must point at `/auth/link`, never raw `/auth/callback`.
 - **`/demo`**: the original operator pipeline (`app/demo/AppClient.tsx`, ~1800 lines) behind the
   password gate at `/demo/login`. Upload screen collects Broker, Carrier, COI, **Rate Confirmation
   Sheet** (required), and **Additional Insurance Standards** (file or manual rows). `/api/verify`
@@ -181,7 +166,11 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
   Save draft or Publish). Publishing writes `final_report` in the same
   `{met, not_met, uncertain, narrative_summary}` shape the pipeline produces; the customer page
   prefers `final_report` over `gap_analysis`, so manual and automated verdicts render identically.
-  `/admin/users` links a signup to an org.
+  `/admin/users` manages users AND orgs: invite (re-inviting an existing user mints a fresh
+  sign-in link instead of erroring), per-user "Invite link" pop-up (reuses its link on reopen;
+  explicit Regenerate), edit/delete users, and an Organizations table with inline rename and
+  cascade delete (members, verifications, documents + storage, Slack rows; admin accounts are
+  only unassigned).
 - **`/v1` API**: `lib/api-auth.ts` (Bearer/Basic key), **`POST /v1/verifications`** = one multipart
   call (`carrier_name`, `broker_name`→`verifier_company`, `coi`, `rate_confirmation`,
   `insurance_standards` string-or-file), `GET /v1/verifications` + `/:id`. **Sandbox** (`sk_test_`)
@@ -207,7 +196,8 @@ Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Verc
 - **Prod and local dev share the same Supabase project** — migrations apply once, data is common.
 - `/auth/callback` accepts both PKCE `?code=` links (login page emails) and `?token_hash=&type=`
   links (`auth.admin.generateLink`, used to mint direct sign-in links when the built-in mailer's
-  rate limit bites).
+  rate limit bites). Humans reach it via `/auth/link`; sign-in tokens are single-use and
+  last-one-wins (Email OTP Expiration is set to 24h in the dashboard; templates say 24 hours).
 
 ---
 
