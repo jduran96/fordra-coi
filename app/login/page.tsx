@@ -27,13 +27,13 @@ function LoginForm() {
       const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
-        setError('Wrong email or password. If you have not set a password yet, sign in with an email link below.')
+        setError('Incorrect email or password. If you have not created a password yet, click "Email me a sign-in link" below.')
         return
       }
       window.location.assign(`/auth/after-login${next ? `?next=${encodeURIComponent(next)}` : ''}`)
       return // keep the button in its loading state while the browser navigates
     } catch {
-      setError('Something went wrong. Try again.')
+      setError('Unexpected sign-in error. Please contact a Fordra admin for help.')
     } finally {
       setLoading(null)
     }
@@ -64,7 +64,7 @@ function LoginForm() {
           : error.message)
       } else setSent(true)
     } catch {
-      setError('Something went wrong. Try again.')
+      setError('Unexpected sign-in error. Please contact a Fordra admin for help.')
     } finally {
       setLoading(null)
     }
@@ -94,8 +94,7 @@ function LoginForm() {
       )}
       {linkError && (
         <p style={{ fontSize: 13, color: C.error, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
-          That sign-in link didn&rsquo;t work. It may have expired or already been used, and only
-          the most recently requested link is valid. Enter your email for a fresh one.
+          Your sign-in link is expired or was already used. Contact a Fordra admin for help.
         </p>
       )}
       <input
@@ -140,7 +139,7 @@ function LoginForm() {
           cursor: email && !loading ? 'pointer' : 'not-allowed',
         }}
       >
-        {loading === 'link' ? 'Sending…' : 'Email me a sign-in link instead'}
+        {loading === 'link' ? 'Sending…' : 'Email me a sign-in link'}
       </button>
       <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 0', fontFamily: C.sans, lineHeight: 1.5 }}>
         Forgot your password? Sign in with an email link, then set a new one in Settings.

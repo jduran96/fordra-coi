@@ -18,7 +18,7 @@ export default async function PortalDashboard() {
       <div style={card()}>
         <h1 style={h1()}>Welcome!</h1>
         <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 14, lineHeight: 1.6 }}>
-          Please contact your Fordra admin at (727) 729-9594 to set up your account.
+          Please contact a Fordra admin to set up your account.
         </p>
       </div>
     )

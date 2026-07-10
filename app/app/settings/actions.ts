@@ -87,7 +87,7 @@ export async function inviteTeammate(_prev: InviteState, formData: FormData): Pr
 
   // Invites send real email; keep one org from spamming addresses.
   if (!await rateLimitAllows(`invite:${profile.org_id}`, 10, 3600)) {
-    return { error: 'Too many invites in the last hour. Try again later.' }
+    return { error: "You've invited too many people in the last hour. Contact a Fordra admin for help." }
   }
 
   const hdrs = await headers()
@@ -107,7 +107,7 @@ export async function inviteTeammate(_prev: InviteState, formData: FormData): Pr
       .update({ org_id: profile.org_id })
       .eq('id', data.user.id)
       .is('org_id', null)
-    if (perr) return { error: `Invited, but could not link the account: ${perr.message}` }
+    if (perr) return { error: 'Invited, but could not add them to your organization. Contact a Fordra admin for help.' }
   }
 
   revalidatePath('/app/settings')

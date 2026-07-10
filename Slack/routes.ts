@@ -21,7 +21,7 @@ import { handleIntakeMessage, type Installation, type SlackMessageEvent } from '
 export async function handleOAuthStart(request: Request): Promise<Response> {
   const state = new URL(request.url).searchParams.get('state') ?? ''
   if (!verifyInstallState(state)) {
-    return htmlPage('Invalid link', 'This install link is invalid or has expired. Ask Fordra for a new one.', 403)
+    return htmlPage('Invalid link', 'This install link is invalid or has expired. Ask a Fordra admin for a new one.', 403)
   }
   const url = new URL('https://slack.com/oauth/v2/authorize')
   url.searchParams.set('client_id', slackEnv().clientId)
@@ -37,7 +37,7 @@ export async function handleOAuthCallback(request: Request): Promise<Response> {
   const code = params.get('code')
   const verified = verifyInstallState(params.get('state') ?? '')
   if (!verified) {
-    return htmlPage('Not authorized', 'This install was not started from a valid Fordra link, so it was rejected.', 403)
+    return htmlPage('Not authorized', 'This install was not authorized. Contact a Fordra admin for help.', 403)
   }
   if (!code) return htmlPage('Install canceled', 'Slack did not complete the install. You can retry from your install link.', 400)
 
@@ -45,7 +45,7 @@ export async function handleOAuthCallback(request: Request): Promise<Response> {
   try {
     access = await oauthAccess(code, installRedirectUri())
   } catch {
-    return htmlPage('Install failed', 'Slack rejected the authorization. Retry from your install link; if it keeps failing, contact Fordra.', 502)
+    return htmlPage('Install failed', 'Slack rejected the authorization. Retry from your install link. If this keeps happening, contact a Fordra admin for help.', 502)
   }
 
   const svc = createServiceClient()
@@ -58,7 +58,7 @@ export async function handleOAuthCallback(request: Request): Promise<Response> {
     installed_by_slack_user: access.authed_user?.id ?? null,
     revoked_at: null,
   }, { onConflict: 'team_id' })
-  if (error) return htmlPage('Install failed', 'We could not save the connection. Contact Fordra at (727) 729-9594.', 500)
+  if (error) return htmlPage('Install failed', 'We could not save the connection. Contact a Fordra admin for help.', 500)
 
   return htmlPage(
     'Fordra Connected',

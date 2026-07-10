@@ -42,7 +42,7 @@ function AdminLoginForm() {
           : error.message)
       } else setSent(true)
     } catch {
-      setError('Something went wrong. Try again.')
+      setError('Unexpected sign-in error. Please contact a Fordra admin for help.')
     } finally {
       setLoading(false)
     }

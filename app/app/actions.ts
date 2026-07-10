@@ -74,14 +74,15 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
       const resolved = resolveTemplate({ ...t, requirements: rows, variables, details }, values)
       requirements = { text: resolved.text, ...resolved.provenance }
     } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Could not apply the saved standard.' }
+      console.error('new verification: could not apply template', e)
+      return { error: 'Could not apply the saved template. Please contact a Fordra admin for help.' }
     }
   }
 
   // Insurance standards are required: a saved standard, a document, or pasted text.
   const reqFile = formData.get('requirements_file') as File | null
   if (!templateId && (!reqFile || reqFile.size === 0) && !requirementsText) {
-    return { error: 'Insurance standards are required. Pick a saved standard, upload a file, or enter them manually.' }
+    return { error: 'Insurance standards are required. Pick a saved template, write an explanation, or upload a file.' }
   }
 
   const fileInputs: [File | null, 'coi' | 'rcs' | 'requirements'][] = [
@@ -111,7 +112,8 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
       select: 'id',
     })
   } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Could not create verification.' }
+    console.error('new verification: create failed', e)
+    return { error: 'Could not create verification. Please contact a Fordra admin for help.' }
   }
 
   revalidatePath('/app')

@@ -56,7 +56,7 @@ export default async function AuthLinkPage({ searchParams }: {
           </>
         ) : (
           <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.6, margin: 0 }}>
-            This link is incomplete. Ask your Fordra admin for a new one, or call (727) 729-9594.
+            This link is incomplete. Ask your Fordra admin for a new one.
           </p>
         )}
       </div>

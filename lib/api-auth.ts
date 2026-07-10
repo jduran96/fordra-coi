@@ -38,7 +38,7 @@ export function apiError(message: string, status = 400, type = 'invalid_request_
 }
 
 export function unauthorized() {
-  return apiError('Invalid or missing API key. Authenticate with HTTP Basic, key as username.', 401, 'authentication_error')
+  return apiError('Invalid or missing API key. Contact a Fordra admin for help.', 401, 'authentication_error')
 }
 
 /**

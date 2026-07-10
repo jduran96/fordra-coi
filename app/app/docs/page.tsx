@@ -152,7 +152,7 @@ export default async function DocsPage() {
           <ApiKeyManager keys={keys} />
         ) : (
           <p style={{ color: C.txt, fontSize: 14.5, margin: 0, padding: '14px 16px' }}>
-            Please contact your Fordra admin at (727) 729-9594 to set up your API Key.
+            Please contact a Fordra admin to set up your API key.
           </p>
         )}
       </div>

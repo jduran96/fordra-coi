@@ -141,22 +141,28 @@ the `<a>`. After pasting into the dashboard, reload the page to confirm the
 save stuck, then send a FRESH email — received emails never re-render. Debug
 with Gmail's Show original: it reveals exactly which markup was sent.
 
-## 10. Admin-minted sign-in links "expired or already used" on first click
+## 10. Magic-link / invite links "expired or already used" on first click
 
-**Symptom:** a copied invite/sign-in link fails immediately with the
-/login?error=link screen, even freshly minted and well within expiry.
+**Symptom:** a sign-in link (magic-link email, invite email, or copied admin
+link) fails immediately with the /login?error=link screen, even freshly
+minted, clicked seconds after receipt, well within expiry.
 
 **Root cause (two-part):** token_hash links are single-use and last-one-wins.
-- Link-preview crawlers (Slack, iMessage, some mail scanners) GET every URL
-  pasted to them; a link pointing straight at /auth/callback is consumed by
-  the crawler before the human clicks.
+- Anything that prefetches URLs consumes the token before the human clicks:
+  Slack/iMessage link previews, and Gmail's link scanner on incoming email
+  (probabilistic — the same flow can pass tests for days, then fail). Any
+  link pointing straight at /auth/callback is vulnerable.
 - Minting a new magiclink for a user invalidates all their older ones
   (verified live: older token -> `otp_expired`). The original SigninLinkButton
   minted on every popup open, silently killing the link the admin just sent.
   Cross-type is safe: a magiclink mint does NOT kill an emailed invite token.
 
-**Fix (in place):** minted links point at the `/auth/link` interstitial, which
-consumes nothing on GET; its button form-GETs to /auth/callback (crawlers do
-not submit forms). The popup reuses its minted link on reopen and only mints
-again via the explicit Regenerate button. Never hand out raw /auth/callback
-URLs, and never mint a magiclink as a side effect of a repeatable action.
+**Fix (in place):** every link — emails via emailRedirectTo/redirectTo, and
+admin-minted links — points at the `/auth/link` interstitial, which consumes
+nothing on GET. Real browsers auto-continue via JS (AutoContinue component,
+"Signing you in…" flash); crawlers don't execute JS, and the no-JS fallback
+is a form-GET button (crawlers don't submit forms either). The Invite-link
+popup reuses its minted link on reopen and only mints again via the explicit
+Regenerate button. Never hand out raw /auth/callback URLs, never point
+emailRedirectTo at /auth/callback, and never mint a magiclink as a side
+effect of a repeatable action.

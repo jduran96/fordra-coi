@@ -201,7 +201,10 @@ export async function deleteOrg(_prev: OrgActionState, formData: FormData): Prom
     const { error: perr } = await supabase.from('profiles').delete().eq('id', m.id)
     if (perr) return { error: perr.message }
     const { error: aerr } = await supabase.auth.admin.deleteUser(m.id)
-    if (aerr) return { error: `Removed ${m.email}'s profile, but not their sign-in account: ${aerr.message}` }
+    if (aerr) {
+      console.error('deleteOrg: auth user delete failed', m.email, aerr)
+      return { error: `Removed ${m.email}'s profile, but their sign-in account could not be deleted. Try again.` }
+    }
   }
 
   // Verifications: storage objects first (Storage API, not SQL), then rows.
@@ -215,7 +218,10 @@ export async function deleteOrg(_prev: OrgActionState, formData: FormData): Prom
     const paths = (docs ?? []).map(d => d.storage_path).filter(Boolean)
     if (paths.length) {
       const { error } = await supabase.storage.from(DOCUMENTS_BUCKET).remove(paths)
-      if (error) return { error: `Could not delete stored documents: ${error.message}` }
+      if (error) {
+        console.error('deleteOrg: storage remove failed', error)
+        return { error: "Could not delete the org's stored documents. Try again." }
+      }
     }
     const { error: derr } = await supabase.from('documents').delete().in('verification_id', vIds)
     if (derr) return { error: derr.message }
@@ -270,11 +276,17 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
     if (perr) return { error: perr.message }
     if (!prof) return { error: 'This email has a sign-in account but no profile. Contact support.' }
     const { error: uerr } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', prof.id)
-    if (uerr) return { error: `Could not link the account: ${uerr.message}` }
+    if (uerr) {
+      console.error('inviteUser: org link failed', uerr)
+      return { error: 'Could not link the account to the org. Try again.' }
+    }
   } else if (data.user) {
     // handle_new_user() created the profile row; link it to the chosen org.
     const { error: perr } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', data.user.id)
-    if (perr) return { error: `Invited, but could not link the account: ${perr.message}` }
+    if (perr) {
+      console.error('inviteUser: org link failed', perr)
+      return { error: 'Invited, but could not link the account to the org. Fix it from Edit User.' }
+    }
   }
 
   // Fallback link in case the invite email does not arrive; for an existing
@@ -336,7 +348,10 @@ export async function deleteUser(_prev: DeleteUserState, formData: FormData): Pr
   const { error: perr } = await supabase.from('profiles').delete().eq('id', profileId)
   if (perr) return { error: perr.message }
   const { error: aerr } = await supabase.auth.admin.deleteUser(profileId)
-  if (aerr) return { error: `Profile removed, but the sign-in account could not be deleted: ${aerr.message}` }
+  if (aerr) {
+    console.error('deleteUser: auth user delete failed', aerr)
+    return { error: 'Profile removed, but the sign-in account could not be deleted. Try again.' }
+  }
 
   revalidatePath('/admin/users')
   return { ok: true }

@@ -119,7 +119,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       state,
     })
     if (error) {
-      await say('Something went wrong on my end. Please try again in a moment.')
+      await say('Unexpected session error. Please contact a Fordra admin for help.')
       return
     }
   }
@@ -261,7 +261,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       files,
     }))
   } catch (e) {
-    await say(`I could not create the request: ${e instanceof Error ? e.message : 'unknown error'}. Reply *done* to retry or "cancel" to start over.`)
+    await say('Verification request encountered an error. Reply "cancel" to start over.')
     return
   }
 

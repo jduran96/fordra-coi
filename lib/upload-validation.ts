@@ -63,7 +63,7 @@ export function validateUpload(
     return { ok: true, mimeType: 'text/plain' }
   }
 
-  const names: Record<UploadKind, string> = { pdf: 'PDF', image: 'JPG/PNG/WebP', docx: 'DOCX', text: 'TXT' }
+  const names: Record<UploadKind, string> = { pdf: 'pdf', image: 'jpg, png', docx: 'docx', text: 'txt' }
   return {
     ok: false,
     mimeType: fallback,

@@ -14,7 +14,7 @@ export default async function SettingsPage() {
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
         <h1 style={h1S()}>Settings</h1>
         <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 14 }}>
-          Your account isn&rsquo;t linked to an organization yet. Call (727) 729-9594 to get set up.{' '}
+          Please contact a Fordra admin to set up your account.{' '}
           <Link href="/app" style={{ color: C.txt, fontWeight: 600 }}>Back</Link>
         </p>
       </div>
