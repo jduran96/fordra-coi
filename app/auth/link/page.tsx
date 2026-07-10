@@ -1,14 +1,16 @@
 import { C } from '@/lib/theme'
+import AutoContinue from './AutoContinue'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Interstitial for admin-minted sign-in links. The links we hand out point
- * here instead of straight at /auth/callback because the token is single-use:
+ * Interstitial for sign-in links (emails + admin-minted). Links point here
+ * instead of straight at /auth/callback because the token is single-use:
  * link-preview crawlers (Slack, iMessage, mail scanners) GET every URL they
  * see, and a direct callback link would be consumed before the human clicks.
- * This page consumes nothing; the button submits a GET form to /auth/callback,
- * which crawlers don't do.
+ * This page consumes nothing on GET. Real browsers auto-continue via JS
+ * (AutoContinue), so humans just see a brief flash; crawlers don't run JS,
+ * and the no-JS fallback is the form button.
  */
 export default async function AuthLinkPage({ searchParams }: {
   searchParams: Promise<{ token_hash?: string; type?: string; next?: string }>
@@ -17,6 +19,9 @@ export default async function AuthLinkPage({ searchParams }: {
   const tokenHash = params.token_hash ?? ''
   const type = params.type ?? 'magiclink'
   const next = params.next ?? ''
+  const callbackHref = tokenHash
+    ? `/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=${encodeURIComponent(type)}${next ? `&next=${encodeURIComponent(next)}` : ''}`
+    : ''
 
   return (
     <div style={{
@@ -36,9 +41,9 @@ export default async function AuthLinkPage({ searchParams }: {
         </h1>
         {tokenHash ? (
           <>
+            <AutoContinue href={callbackHref} />
             <p style={{ fontSize: 14, color: C.txt2, lineHeight: 1.6, margin: '0 0 24px' }}>
-              Click below to finish signing in. This link works once, so use this button when
-              you are ready.
+              Signing you in… If nothing happens, click the button below.
             </p>
             <form action="/auth/callback" method="get">
               <input type="hidden" name="token_hash" value={tokenHash} />
