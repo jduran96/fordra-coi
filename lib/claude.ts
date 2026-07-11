@@ -291,7 +291,21 @@ function dedupeGapAnalysis(gap: GapAnalysis): GapAnalysis {
   const not_met = take(gap.not_met);
   const uncertain = take(gap.uncertain);
   const met = take(gap.met);
-  return { met, not_met, uncertain };
+
+  // The model occasionally drops an item into the wrong array while its own
+  // `status` field (and evidence) say otherwise — seen live: a not_met item
+  // inside `met`. The per-item status is authoritative; re-bucket by it, and
+  // stamp a missing/invalid status with the bucket the model chose.
+  const out: GapAnalysis = { met: [], not_met: [], uncertain: [] };
+  for (const [bucket, items] of [['met', met], ['not_met', not_met], ['uncertain', uncertain]] as const) {
+    for (const item of items) {
+      const s = item.status === 'met' || item.status === 'not_met' || item.status === 'uncertain'
+        ? item.status
+        : bucket;
+      out[s].push({ ...item, status: s });
+    }
+  }
+  return out;
 }
 
 // ─── 5. Generate agent questions ──────────────────────────────────────────────
