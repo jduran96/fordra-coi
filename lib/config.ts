@@ -20,7 +20,10 @@ export interface ExtractionConfig {
 /** Load all extraction-related config overrides in one query. */
 export async function getExtractionConfig(): Promise<ExtractionConfig> {
   const svc = createServiceClient()
-  const { data } = await svc.from('app_config').select('key, value')
+  const { data, error } = await svc.from('app_config').select('key, value')
+  // A transient read failure must fail loudly: silently falling back to the
+  // defaults would run extraction with prompts the admin already replaced.
+  if (error) throw new Error(`Could not load extraction config: ${error.message}`)
   const map = new Map((data ?? []).map(r => [r.key, r.value]))
   return {
     promptCoiExtraction: (map.get(CONFIG_KEYS.promptCoiExtraction) as string | undefined) || undefined,

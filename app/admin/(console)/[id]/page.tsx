@@ -64,10 +64,12 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     notFound()
   }
 
-  const { data: docs } = await supabase
+  const { data: docs, error: docsErr } = await supabase
     .from('documents')
     .select('id, kind, file_name, mime_type, storage_path, extracted, extraction_status')
     .eq('verification_id', id)
+  // "No documents uploaded" on a failed read could get a valid case rejected.
+  if (docsErr) throw new Error(`Could not load documents: ${docsErr.message}`)
 
   const docsWithUrls = await Promise.all(
     (docs ?? []).map(async d => ({ ...d, url: await signedUrl(d.storage_path).catch(() => null) })),

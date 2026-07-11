@@ -17,16 +17,23 @@ export async function GET(request: Request) {
   const type = url.searchParams.get('type') as EmailOtpType | null
   // `next` arrives as a query param (minted links) or the login-next cookie
   // (login-page flow keeps the email redirect URL query-free so the template
-  // can append ?token_hash=...).
-  const cookies = Object.fromEntries(
-    (request.headers.get('cookie') ?? '').split('; ').filter(Boolean).map(c => {
-      const i = c.indexOf('=')
-      return [c.slice(0, i), decodeURIComponent(c.slice(i + 1))]
-    }),
-  )
+  // can append ?token_hash=...). Parse ONLY login-next, and never let a
+  // malformed value throw: decodeURIComponent rejects bad % escapes, and one
+  // corrupt cookie anywhere on the domain must not 500 every sign-in.
+  const loginNextRaw = (request.headers.get('cookie') ?? '')
+    .split(';')
+    .map(c => c.trim())
+    .find(c => c.startsWith('login-next='))
+    ?.slice('login-next='.length)
+  let loginNext: string | null = loginNextRaw ?? null
+  try {
+    if (loginNextRaw) loginNext = decodeURIComponent(loginNextRaw)
+  } catch {
+    // keep the raw value; the same-origin check below still applies
+  }
   // Only same-origin relative paths: anything absolute ("https://…") or
   // protocol-relative ("//…") would be an open redirect off Fordra.
-  const rawNext = url.searchParams.get('next') || cookies['login-next'] || null
+  const rawNext = url.searchParams.get('next') || loginNext || null
   const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null
 
   const supabase = await createClient()

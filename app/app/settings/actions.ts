@@ -33,12 +33,15 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
   const isDefault = String(formData.get('is_default') || '') === 'true'
   const supabase = await createClient()
 
-  // The partial unique index allows one default per org: clear the old one first.
+  // The partial unique index allows one default per org: clear the old one
+  // first, and abort if that fails (otherwise the insert below hits the index
+  // and surfaces a raw duplicate-key error).
   if (isDefault) {
-    await supabase.from('requirement_templates')
+    const { error: clearErr } = await supabase.from('requirement_templates')
       .update({ is_default: false })
       .eq('org_id', profile.org_id)
       .eq('is_default', true)
+    if (clearErr) return { error: 'Could not save. Nothing was changed. Please retry.' }
   }
 
   const row = {
@@ -60,14 +63,15 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
   return { ok: true }
 }
 
-export async function deleteTemplate(templateId: string): Promise<void> {
+export async function deleteTemplate(templateId: string): Promise<{ error?: string } | void> {
   const profile = await getProfile()
   if (!profile?.org_id) return
   const supabase = await createClient()
-  await supabase.from('requirement_templates')
+  const { error } = await supabase.from('requirement_templates')
     .delete()
     .eq('id', templateId)
     .eq('org_id', profile.org_id)
+  if (error) return { error: 'Could not delete. Please retry.' }
   revalidatePath('/app/settings')
   revalidatePath('/app/new')
 }

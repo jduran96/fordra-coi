@@ -3,6 +3,24 @@ import { downloadDocument } from '@/lib/storage'
 import { extractCOIFields, extractTextFromFile, parseRequirements, analyzeGaps } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
 
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+/**
+ * Standards/rate-con document -> plain text. Upload validation accepts pdf,
+ * image, docx, and txt for standards; only pdf/image can go to Claude vision
+ * (anything else as an image block is a guaranteed API 400). docx goes
+ * through mammoth, txt is decoded directly — no model call needed.
+ */
+async function docToText(bytes: ArrayBuffer, mime: string, prompt?: string): Promise<string> {
+  if (mime === 'text/plain') return Buffer.from(bytes).toString('utf-8').trim()
+  if (mime === DOCX_MIME) {
+    const mammoth = (await import('mammoth')).default
+    const { value } = await mammoth.extractRawText({ buffer: Buffer.from(bytes) })
+    return value.trim()
+  }
+  return extractTextFromFile(Buffer.from(bytes).toString('base64'), mime, prompt)
+}
+
 /**
  * The OCR/analysis pipeline body, callable from the admin route (which raises
  * maxDuration — Claude vision on a PDF regularly exceeds the default limit).
@@ -13,15 +31,19 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // Admin-editable prompts (/admin/settings); defaults apply when unset.
   const cfg = await getExtractionConfig()
 
-  const { data: v } = await supabase
+  const { data: v, error: verr } = await supabase
     .from('verifications')
     .select('id, requirements, carrier_name, template_id')
     .eq('id', verificationId)
     .single()
-  const { data: docs } = await supabase
+  if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
+  const { data: docs, error: derr } = await supabase
     .from('documents')
     .select('id, kind, storage_path, mime_type')
     .eq('verification_id', verificationId)
+  // A failed read must abort: proceeding with an empty docs list would
+  // overwrite a previously good extraction with nulls.
+  if (derr) throw new Error(`Could not load documents: ${derr.message}`)
 
   // COI → structured fields (vision)
   const coiDoc = docs?.find(d => d.kind === 'coi')
@@ -44,9 +66,10 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   ).trim()
   for (const d of (docs ?? []).filter(d => d.kind === 'requirements' || d.kind === 'rcs')) {
     const { bytes, contentType } = await downloadDocument(d.storage_path)
-    const txt = await extractTextFromFile(Buffer.from(bytes).toString('base64'), d.mime_type || contentType, cfg.promptDocTextExtraction)
+    const mime = d.mime_type || contentType
+    const txt = await docToText(bytes, mime, cfg.promptDocTextExtraction)
     await supabase.from('documents')
-      .update({ extracted: { text: txt }, extractor: 'claude', extraction_status: 'processed' })
+      .update({ extracted: { text: txt }, extractor: mime === 'text/plain' || mime === DOCX_MIME ? 'local' : 'claude', extraction_status: 'processed' })
       .eq('id', d.id)
     reqText += `\n${txt}`
   }
@@ -58,10 +81,14 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
     ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1])
     : null
 
-  await supabase.from('verifications').update({
+  const { error: werr } = await supabase.from('verifications').update({
     coi_extracted: coiExtracted,
     requirements_normalized: requirements,
     gap_analysis: gap,
     case_status: 'ocr_complete',
+    error_detail: null,
   }).eq('id', verificationId)
+  // Never drop finished Claude analysis on the floor: the docs are already
+  // stamped processed, so a swallowed write here leaves inconsistent state.
+  if (werr) throw new Error(`Could not save the extraction results: ${werr.message}`)
 }

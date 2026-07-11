@@ -127,6 +127,17 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     setError('')
     if (!carrier.trim()) return setError('Carrier name is required.')
     if (!coiFile) return setError('Upload the carrier COI.')
+    // Mirror the server's 20MB per-file cap and stay under the 30MB proxy
+    // body cap (multipart overhead included): without this precheck an
+    // oversized upload dies at the transport layer with no useful error.
+    const MAX_FILE = 20 * 1024 * 1024
+    const MAX_TOTAL = 25 * 1024 * 1024
+    const files = [coiFile, rcsFile, reqMode === 'upload' ? reqFile : null].filter(Boolean) as File[]
+    const big = files.find(f => f.size > MAX_FILE)
+    if (big) return setError(`${big.name} is larger than 20 MB. Upload a smaller file.`)
+    if (files.reduce((s, f) => s + f.size, 0) > MAX_TOTAL) {
+      return setError('These files are too large to upload together. Keep the total under 25 MB.')
+    }
     if (reqMode === 'template') {
       if (!template) return setError('Pick a saved standard, or switch to entering standards for this deal.')
       if (normalizedTpl.error) return setError(normalizedTpl.error)
@@ -155,9 +166,16 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
       fd.append('requirements_text', serializeStandards())
     }
 
-    const res = await submitVerification(fd)
-    if (res?.error) { setError(res.error); setPending(false); return }
-    router.push('/app')
+    // A thrown invocation (network drop, deploy mid-flight, body over the
+    // proxy cap) must never strand the form on "Submitting…" forever.
+    try {
+      const res = await submitVerification(fd)
+      if (res?.error) { setError(res.error); setPending(false); return }
+      router.push('/app')
+    } catch {
+      setError('Could not submit. Check your connection and retry. Your entries are still here.')
+      setPending(false)
+    }
   }
 
   return (

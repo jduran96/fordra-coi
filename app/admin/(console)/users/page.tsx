@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth-helpers'
 import { isAdminEmail } from '@/lib/admin-emails'
 import { pacificDateTime } from '@/lib/dates'
 import { C } from '@/lib/theme'
@@ -13,16 +14,23 @@ export const dynamic = 'force-dynamic'
 interface Prof { id: string; email: string; role: string; org_id: string | null; orgs: { name: string } | null }
 
 export default async function UsersPage() {
-  // Admin-only route (gated by the layout). Service client so we can read every
-  // profile plus each user's last sign-in from the auth admin API.
+  // Defense in depth: the proxy and layout also gate /admin, but every admin
+  // page checks for itself before touching the service client (repo invariant).
+  await requireAdmin()
+  // Service client so we can read every profile plus each user's last sign-in
+  // from the auth admin API.
   const svc = createServiceClient()
-  const { data: profiles } = await svc
+  const { data: profiles, error: pErr } = await svc
     .from('profiles')
     .select('id, email, role, org_id, orgs(name)')
     .order('created_at', { ascending: true })
-  const { data: orgs } = await svc.from('orgs').select('id, name').order('name')
-  const { data: authData } = await svc.auth.admin.listUsers()
-  const { data: verifOrgs } = await svc.from('verifications').select('org_id')
+  if (pErr) throw new Error(`Could not load users: ${pErr.message}`)
+  const { data: orgs, error: oErr } = await svc.from('orgs').select('id, name').order('name')
+  if (oErr) throw new Error(`Could not load orgs: ${oErr.message}`)
+  const { data: authData, error: aErr } = await svc.auth.admin.listUsers()
+  if (aErr) throw new Error(`Could not load sign-in activity: ${aErr.message}`)
+  const { data: verifOrgs, error: vErr } = await svc.from('verifications').select('org_id')
+  if (vErr) throw new Error(`Could not load verification counts: ${vErr.message}`)
 
   const rows = (profiles ?? []) as unknown as Prof[]
   const orgRows = (orgs ?? []).map(o => ({

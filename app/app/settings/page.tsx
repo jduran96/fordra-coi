@@ -27,11 +27,12 @@ export default async function SettingsPage() {
   // Profiles RLS only exposes the caller's own row; list teammates via the
   // service client, scoped strictly to the caller's org.
   const svc = createServiceClient()
-  const { data: members } = await svc
+  const { data: members, error: membersErr } = await svc
     .from('profiles')
     .select('id, email, full_name')
     .eq('org_id', profile.org_id)
     .order('email')
+  if (membersErr) throw new Error(`Could not load team members: ${membersErr.message}`)
 
   // New templates start pre-filled with the starter condition checks so orgs can
   // see and tailor them (policyholder name, policy active) per template.

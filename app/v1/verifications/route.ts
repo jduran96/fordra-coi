@@ -186,11 +186,18 @@ export async function GET(request: Request) {
   if (!auth) return unauthorized()
 
   const svc = createServiceClient()
-  const { data } = await svc.from('verifications')
+  const { data, error } = await svc.from('verifications')
     .select('*')
     .eq('org_id', auth.orgId)
     .order('created_at', { ascending: false })
     .limit(100)
+  // An outage must not read as "you have no verifications".
+  if (error) {
+    return Response.json(
+      { error: { type: 'api_error', message: 'Something went wrong. Retry the request.' } },
+      { status: 500 },
+    )
+  }
 
   return Response.json({ object: 'list', data: (data ?? []).map(v => serializeVerification(v)) })
 }

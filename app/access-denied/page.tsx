@@ -36,7 +36,16 @@ export default async function AccessDenied() {
           }}>
             Go to your portal
           </Link>
-          <a href="/auth/signout" style={{ fontSize: 14, color: C.txt2 }}>Sign out</a>
+          {/* signout is POST-only (CSRF); a plain link 405s */}
+          <form action="/auth/signout" method="post" style={{ margin: 0 }}>
+            <button type="submit" style={{
+              fontSize: 14, color: C.txt2, background: 'none', border: 'none',
+              padding: 0, cursor: 'pointer', fontFamily: C.sans, textDecoration: 'underline',
+              textUnderlineOffset: 3,
+            }}>
+              Sign out
+            </button>
+          </form>
         </div>
       </div>
     </div>

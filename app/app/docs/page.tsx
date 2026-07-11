@@ -334,9 +334,11 @@ function CodeBox({ title, children }: { title: string; children: React.ReactNode
 
 async function loadKeys() {
   const supabase = await createClient()
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('api_keys')
     .select('id, mode, key_prefix, name, created_at, last_used_at, revoked_at')
     .order('created_at', { ascending: false })
+  // Fail loudly: rendering "No API keys yet" on a failed read lies.
+  if (error) throw new Error(`Could not load API keys: ${error.message}`)
   return data ?? []
 }

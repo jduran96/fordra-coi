@@ -7,6 +7,7 @@ import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
+import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline } from '@/lib/extraction'
 
 /**
@@ -17,7 +18,18 @@ import { runExtractionPipeline } from '@/lib/extraction'
  */
 export async function runExtraction(verificationId: string) {
   await requireAdmin()
-  await runExtractionPipeline(verificationId)
+  try {
+    await runExtractionPipeline(verificationId)
+  } catch (e) {
+    // Record why extraction died (error_detail was previously never written
+    // by anything), then let the error surface to the admin.
+    const detail = e instanceof Error ? e.message : String(e)
+    await createServiceClient().from('verifications')
+      .update({ error_detail: `extraction failed: ${detail}`.slice(0, 500) })
+      .eq('id', verificationId)
+      .then(() => {}, () => {})
+    throw e
+  }
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -163,7 +175,7 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   const { data: v, error } = await supabase.from('verifications')
     .update(update)
     .eq('id', verificationId)
-    .select('id, org_id, display_id, carrier_name, status, published_at')
+    .select('*')
     .single()
   if (error || !v) {
     console.error('saveAssessment: update failed', error)
@@ -171,10 +183,13 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   }
 
   if (publish) {
-    await emitEvent(v.org_id, 'verification.updated', {
-      object: 'verification', id: v.id, display_id: v.display_id,
-      carrier_name: v.carrier_name, status: v.status, published_at: v.published_at,
-    })
+    // The webhook payload must be exactly what GET /v1/verifications/:id
+    // returns (and what the sandbox delivers) — integrators build against one
+    // shape.
+    const { data: docs } = await supabase.from('documents')
+      .select('kind, file_name')
+      .eq('verification_id', verificationId)
+    await emitEvent(v.org_id as string, 'verification.updated', serializeVerification(v, docs ?? []))
     revalidatePath('/admin')
     redirect('/admin')
   }

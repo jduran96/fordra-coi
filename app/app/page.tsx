@@ -9,10 +9,12 @@ export const dynamic = 'force-dynamic'
 export default async function PortalDashboard() {
   const profile = await getProfile()
   const supabase = await createClient()
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from('my_verifications')
     .select('id, display_id, carrier_name, status, case_status, source, created_at, published_at')
     .order('created_at', { ascending: false })
+  // Fail loudly: rendering "No verifications yet." on a failed read lies.
+  if (error) throw new Error(`Could not load verifications: ${error.message}`)
 
   if (!profile?.org_id) {
     return (

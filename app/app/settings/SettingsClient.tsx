@@ -45,6 +45,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   const [details, setDetails] = useState('')
   const [isDefault, setIsDefault] = useState(false)
   const [error, setError] = useState('')
+  const [listError, setListError] = useState('')
   const [pending, startTransition] = useTransition()
 
   function openNew() {
@@ -101,6 +102,7 @@ export default function SettingsClient({ templates, starterRows, members, selfId
           </div>
         )}
 
+        {listError && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: '0 0 10px' }}>{listError}</p>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {templates.map(t => (
             <div key={t.id} style={{ ...cardS, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -125,7 +127,12 @@ export default function SettingsClient({ templates, starterRows, members, selfId
               <button type="button" onClick={() => openEdit(t)} style={pillS(false)}>Edit</button>
               <button
                 type="button"
-                onClick={() => startTransition(async () => { await deleteTemplate(t.id); if (editing === t.id) setEditing(null) })}
+                onClick={() => startTransition(async () => {
+                  setListError('')
+                  const res = await deleteTemplate(t.id)
+                  if (res?.error) { setListError(res.error); return }
+                  if (editing === t.id) setEditing(null)
+                })}
                 style={{ ...pillS(false), color: C.error, borderColor: C.border }}
               >
                 Delete

@@ -54,15 +54,18 @@ export default async function CustomerVerification({ params }: { params: Promise
     .eq('id', id)
     .maybeSingle())
   if (!v) {
-    if (error) throw new Error('Could not load this verification. Please retry.')
+    // 22P02: the id is not a valid uuid (mistyped URL), a 404 not a failure.
+    if (error && error.code !== '22P02') throw new Error('Could not load this verification. Please retry.')
     notFound()
   }
 
   // Original submission (source of truth for the customer): RLS scopes this to their org.
-  const { data: docs } = await supabase
+  const { data: docs, error: docsErr } = await supabase
     .from('documents')
     .select('id, kind, file_name, storage_path')
     .eq('verification_id', id)
+  // "Not submitted" on a failed read lies about documents that exist.
+  if (docsErr) throw new Error(`Could not load documents: ${docsErr.message}`)
   const docsWithUrls = await Promise.all(
     (docs ?? []).map(async d => ({ ...d, url: await signedUrl(d.storage_path).catch(() => null) })),
   )

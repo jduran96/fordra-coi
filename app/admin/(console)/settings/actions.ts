@@ -53,12 +53,14 @@ export async function saveOrgTemplate(_prev: OrgTemplateState, formData: FormDat
   const details = String(formData.get('details') || '').trim() || null
 
   const isDefault = String(formData.get('is_default') || '') === 'true'
-  // One default per org (partial unique index): clear the old one first.
+  // One default per org (partial unique index): clear the old one first, and
+  // abort if that fails (the insert below would hit the index otherwise).
   if (isDefault) {
-    await supabase.from('requirement_templates')
+    const { error: clearErr } = await supabase.from('requirement_templates')
       .update({ is_default: false })
       .eq('org_id', orgId)
       .eq('is_default', true)
+    if (clearErr) return { error: 'Could not save. Nothing was changed. Please retry.' }
   }
 
   const row = {
@@ -82,6 +84,7 @@ export async function saveOrgTemplate(_prev: OrgTemplateState, formData: FormDat
 export async function deleteOrgTemplate(templateId: string): Promise<void> {
   await requireAdmin()
   const supabase = createServiceClient()
-  await supabase.from('requirement_templates').delete().eq('id', templateId)
+  const { error } = await supabase.from('requirement_templates').delete().eq('id', templateId)
+  if (error) throw new Error(`Could not delete the template: ${error.message}`)
   revalidatePath('/admin/settings')
 }

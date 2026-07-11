@@ -20,9 +20,11 @@ export async function generateInstallLink(_prev: InstallLinkState, formData: For
 export async function revokeInstallation(installId: string) {
   await requireAdmin()
   const svc = createServiceClient()
-  await svc.from('slack_installations')
+  const { error } = await svc.from('slack_installations')
     .update({ revoked_at: new Date().toISOString() })
     .eq('id', installId)
+  // A silently failed revoke is security-relevant; fail loudly.
+  if (error) throw new Error(`Could not revoke the installation: ${error.message}`)
   revalidatePath('/admin/slack')
 }
 
@@ -33,8 +35,9 @@ export async function setAllowedUsers(formData: FormData) {
   const raw = String(formData.get('allowed_users') || '').trim()
   const users = raw ? raw.split(/[\s,]+/).filter(Boolean) : null
   const svc = createServiceClient()
-  await svc.from('slack_installations')
+  const { error } = await svc.from('slack_installations')
     .update({ allowed_slack_users: users })
     .eq('id', installId)
+  if (error) throw new Error(`Could not save the whitelist: ${error.message}`)
   revalidatePath('/admin/slack')
 }

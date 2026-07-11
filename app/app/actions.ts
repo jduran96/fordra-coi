@@ -36,11 +36,13 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
   const templateId = String(formData.get('template_id') || '').trim()
   let requirements: unknown = requirementsText ? { text: requirementsText } : null
   if (templateId) {
-    const { data: t } = await supabase
+    const { data: t, error: terr } = await supabase
       .from('requirement_templates')
       .select(TEMPLATE_SELECT)
       .eq('id', templateId)
       .single<RequirementTemplate>()
+    // A transient read failure is not "not found": tell the user to retry.
+    if (terr && terr.code !== 'PGRST116') return { error: 'Could not load the saved standard. Please retry.' }
     if (!t) return { error: 'That saved standard could not be found.' }
 
     let rows = t.requirements
@@ -143,7 +145,10 @@ export async function createApiKey(_prev: CreateKeyState, formData: FormData): P
     key_prefix: prefix,
     name: `${mode} key`,
   })
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('createApiKey failed', error)
+    return { error: 'Could not create the key. Please retry.' }
+  }
 
   revalidatePath('/app/docs')
   return { secret, prefix }
@@ -156,9 +161,12 @@ export async function revokeApiKey(keyId: string) {
 
   const supabase = await createClient()
   // RLS scopes the update to the caller's org; the org check is belt and braces.
-  await supabase.from('api_keys')
+  const { error } = await supabase.from('api_keys')
     .update({ revoked_at: new Date().toISOString() })
     .eq('id', keyId)
     .eq('org_id', profile.org_id)
+  // A silently failed revoke of a live secret is a security lie; fail loudly
+  // (the error boundary renders, and the key still shows Active on reload).
+  if (error) throw new Error(`Could not revoke the key: ${error.message}`)
   revalidatePath('/app/docs')
 }

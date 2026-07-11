@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { uploadDocument } from '@/lib/storage'
+import { uploadDocument, removeDocuments } from '@/lib/storage'
 
 export type DocumentKind = 'coi' | 'rcs' | 'requirements'
 
@@ -59,24 +59,44 @@ export async function createVerification(
   if (error || !v) throw new Error(error?.message || 'Could not create verification.')
 
   const docRefs: DocRef[] = []
-  for (const f of input.files) {
-    const docId = randomUUID()
-    const path = f.existingStoragePath ?? `${input.orgId}/${v.id}/${f.kind}-${f.name}`
-    if (!f.existingStoragePath) await uploadDocument(path, f.bytes, f.mimeType)
-    const { error: derr } = await db.from('documents').insert({
-      id: docId,
-      org_id: input.orgId,
-      verification_id: v.id,
-      kind: f.kind,
-      storage_path: path,
-      file_name: f.name,
-      mime_type: f.mimeType,
-      size_bytes: f.bytes.byteLength,
-      extraction_status: 'processing',
-      ...(input.createdBy ? { uploaded_by: input.createdBy } : {}),
-    })
-    if (derr) throw new Error(derr.message)
-    docRefs.push({ id: docId, kind: f.kind, file_name: f.name })
+  // Track what this call created so a mid-loop failure can be compensated:
+  // without cleanup, the customer is told the submission failed while an
+  // eternally-pending verification row (and orphaned storage) lives on.
+  const uploadedPaths: string[] = []
+  try {
+    for (const f of input.files) {
+      const docId = randomUUID()
+      // Raw filenames can contain characters Supabase Storage rejects as
+      // object keys (#, ?, unicode). Sanitize the KEY only; file_name below
+      // keeps the original for display.
+      const safeName = f.name.replace(/[^\w.\- ]+/g, '_')
+      const path = f.existingStoragePath ?? `${input.orgId}/${v.id}/${f.kind}-${safeName}`
+      if (!f.existingStoragePath) {
+        await uploadDocument(path, f.bytes, f.mimeType)
+        uploadedPaths.push(path)
+      }
+      const { error: derr } = await db.from('documents').insert({
+        id: docId,
+        org_id: input.orgId,
+        verification_id: v.id,
+        kind: f.kind,
+        storage_path: path,
+        file_name: f.name,
+        mime_type: f.mimeType,
+        size_bytes: f.bytes.byteLength,
+        extraction_status: 'processing',
+        ...(input.createdBy ? { uploaded_by: input.createdBy } : {}),
+      })
+      if (derr) throw new Error(derr.message)
+      docRefs.push({ id: docId, kind: f.kind, file_name: f.name })
+    }
+  } catch (e) {
+    // Best-effort compensation, then rethrow the original failure. Retrying
+    // the whole submission is then safe: nothing half-created remains.
+    await db.from('documents').delete().eq('verification_id', v.id as string).then(() => {}, () => {})
+    await removeDocuments(uploadedPaths)
+    await db.from('verifications').delete().eq('id', v.id as string).then(() => {}, () => {})
+    throw e
   }
 
   return { verification: v, docRefs }

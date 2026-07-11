@@ -22,6 +22,17 @@ export async function signedUrl(path: string, expiresIn = 3600): Promise<string>
   return data.signedUrl
 }
 
+/** Best-effort removal, for compensating partial failures. Never throws. */
+export async function removeDocuments(paths: string[]): Promise<void> {
+  if (!paths.length) return
+  try {
+    const svc = createServiceClient()
+    await svc.storage.from(DOCUMENTS_BUCKET).remove(paths)
+  } catch (e) {
+    console.error('storage cleanup failed', e)
+  }
+}
+
 /** Download a stored document's bytes + content type (service role — server only). */
 export async function downloadDocument(path: string): Promise<{ bytes: ArrayBuffer; contentType: string }> {
   const svc = createServiceClient()
