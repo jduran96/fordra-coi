@@ -126,9 +126,10 @@ export const extractTextFromImage = extractTextFromFile;
 // ─── 2. Parse insurance requirements ─────────────────────────────────────────
 
 export const DEFAULT_REQUIREMENTS_PARSING_PROMPT = `You are an insurance requirements analyst for a freight factoring company.
-Extract insurance requirements from the provided document text. Two kinds count:
+Extract insurance requirements from the provided document text. Three kinds count:
 1. Coverage requirements: a coverage type with a minimum limit (e.g. auto liability $1,000,000).
 2. Stated restrictions or conditions on the insurance: cargo/commodity restrictions ("no helicopters", "no hazmat"), radius limits, equipment or trailer conditions, endorsement demands, deductible caps. These ARE requirements even though they have no dollar limit: set coverage_type to a short label (e.g. "Restriction: No Helicopter Cargo"), minimum_limit to "", and describe the restriction in notes.
+3. Verification conditions: checks the certificate itself must satisfy, e.g. the policyholder/named insured matching a given carrier name, every policy being currently active/in force, or a required certificate holder, loss payee, or additional insured listing. Set coverage_type to the check's short name (e.g. "Matching Policyholder Name"), minimum_limit to "", and describe the exact check in notes.
 Ignore non-insurance regulatory items: FMCSA compliance, safety ratings, licensing, authority checks.
 Return ONLY a valid JSON array. No prose, no markdown fences.
 Each element must have: coverage_type (string), minimum_limit (string), notes (string or null).

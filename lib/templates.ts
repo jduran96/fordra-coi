@@ -128,7 +128,7 @@ export function normalizeRequirementRows(raw: Requirement[]): {
     // less condition made VRF-1043 unparseable). Same non-destructive contract
     // as above: record the error, skip only this row.
     if (!(r.notes ?? '').trim()) {
-      error ??= `Add a description for "${coverage_type}". Descriptions tell the reviewer (and the parser) what to check.`
+      error ??= `Add a description for "${coverage_type}".`
       continue
     }
     requirements.push({ coverage_type, minimum_limit, notes: (r.notes ?? '').trim(), kind })

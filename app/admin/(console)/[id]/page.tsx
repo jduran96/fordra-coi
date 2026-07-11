@@ -82,6 +82,13 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     if (Array.isArray(r)) return r.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n').trim()
     return (r?.text ?? '').trim()
   })()
+  // Template provenance rides in the same JSONB: web keeps template_name on
+  // the object, API/Slack add a { type: 'template' } entry to the array.
+  const templateName = (() => {
+    const r = v.requirements as { template_name?: string } | { type?: string; template_name?: string }[] | null
+    if (Array.isArray(r)) return r.find(x => x?.type === 'template')?.template_name ?? ''
+    return r?.template_name ?? ''
+  })()
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
@@ -124,17 +131,31 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             {docsWithUrls.map(d => (
               <div key={d.id} style={card()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: C.txt2 }}>{d.kind}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: C.txt2 }}>{d.kind === 'rcs' ? 'Other' : d.kind}</span>
                   {d.url && <a href={d.url} target="_blank" rel="noreferrer" style={{ color: C.txt, fontWeight: 600, fontSize: 13, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>View {d.file_name} ↗</a>}
                 </div>
               </div>
             ))}
-            {requirementsText && (
-              <div style={card()}>
-                <SectionTitle small>Insurance standards (submitted as text)</SectionTitle>
-                <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{requirementsText}</p>
-              </div>
-            )}
+            {(() => {
+              const reqDoc = docsWithUrls.find(d => d.kind === 'requirements')
+              const source = templateName
+                ? `Template: ${templateName}`
+                : requirementsText
+                  ? 'Entered as text'
+                  : reqDoc ? `Uploaded document: ${reqDoc.file_name}` : 'Not submitted'
+              // Uploaded standards docs surface their text after extraction.
+              const body = requirementsText
+                || ((reqDoc?.extracted as { text?: string } | null)?.text ?? '').trim()
+              return (
+                <div style={card()}>
+                  <SectionTitle small>Insurance standards</SectionTitle>
+                  <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 8px' }}>{source}</p>
+                  {body
+                    ? <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{body}</p>
+                    : reqDoc && <Muted>Run extraction to read the requirements out of the document.</Muted>}
+                </div>
+              )
+            })()}
           </div>
         </section>
 

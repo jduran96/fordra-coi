@@ -156,7 +156,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         // Descriptions are required: the requirements parser cannot expand a
         // bare title into a checkable requirement.
         const noDesc = cleanReqs.find(r => !(r.notes ?? '').trim())
-        if (noDesc) return setError(`Add a description for "${noDesc.coverage_type.trim()}". Descriptions tell the reviewer what to check.`)
+        if (noDesc) return setError(`Add a description for "${noDesc.coverage_type.trim()}".`)
       }
     }
 
