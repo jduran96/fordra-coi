@@ -173,7 +173,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
       if (res?.error) { setError(res.error); setPending(false); return }
       router.push('/app')
     } catch {
-      setError('Could not submit. Check your connection and retry. Your entries are still here.')
+      setError('Submission failed. We saved your data, but please retry your submission.')
       setPending(false)
     }
   }

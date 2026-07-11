@@ -22,7 +22,7 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
           Something went wrong
         </h1>
         <p style={{ fontSize: 14.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 20px' }}>
-          Nothing was lost. Please retry. If it keeps happening, contact a Fordra admin for help.
+          Please retry your request. If this keeps happening, contact a Fordra admin for help.
         </p>
         <button type="button" onClick={() => reset()} style={{
           padding: '10px 24px', background: C.txt, color: C.onDark, fontSize: 14,
