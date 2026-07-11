@@ -225,7 +225,7 @@ function SubmittedCard({
   const byKind = (kind: string) => docs.filter(d => d.kind === kind)
   const rows: [string, { file_name: string; url: string | null }[]][] = [
     ['COI document', byKind('coi')],
-    ['Rate confirmation', byKind('rcs')],
+    ['Other documents', byKind('rcs')],
     ['Insurance standards', byKind('requirements')],
   ]
   // How the standards arrived, shown when no standards file was uploaded.

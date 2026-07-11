@@ -86,6 +86,100 @@ export function DropZone({ boxTitle, hint, file, accept, onChange }: {
   )
 }
 
+/**
+ * Multi-file variant of DropZone for the "any other relevant documents" slot.
+ * The demo keeps using the single-file DropZone above (that surface is frozen).
+ */
+export function MultiDropZone({ boxTitle, hint, files, accept, max, onChange }: {
+  boxTitle: string; hint: string; files: File[]; accept: string; max: number;
+  onChange: (next: File[]) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const [over, setOver] = useState(false)
+  const full = files.length >= max
+
+  const add = (incoming: FileList | File[]) => {
+    const next = [...files]
+    for (const f of Array.from(incoming)) {
+      if (next.length >= max) break
+      next.push(f)
+    }
+    onChange(next)
+  }
+
+  return (
+    <div>
+      {boxTitle && (
+        <span style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+          textTransform: 'uppercase' as const, color: C.txt3,
+          marginBottom: 8, display: 'block', fontFamily: C.sans,
+        }}>
+          {boxTitle}
+        </span>
+      )}
+
+      {files.map((file, i) => (
+        <div key={`${file.name}-${i}`} style={{
+          border: `1.5px solid ${C.success}`, borderRadius: 12,
+          padding: '14px 20px', marginBottom: 8,
+          background: C.surfaceHover,
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <span style={{ fontSize: 20, color: C.success, lineHeight: 1, fontWeight: 700 }}>✓</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{
+              fontSize: 14, fontWeight: 600, color: C.txt, fontFamily: C.sans,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, marginBottom: 2,
+            }}>
+              {file.name}
+            </p>
+            <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans }}>{(file.size / 1024).toFixed(0)} KB</p>
+          </div>
+          <button
+            onClick={() => onChange(files.filter((_, j) => j !== i))}
+            style={{
+              fontSize: 11, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.01em',
+              color: C.txt3, background: 'transparent',
+              border: `1px solid ${C.border}`, borderRadius: 4,
+              padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' as const,
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      {!full && (
+        <div
+          onClick={() => ref.current?.click()}
+          onDragOver={e => { e.preventDefault(); setOver(true) }}
+          onDragLeave={() => setOver(false)}
+          onDrop={e => { e.preventDefault(); setOver(false); add(e.dataTransfer.files) }}
+          style={{
+            border: `1.5px dashed ${over ? C.txt : C.border}`,
+            borderRadius: 12, padding: files.length ? '18px 20px' : '28px 20px',
+            textAlign: 'center' as const, cursor: 'pointer',
+            background: over ? 'rgba(212, 253, 142, 0.35)' : C.paper,
+            transition: 'all 150ms cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          <p style={{ fontSize: 22, marginBottom: 8 }}>↑</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: C.txt, marginBottom: 4, fontFamily: C.sans }}>
+            {files.length ? 'Add another document' : 'Drop files or click to browse'}
+          </p>
+          <p style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans }}>{hint}</p>
+        </div>
+      )}
+
+      <input
+        ref={ref} type="file" accept={accept} multiple style={{ display: 'none' }}
+        onChange={e => { if (e.target.files?.length) add(e.target.files); e.target.value = '' }}
+      />
+    </div>
+  )
+}
+
 // ─── Currency helpers (manual requirements) ──────────────────────────────────
 // Canonical implementations live in RequirementsEditor; re-exported here so
 // existing imports keep working.

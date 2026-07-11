@@ -85,6 +85,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
+  // Closed (published or rejected) cases are read-only, call notes included,
+  // until reopened via Edit Status. Mirrored server-side in the actions.
+  const caseIsClosed = !!v.published_at || v.case_status === 'rejected'
   const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]
   const coi = (v.coi_extracted ?? null) as COI | null
 
@@ -177,7 +180,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                         <td style={tdN()}>{n.contact?.email?.trim() || '—'}</td>
                         <td style={{ ...tdN(), color: C.txt, whiteSpace: 'pre-wrap', minWidth: 220, lineHeight: 1.55 }}>{n.text}</td>
                         <td style={{ ...tdN(), textAlign: 'right' }}>
-                          <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />
+                          {!caseIsClosed && <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />}
                         </td>
                       </tr>
                     ))}
@@ -185,7 +188,11 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 </table>
               </div>
             )}
-            <CallNoteForm action={saveCallNote.bind(null, id)} />
+            {caseIsClosed ? (
+              <Muted>This case is closed. Click Edit Status below to reopen it before logging calls.</Muted>
+            ) : (
+              <CallNoteForm action={saveCallNote.bind(null, id)} />
+            )}
           </div>
         </section>
 

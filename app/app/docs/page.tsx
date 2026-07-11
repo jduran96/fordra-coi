@@ -172,21 +172,25 @@ export default async function DocsPage() {
       <Ul items={[
         <><Mono>carrier_name</Mono>: the carrier&apos;s legal name (text, required)</>,
         <><Mono>broker_name</Mono>: your company name (text, required)</>,
-        <><Mono>coi</Mono>: the certificate of insurance (file, required)</>,
-        <><Mono>insurance_standards</Mono>: your insurance requirements (text or file, required unless you send a template)</>,
+        <><Mono>coi</Mono>: the certificate of insurance (file or link, required)</>,
+        <><Mono>insurance_standards</Mono>: your insurance requirements (text, file, or link, required unless you send a template)</>,
         <><Mono>template_id</Mono> or <Mono>template_name</Mono>: use a saved standard from your Settings page instead of <Mono>insurance_standards</Mono> (text, optional)</>,
         <><Mono>template_variables</Mono>: JSON object with values for the template&apos;s placeholders, e.g. <Mono>{'{"asset_sale_price": "$85,000"}'}</Mono> (text, required if the template has placeholders)</>,
-        <><Mono>rate_confirmation</Mono>: the rate confirmation sheet (file, optional)</>,
+        <><Mono>additional_documents</Mono>: any other relevant documents, e.g. a rate confirmation or endorsements (file or link, optional, repeat the field for up to 5 documents)</>,
       ]} />
-      <P><B>Sending documents:</B> attach each file to the request as a normal file upload, the same
-        way a web form uploads a file. There is no separate upload step and no link to host.</P>
+      <SubH id="sending-documents">Sending documents</SubH>
+      <P>You can either attach a file to a request or send a link. Attached files cannot be over
+        4 MB, but sending an https URL (like a presigned link from your document system) allows
+        you to share documents up to 10 MB.</P>
+      <CodeBox title="Attaching a file vs sending a link">{`  -F coi=@coi.pdf \\
+  -F additional_documents="https://your-bucket.s3.amazonaws.com/ratecon.pdf?X-Amz-Signature=..."`}</CodeBox>
       <CodeBox title="Sample POST request payload">{`curl -X POST ${BASE}/v1/verifications \\
   -H "Authorization: Bearer `}<Key>sk_live_YOUR_KEY</Key>{`" \\
   -F carrier_name="ACME Trucking LLC" \\
   -F broker_name="Fordra Financial" \\
   -F coi=@coi.pdf \\
   -F insurance_standards="Auto Liability $1,000,000, Cargo $100,000" \\
-  -F rate_confirmation=@ratecon.pdf`}</CodeBox>
+  -F additional_documents=@ratecon.pdf`}</CodeBox>
       <P>A successful POST returns <Mono>201</Mono> with the verification object. The
         {' '}<Mono>status</Mono> field will read <Mono>processing</Mono> because reviews are done
         asynchronously. The analysis fields stay <Mono>null</Mono> until the verification is
@@ -238,7 +242,7 @@ export default async function DocsPage() {
         nothing is sent to a human reviewer and no insurance agent is called.</P>
 
       <p style={{ color: C.txt3, fontSize: 13, marginTop: 36 }}>
-        Need a field you don&apos;t see here? Contact your Fordra admin at (727) 729-9594.
+        Need a field you don&apos;t see here? Ask a Fordra admin.
       </p>
       </div>
       <Toc />
@@ -250,6 +254,7 @@ function Toc() {
   const items: [string, string, number][] = [
     ['authentication', 'Authentication', 0],
     ['start-a-verification', 'Start a Verification', 0],
+    ['sending-documents', 'Sending documents', 1],
     ['saved-standards', 'Saved standards', 1],
     ['review-a-result', 'Review a Result', 0],
     ['via-webhook', 'Via webhook', 1],

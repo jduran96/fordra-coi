@@ -8,10 +8,11 @@ import { requirementKind } from '@/lib/types'
 import type { RequirementTemplate } from '@/lib/templates'
 import { editableRows, normalizeRequirementRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
-import { DropZone, ManualRequirementsForm } from '@/components/UploadCards'
+import { DropZone, MultiDropZone, ManualRequirementsForm } from '@/components/UploadCards'
 import RequirementsEditor, { BLANK_REQUIREMENT } from '@/components/RequirementsEditor'
 import EditorModal from '@/components/EditorModal'
-import { submitVerification } from '../actions'
+import { submitVerification, prepareUploads } from '../actions'
+import { createClient } from '@/lib/supabase/client'
 
 /**
  * Opt-in condition checks offered in manual mode (pre-checked). These replace
@@ -38,7 +39,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
 
   const [carrier, setCarrier] = useState('')
   const [coiFile, setCoiFile] = useState<File | null>(null)
-  const [rcsFile, setRcsFile] = useState<File | null>(null)
+  const [rcsFiles, setRcsFiles] = useState<File[]>([])
   const [templateId, setTemplateId] = useState<string>(defaultTemplate?.id ?? '')
   // The selected standard's rows, editable for this deal only (the saved
   // template is not changed). Variable rows show their human title here;
@@ -127,16 +128,19 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     setError('')
     if (!carrier.trim()) return setError('Carrier name is required.')
     if (!coiFile) return setError('Upload the carrier COI.')
-    // Mirror the server's 20MB per-file cap and stay under the 30MB proxy
-    // body cap (multipart overhead included): without this precheck an
-    // oversized upload dies at the transport layer with no useful error.
-    const MAX_FILE = 20 * 1024 * 1024
-    const MAX_TOTAL = 25 * 1024 * 1024
-    const files = [coiFile, rcsFile, reqMode === 'upload' ? reqFile : null].filter(Boolean) as File[]
-    const big = files.find(f => f.size > MAX_FILE)
-    if (big) return setError(`${big.name} is larger than 20 MB. Upload a smaller file.`)
-    if (files.reduce((s, f) => s + f.size, 0) > MAX_TOTAL) {
-      return setError('These files are too large to upload together. Keep the total under 25 MB.')
+    // Mirror the server's caps: every document is 10MB max, and the "any
+    // other relevant documents" group is 50MB TOTAL. Files go straight to
+    // storage (signed uploads), so no request-body cap applies.
+    const MAX_DOC = 10 * 1024 * 1024
+    const MAX_OTHER_TOTAL = 50 * 1024 * 1024
+    if (coiFile.size > MAX_DOC) return setError(`${coiFile.name} is larger than 10 MB. Upload a smaller COI.`)
+    if (reqMode === 'upload' && reqFile && reqFile.size > MAX_DOC) {
+      return setError(`${reqFile.name} is larger than 10 MB. Upload a smaller standards document.`)
+    }
+    const bigOther = rcsFiles.find(f => f.size > MAX_DOC)
+    if (bigOther) return setError(`${bigOther.name} is larger than 10 MB. Upload a smaller file.`)
+    if (rcsFiles.reduce((s, f) => s + f.size, 0) > MAX_OTHER_TOTAL) {
+      return setError('The other documents exceed 50 MB together. Remove a file or upload smaller ones.')
     }
     if (reqMode === 'template') {
       if (!template) return setError('Pick a saved standard, or switch to entering standards for this deal.')
@@ -148,21 +152,52 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
       if (reqMode === 'manual' && cleanReqs.length === 0 && checkedLines.length === 0) {
         return setError('Add at least one coverage or condition, or keep one of the standard checks selected.')
       }
+      if (reqMode === 'manual') {
+        // Descriptions are required: the requirements parser cannot expand a
+        // bare title into a checkable requirement.
+        const noDesc = cleanReqs.find(r => !(r.notes ?? '').trim())
+        if (noDesc) return setError(`Add a description for "${noDesc.coverage_type.trim()}". Descriptions tell the reviewer what to check.`)
+      }
     }
 
     setPending(true)
+
+    // Upload straight to storage via signed URLs (bytes never touch the
+    // server action: Vercel caps request bodies at ~4.5MB), then submit only
+    // the storage paths.
+    const toUpload: { file: File; kind: 'coi' | 'rcs' | 'requirements' }[] = [
+      { file: coiFile, kind: 'coi' },
+      ...rcsFiles.map(f => ({ file: f, kind: 'rcs' as const })),
+      ...(reqMode === 'upload' && reqFile ? [{ file: reqFile, kind: 'requirements' as const }] : []),
+    ]
+    let uploadedRefs: { path: string; name: string; kind: string }[]
+    try {
+      const prep = await prepareUploads(toUpload.map(u => ({ name: u.file.name, size: u.file.size, kind: u.kind })))
+      if (prep.error || !prep.uploads) {
+        setError(prep.error ?? 'Could not prepare the upload. Please retry.'); setPending(false); return
+      }
+      const supabase = createClient()
+      for (let i = 0; i < toUpload.length; i++) {
+        const { path, token } = prep.uploads[i]
+        const { error: upErr } = await supabase.storage.from('documents').uploadToSignedUrl(path, token, toUpload[i].file)
+        if (upErr) {
+          setError(`Could not upload ${toUpload[i].file.name}. Please retry.`); setPending(false); return
+        }
+      }
+      uploadedRefs = toUpload.map((u, i) => ({ path: prep.uploads![i].path, name: u.file.name, kind: u.kind }))
+    } catch {
+      setError('Could not upload the documents. Check your connection and retry.'); setPending(false); return
+    }
+
     const fd = new FormData()
     fd.append('carrier_name', carrier.trim())
-    fd.append('coi_file', coiFile)
-    if (rcsFile) fd.append('rcs_file', rcsFile)
+    fd.append('uploaded_files', JSON.stringify(uploadedRefs))
     if (reqMode === 'template' && template) {
       fd.append('template_id', template.id)
       fd.append('template_rows', JSON.stringify(cleanTplRows))
       fd.append('template_details', tplDetails)
       for (const v of tplVars) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
-    } else if (reqMode === 'upload' && reqFile) {
-      fd.append('requirements_file', reqFile)
-    } else {
+    } else if (!(reqMode === 'upload' && reqFile)) {
       fd.append('requirements_text', serializeStandards())
     }
 
@@ -196,7 +231,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
 
       <DropZone
         boxTitle="Carrier's Certificate of Insurance"
-        hint="PDF, JPG, or PNG scan of the COI (ACORD 25)"
+        hint="PDF, JPG, or PNG scan of the COI (ACORD 25), up to 10 MB"
         file={coiFile}
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={setCoiFile}
@@ -289,7 +324,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         ) : reqMode === 'upload' ? (
           <DropZone
             boxTitle=""
-            hint="PDF, DOCX, JPG, PNG, or TXT — list of required coverages and limits"
+            hint="List of required coverages and limits. PDF, DOCX, TXT, JPG, or PNG, up to 10 MB."
             file={reqFile}
             accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={setReqFile}
@@ -351,12 +386,13 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         </div>
       )}
 
-      <DropZone
-        boxTitle="Rate Confirmation Sheet (optional)"
-        hint="PDF, JPG, or PNG of the rate confirmation"
-        file={rcsFile}
-        accept="image/jpeg,image/png,image/webp,application/pdf"
-        onChange={setRcsFile}
+      <MultiDropZone
+        boxTitle="Any other relevant documents (optional)"
+        hint="Up to 5 files, 50 MB total."
+        files={rcsFiles}
+        max={5}
+        accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        onChange={setRcsFiles}
       />
 
       {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}

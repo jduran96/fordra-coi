@@ -3,7 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
 import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { emitEvent } from '@/lib/webhooks'
-import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
+import { validateUpload, UPLOAD_ALLOW, UPLOAD_MAX_BYTES } from '@/lib/upload-validation'
+import { isDocumentUrl, fetchRemoteDocument } from '@/lib/remote-docs'
 import { rateLimitAllows } from '@/lib/rate-limit'
 
 export const maxDuration = 60
@@ -63,8 +64,12 @@ function sandboxResult() {
 
 /**
  * POST /v1/verifications — start a verification in one multipart call.
- * Fields: carrier_name, broker_name (text); coi, rate_confirmation (files);
- * insurance_standards (text OR file). Each submission is self-contained.
+ * Fields: carrier_name, broker_name (text); coi (file or https link);
+ * additional_documents (files or https links, repeatable, up to 5);
+ * insurance_standards (text, file, or https link). Links are downloaded
+ * server-side, so they dodge Vercel's ~4.5MB request-body cap — that is the
+ * documented "attach it, or paste a link if it's big" story on /app/docs.
+ * Each submission is self-contained.
  */
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request)
@@ -84,13 +89,22 @@ export async function POST(request: Request) {
   if (!carrierName) return apiError('`carrier_name` is required.')
   if (!brokerName) return apiError('`broker_name` is required.')
 
+  // Every document slot takes an attached file OR an https link (downloaded
+  // server-side; links dodge the platform's ~4.5MB request-body cap). NOT a
+  // type predicate: a plain (non-URL) string must stay a string downstream
+  // (insurance_standards falls through to its free-text branch).
+  const isDoc = (v: FormDataEntryValue | null): boolean =>
+    (v instanceof File && v.size > 0) || (typeof v === 'string' && isDocumentUrl(v))
+
   const coi = form.get('coi')
-  if (!(coi instanceof File) || coi.size === 0) return apiError('`coi` document is required.')
+  if (!coi || !isDoc(coi)) return apiError('`coi` document is required (attach the file or send an https link to it).')
 
-  const files: { file: File; kind: string }[] = [{ file: coi, kind: 'coi' }]
+  const files: { file: File | string; kind: string }[] = [{ file: coi, kind: 'coi' }]
 
-  const rcs = form.get('rate_confirmation')
-  if (rcs instanceof File && rcs.size > 0) files.push({ file: rcs, kind: 'rcs' })
+  // Any other relevant documents (rate confirmations, endorsements, ...).
+  // Stored under the legacy 'rcs' document kind.
+  const extras = form.getAll('additional_documents').filter(isDoc).slice(0, 5)
+  for (const f of extras) files.push({ file: f, kind: 'rcs' })
 
   const svc = createServiceClient()
 
@@ -123,7 +137,7 @@ export async function POST(request: Request) {
     } catch (e) {
       return apiError(e instanceof Error ? e.message : 'Could not apply the template.')
     }
-  } else if (standards instanceof File && standards.size > 0) {
+  } else if (standards && isDoc(standards)) {
     files.push({ file: standards, kind: 'requirements' })
   } else if (typeof standards === 'string' && standards.trim()) {
     requirements = [{ type: 'text', value: standards.trim() }]
@@ -134,12 +148,22 @@ export async function POST(request: Request) {
   const autoCall = String(form.get('auto_call') || '') === 'true'
   const verificationFiles: VerificationFile[] = []
   for (const { file, kind } of files) {
-    const bytes = await file.arrayBuffer()
-    const check = validateUpload(bytes, file.type, UPLOAD_ALLOW[kind as keyof typeof UPLOAD_ALLOW])
-    if (!check.ok) return apiError(`\`${kind}\` file "${file.name}": ${check.error}`)
+    const maxBytes = UPLOAD_MAX_BYTES[kind as keyof typeof UPLOAD_MAX_BYTES]
+    let bytes: ArrayBuffer, name: string, declaredMime: string
+    if (typeof file === 'string') {
+      const remote = await fetchRemoteDocument(file, maxBytes)
+      if (!remote.ok) return apiError(`\`${kind}\` link: ${remote.error}`)
+      ;({ bytes, name, contentType: declaredMime } = remote)
+    } else {
+      bytes = await file.arrayBuffer()
+      name = file.name
+      declaredMime = file.type
+    }
+    const check = validateUpload(bytes, declaredMime, UPLOAD_ALLOW[kind as keyof typeof UPLOAD_ALLOW], maxBytes)
+    if (!check.ok) return apiError(`\`${kind}\` ${typeof file === 'string' ? 'link' : 'file'} "${name}": ${check.error}`)
     verificationFiles.push({
       bytes,
-      name: file.name,
+      name,
       mimeType: check.mimeType,
       kind: kind as VerificationFile['kind'],
     })

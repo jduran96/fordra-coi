@@ -41,9 +41,25 @@ export async function runExtraction(verificationId: string) {
  * never wipe or drop notes. Failures return { error } so the dialog keeps the
  * typed note instead of clearing it.
  */
+/**
+ * Closed = published or rejected. Closed cases are read-only everywhere (the
+ * assessment form AND call notes) until the admin explicitly reopens via
+ * Edit Status; the UI hides the controls, this is the server-side guard.
+ */
+async function caseClosed(supabase: ReturnType<typeof createServiceClient>, verificationId: string): Promise<boolean> {
+  const { data } = await supabase.from('verifications')
+    .select('published_at, case_status')
+    .eq('id', verificationId)
+    .maybeSingle()
+  return !!data && (!!data.published_at || data.case_status === 'rejected')
+}
+
 export async function saveCallNote(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
 
   const insurance_contact = {
     name: String(formData.get('contact_name') || '').trim(),
@@ -85,6 +101,9 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
 export async function deleteCallNote(verificationId: string, noteAt: string): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
   const { error } = await supabase.rpc('admin_delete_call_note', {
     vid: verificationId,
     note_at: noteAt,
@@ -324,9 +343,12 @@ export async function inviteUser(_prev: InviteUserState, formData: FormData): Pr
   const supabase = createServiceClient()
 
   const email = String(formData.get('email') || '').trim().toLowerCase()
-  const orgId = String(formData.get('org_id') || '')
+  const orgIdRaw = String(formData.get('org_id') || '')
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Enter a valid email address.' }
-  if (!orgId) return { error: 'Pick an org.' }
+  if (!orgIdRaw) return { error: 'Pick an org.' }
+  // 'none' invites the user without an org (they see the "contact a Fordra
+  // admin" screen until assigned from Edit User).
+  const orgId = orgIdRaw === 'none' ? null : orgIdRaw
 
   const hdrs = await headers()
   const origin = hdrs.get('origin') || `https://${hdrs.get('host') || 'app.fordra.com'}`
@@ -437,7 +459,10 @@ export async function grantAccess(_prev: GrantState, formData: FormData): Promis
   const orgId = String(formData.get('org_id') || '')
   if (!profileId || !orgId) return { error: 'Pick a user and an org.' }
 
-  const { error } = await supabase.from('profiles').update({ org_id: orgId }).eq('id', profileId)
+  // 'none' unassigns the user (back to the "contact a Fordra admin" screen).
+  const { error } = await supabase.from('profiles')
+    .update({ org_id: orgId === 'none' ? null : orgId })
+    .eq('id', profileId)
   if (error) return { error: error.message }
   revalidatePath('/admin/users')
   return { ok: true }

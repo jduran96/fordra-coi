@@ -15,7 +15,7 @@ export default function NotFound() {
           Page not found
         </h1>
         <p style={{ fontSize: 14.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 20px' }}>
-          This page does not exist, or you no longer have access to it.
+          Does not exist or extra permissions required. Contact a Fordra admin for help.
         </p>
         <Link href="/app" style={{
           padding: '10px 24px', background: C.txt, color: C.onDark, fontSize: 14,

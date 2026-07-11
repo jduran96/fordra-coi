@@ -27,7 +27,7 @@ export default async function NewVerification() {
     <div style={{ maxWidth: 640 }}>
       <h1 style={h1S()}>New verification</h1>
       <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 14, margin: '0 0 24px' }}>
-        Upload the carrier’s COI and your insurance standards. The rate confirmation is optional.
+        Upload the carrier’s COI and your insurance standards. Any other relevant documents are optional.
         We’ll parse them and queue the deal for review.
       </p>
       <NewVerificationForm templates={templates} />

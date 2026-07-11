@@ -5,12 +5,15 @@ import { uploadDocument, removeDocuments } from '@/lib/storage'
 export type DocumentKind = 'coi' | 'rcs' | 'requirements'
 
 export interface VerificationFile {
-  bytes: ArrayBuffer | Uint8Array
+  /** Required unless existingStoragePath is set (direct-to-storage uploads). */
+  bytes?: ArrayBuffer | Uint8Array
   name: string
   mimeType: string
   kind: DocumentKind
   /** Already in the documents bucket at this path — record it, skip the upload. */
   existingStoragePath?: string
+  /** True object size when bytes are not in memory (existingStoragePath set). */
+  sizeBytes?: number
 }
 
 export interface CreateVerificationInput {
@@ -63,6 +66,7 @@ export async function createVerification(
   // without cleanup, the customer is told the submission failed while an
   // eternally-pending verification row (and orphaned storage) lives on.
   const uploadedPaths: string[] = []
+  const usedPaths = new Set<string>()
   try {
     for (const f of input.files) {
       const docId = randomUUID()
@@ -70,8 +74,14 @@ export async function createVerification(
       // object keys (#, ?, unicode). Sanitize the KEY only; file_name below
       // keeps the original for display.
       const safeName = f.name.replace(/[^\w.\- ]+/g, '_')
-      const path = f.existingStoragePath ?? `${input.orgId}/${v.id}/${f.kind}-${safeName}`
+      let path = f.existingStoragePath ?? `${input.orgId}/${v.id}/${f.kind}-${safeName}`
+      // Multiple docs of one kind can share a filename; keys must not collide.
+      for (let n = 2; usedPaths.has(path); n++) {
+        path = `${input.orgId}/${v.id}/${f.kind}-${n}-${safeName}`
+      }
+      usedPaths.add(path)
       if (!f.existingStoragePath) {
+        if (!f.bytes) throw new Error(`file "${f.name}" has neither bytes nor a storage path`)
         await uploadDocument(path, f.bytes, f.mimeType)
         uploadedPaths.push(path)
       }
@@ -83,7 +93,7 @@ export async function createVerification(
         storage_path: path,
         file_name: f.name,
         mime_type: f.mimeType,
-        size_bytes: f.bytes.byteLength,
+        size_bytes: f.sizeBytes ?? f.bytes?.byteLength ?? 0,
         extraction_status: 'processing',
         ...(input.createdBy ? { uploaded_by: input.createdBy } : {}),
       })

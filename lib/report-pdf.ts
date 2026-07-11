@@ -185,7 +185,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     }
 
     doc.moveDown(1)
-    doc.font('Helvetica').fontSize(8.5).fillColor(GREY).text('Fordra  ·  (727) 729-9594  ·  app.fordra.com')
+    doc.font('Helvetica').fontSize(8.5).fillColor(GREY).text('Fordra  ·  app.fordra.com')
 
     doc.end()
   })

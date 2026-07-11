@@ -79,6 +79,7 @@ function InviteDialog({ orgs, onClose }: { orgs: { id: string; name: string }[];
                 <select name="org_id" required defaultValue="" style={input}>
                   <option value="" disabled>Select an org…</option>
                   {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  <option value="none">No organization (assign later)</option>
                 </select>
               </label>
 

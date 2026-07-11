@@ -46,7 +46,9 @@ rationale + roadmap). Quick orientation:
   Grotesk / JetBrains Mono; pill buttons, big soft rounded cards, mono eyebrows). The app
   mirrors it via `lib/theme.ts` (`C`). Any new UI in either repo follows that doc by default.
   Inline styles, no Tailwind, in the app surfaces.
-- **No em dashes in user-facing copy.** Contact number: **(727) 729-9594**.
+- **No em dashes in user-facing copy.** No phone numbers in customer-facing copy either
+  (2026-07-11): point users to "a Fordra admin" instead. The number (727) 729-9594 survives
+  only inside the frozen /demo surface.
 - DB migrations: `supabase/migrations/*.sql`, applied with `npm run db:migrate` (needs
   `SUPABASE_DB_URL`). `POSTGRES_URL` is a *separate legacy Prisma DB* for the demo — not Supabase.
 - Clean up any test rows + storage objects written to the live DB during testing.

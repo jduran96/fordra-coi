@@ -12,7 +12,7 @@ import { listTemplates, resolveTemplate, type RequirementTemplate } from '@/lib/
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { downloadSlackFile, postMessage } from './slack'
-import { validateUpload, UPLOAD_ALLOW } from '@/lib/upload-validation'
+import { validateUpload, UPLOAD_ALLOW, UPLOAD_MAX_BYTES } from '@/lib/upload-validation'
 
 interface SlackFile {
   id: string
@@ -136,7 +136,11 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       continue
     }
     const kind = classifyFile(state, name)
-    const check = validateUpload(bytes, f.mimetype || contentType, UPLOAD_ALLOW[kind])
+    if (kind === 'rcs' && state.files.filter(x => x.kind === 'rcs').length >= 5) {
+      await say(`I can take up to 5 additional documents per verification, so I skipped "${name}".`)
+      continue
+    }
+    const check = validateUpload(bytes, f.mimetype || contentType, UPLOAD_ALLOW[kind], UPLOAD_MAX_BYTES[kind])
     if (!check.ok) {
       await say(`I could not accept "${name}". ${check.error}`)
       continue
@@ -223,7 +227,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     }
   }
   if (!isSubmitWord(lower)) {
-    await say('Great. Final step, attach a rate confirmation sheet if you have one OR reply *done* to finalize this verification.')
+    await say('Great. Final step: attach any other relevant documents (up to 5, optional) OR reply *done* to submit this verification.')
     return
   }
 

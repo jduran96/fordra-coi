@@ -4,7 +4,21 @@
  * bytes and cap the size before anything is stored or sent to Claude.
  */
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024 // 20 MB, under the 30 MB proxy body cap
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10 MB default per-file cap
+
+/**
+ * Per-slot caps (owner decision 2026-07-11): EVERY submitted document caps at
+ * 10 MB — matching the storage bucket's own file_size_limit, so the bucket
+ * and the app agree. "Any other relevant documents" ('rcs') additionally
+ * share a 50 MB TOTAL budget (enforced by callers).
+ */
+export const UPLOAD_MAX_BYTES: Record<'coi' | 'rcs' | 'requirements', number> = {
+  coi: 10 * 1024 * 1024,
+  rcs: 10 * 1024 * 1024,
+  requirements: 10 * 1024 * 1024,
+}
+export const OTHER_DOCS_TOTAL_BYTES = 50 * 1024 * 1024
+export const OTHER_DOCS_MAX_COUNT = 5
 
 export type UploadKind = 'pdf' | 'image' | 'docx' | 'text'
 
@@ -49,17 +63,33 @@ export function validateUpload(
   buffer: ArrayBuffer,
   declaredMime: string,
   allow: UploadKind[],
+  maxBytes: number = MAX_UPLOAD_BYTES,
+): UploadCheck {
+  return validateUploadHead(new Uint8Array(buffer), buffer.byteLength, declaredMime, allow, maxBytes)
+}
+
+/**
+ * Same checks from just the leading bytes plus the true object size — for
+ * documents already sitting in storage (direct-to-storage uploads), where
+ * downloading the whole file only to sniff 4 magic bytes would be wasteful.
+ * `head` must cover at least the first KB for the text heuristic.
+ */
+export function validateUploadHead(
+  head: Uint8Array,
+  sizeBytes: number,
+  declaredMime: string,
+  allow: UploadKind[],
+  maxBytes: number = MAX_UPLOAD_BYTES,
 ): UploadCheck {
   const fallback = declaredMime || 'application/octet-stream'
-  if (buffer.byteLength === 0) return { ok: false, mimeType: fallback, error: 'The file is empty.' }
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
-    return { ok: false, mimeType: fallback, error: 'The file is too large (20 MB max).' }
+  if (sizeBytes === 0) return { ok: false, mimeType: fallback, error: 'The file is empty.' }
+  if (sizeBytes > maxBytes) {
+    return { ok: false, mimeType: fallback, error: `The file is too large (${Math.floor(maxBytes / (1024 * 1024))} MB max).` }
   }
 
-  const bytes = new Uint8Array(buffer)
-  const sniffed = sniff(bytes)
+  const sniffed = sniff(head)
   if (sniffed && allow.includes(sniffed.kind)) return { ok: true, mimeType: sniffed.mime }
-  if (!sniffed && allow.includes('text') && looksLikeText(bytes)) {
+  if (!sniffed && allow.includes('text') && looksLikeText(head)) {
     return { ok: true, mimeType: 'text/plain' }
   }
 
@@ -74,6 +104,6 @@ export function validateUpload(
 /** Accepted kinds per document slot, shared by web, API, and Slack intake. */
 export const UPLOAD_ALLOW: Record<'coi' | 'rcs' | 'requirements', UploadKind[]> = {
   coi: ['pdf', 'image'],
-  rcs: ['pdf', 'image'],
+  rcs: ['pdf', 'image', 'docx', 'text'],
   requirements: ['pdf', 'image', 'docx', 'text'],
 }

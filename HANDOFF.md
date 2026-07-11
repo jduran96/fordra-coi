@@ -179,8 +179,9 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
   cascade delete (members, verifications, documents + storage, Slack rows; admin accounts are
   only unassigned).
 - **`/v1` API**: `lib/api-auth.ts` (Bearer/Basic key), **`POST /v1/verifications`** = one multipart
-  call (`carrier_name`, `broker_name`→`verifier_company`, `coi`, `rate_confirmation`,
-  `insurance_standards` string-or-file), `GET /v1/verifications` + `/:id`. **Sandbox** (`sk_test_`)
+  call (`carrier_name`, `broker_name`→`verifier_company`, `coi`, `additional_documents`
+  repeatable ≤5 (`rate_confirmation` = legacy alias), `insurance_standards` string-or-file),
+  `GET /v1/verifications` + `/:id`. **Sandbox** (`sk_test_`)
   auto-completes with a canned result + fires the webhook. `lib/webhooks.ts` (HMAC delivery),
   `lib/storage.ts`, `lib/apikeys.ts`.
 
@@ -272,7 +273,10 @@ recorded on `events.attempts/delivered_at`, endpoint URL guard, migration `0017`
   AutoContinue. If magic links "break again" for a corporate-email user, the ready fix is
   a human-click Sign in button on /auth/link — see fordra-repeat-bugs #12 for the playbook.
 
-**Pending manual test docket (owner, next session):**
+**Pending manual test docket (owner, next session):** — expanded into the full
+pre-freeze checklist in **`TEST_PLAN.md`** (2026-07-11); the six items below are
+folded into it as the [docket]-tagged cases. Run TEST_PLAN.md top to bottom to
+certify the code freeze.
 
 1. Magic-link sign-in, customer and admin (regression on the callback cookie change).
 2. Submit a verification with a `.docx` or `.txt` standards file, then Run extraction on
@@ -281,6 +285,74 @@ recorded on `events.attempts/delivered_at`, endpoint URL guard, migration `0017`
 4. Visit `/app/garbage-id` → branded "Page not found".
 5. Non-admin visits /admin → access-denied → Sign out button actually signs out.
 6. Admin regression pass: queue, detail page, users page, one publish.
+
+## Added 2026-07-11 (freeze-week test round fixes)
+
+Full pre-freeze checklist: `TEST_PLAN.md` (round 1 passed; /v1 API section machine-tested
+against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
+
+- **"Any other relevant documents" replaces "Rate Confirmation Sheet"** on /app/new:
+  new `MultiDropZone` (components/UploadCards.tsx, demo's single-file DropZone untouched),
+  **up to 5 files**, stored under the legacy `rcs` document kind; `createVerification`
+  de-collides same-name storage keys; extraction already reads ALL `rcs` docs. Customer
+  detail page labels the group "Other documents". `/v1` accepts repeatable
+  `additional_documents` (up to 5) with `rate_confirmation` kept as a silent legacy alias;
+  /app/docs updated.
+- **No phone numbers in customer-facing copy** (docs page, PDF footer; the no-org screen
+  was already generic). Convention recorded here and in AGENTS.md.
+- **Invite/edit users without an org:** both modals gained a "No organization" option
+  (`org_id = 'none'` → NULL); a no-org user sees the "contact a Fordra admin" screen.
+- **not-found copy:** "Does not exist or extra permissions required. Contact a Fordra
+  admin for help." (owner-approved copy.)
+- **RequirementsEditor Description column** placeholder now says "Optional" (notes were
+  never required by `normalizeRequirementRows`, for any row kind).
+- **Direct-to-storage uploads on /app/new (2026-07-11, round-3 build).** Vercel hard-caps
+  function request bodies at ~4.5MB (raw 413 `FUNCTION_PAYLOAD_TOO_LARGE`), so file bytes
+  no longer ride the submit action: `prepareUploads` (app/app/actions.ts) mints signed
+  upload URLs under `<org>/incoming/<batch>/`, the browser `uploadToSignedUrl`s each file,
+  and `submitVerification` receives only storage paths — it then re-verifies every object
+  server-side (org-prefix ownership, magic-byte sniff + true size via
+  `statStoredObject`'s range fetch, per-slot caps) before `createVerification` records
+  them via `existingStoragePath`. **Size limits (owner decision): every document 10MB
+  max** — matching the bucket's own `file_size_limit`, no bucket change needed — plus a
+  50MB TOTAL for other documents (`UPLOAD_MAX_BYTES`/`OTHER_DOCS_*` in
+  lib/upload-validation.ts; raise the bucket limit first if these ever grow past 10MB).
+  Gotchas: `statStoredObject` must use the `/object/authenticated/` storage endpoint (the
+  bare `/object/` path 400s for service GETs); the bucket enforces an allowed-mime list,
+  so uploads must carry a real content type; abandoned `incoming/` objects are orphans
+  (cleanup task, backlog). `/v1` and /demo still send multipart and are therefore
+  still subject to the ~4.5MB platform cap (documented on /app/docs; two-step upload API
+  is backlog).
+- **Descriptions are required on every requirement row (2026-07-11):**
+  `normalizeRequirementRows` errors (non-destructively, repeat-bug #11 contract) on any
+  row with empty notes — a description-less condition made VRF-1043 unparseable. Manual
+  mode enforces the same at submit. `STARTER_REQUIREMENTS` now ship with editable default
+  descriptions. Editor placeholder says "Required".
+- **Closed cases lock call notes too:** Log-a-call and per-note Delete are hidden and the
+  actions server-guarded (`caseClosed`) on published/rejected cases until Edit Status
+  reopens them.
+- **docx/txt accepted in the "Any other relevant documents" slot** (web + /v1 + Slack;
+  `UPLOAD_ALLOW.rcs`), and Slack caps other-docs at 5 per verification.
+- **/v1 accepts document LINKS (2026-07-11):** `coi`, `insurance_standards`, and
+  `additional_documents` each take an attached file OR an https URL —
+  `lib/remote-docs.ts` downloads it server-side (dodging the ~4.5MB body cap; one-call
+  UX preserved for big files), with the same SSRF host guard as webhooks, then the bytes
+  run through the normal validateUpload sniff/caps. An `insurance_standards` string
+  starting with http(s):// is treated as a link, anything else as free text. Documented
+  in the /app/docs "Sending documents" subsection (+ Toc entry). Smoke-tested locally:
+  link submit 201, 404/html/oversize links produce clean 4xx JSON.
+- **Website copy (2026-07-11, owner-authored):** hero subtext, "See a demo" button
+  removed, "Fordra in Action" section title, Check/Track/Automate card subtexts, CTA
+  band ("Don't waste your time on hold." / "Get AI to chase insurers for you.").
+
+**Backlog test queue (post-freeze or as time allows):**
+
+1. D8 webhook delivery (register a receiver, verify `t=..,v1=..` HMAC, `events.delivered_at`).
+2. D6 cross-org key isolation against a real second-org verification id.
+3. Revoked-key 401 (revoke the round-2 test keys when done — they were shared in chat).
+4. `additional_documents` multi-file via API + multi-doc web submission end-to-end
+   (upload 2-3 docs, admin sees all, extraction ingests all) — added 2026-07-11, deploy first.
+5. Rate-limit recovery + oversize behavior re-check after the 4.5MB decision lands.
 
 ## Deferred (not built yet)
 
@@ -301,8 +373,9 @@ recorded on `events.attempts/delivered_at`, endpoint URL guard, migration `0017`
   Newsreader + Hanken Grotesk + JetBrains Mono, pill buttons, soft rounded cards, mono eyebrows).
   The app mirrors it in `lib/theme.ts` (`C`); UI uses inline styles with that palette. No Tailwind
   classes in the new surfaces. Apply this system to any new UI without being asked.
-- **No em dashes in user-facing copy** (treated as AI-slop tells). Contact number used throughout:
-  **(727) 729-9594**.
+- **No em dashes in user-facing copy** (treated as AI-slop tells). **No phone numbers in
+  customer-facing copy** (2026-07-11): say "contact/ask a Fordra admin". The (727) 729-9594
+  number remains only inside the frozen /demo surface.
 - Test data against the live DB must be **cleaned up** afterward (mint key → exercise → delete rows
   + storage objects). Storage rows can't be deleted via SQL; use the Storage API.
 - `npx tsc --noEmit` to typecheck; ignore stale `.next/types/*` errors after deleting routes (they

@@ -11,13 +11,19 @@ import { requirementKind, VARIABLE_TOKEN_RE } from '@/lib/types'
 
 /**
  * Condition rows every logistics broker/factor tends to want on a COI. New
- * standards start pre-filled with these two, notes intentionally blank so the
- * org describes the check in their own words; they are never merged into a
- * verification automatically.
+ * standards start pre-filled with these two. Descriptions are required on all
+ * rows (the requirements parser needs them, 2026-07-11), so these start with
+ * editable defaults; they are never merged into a verification automatically.
  */
 export const STARTER_REQUIREMENTS: Requirement[] = [
-  { coverage_type: 'Matching Policyholder Name', minimum_limit: '', kind: 'condition', notes: '' },
-  { coverage_type: 'Policy Currently Active', minimum_limit: '', kind: 'condition', notes: '' },
+  {
+    coverage_type: 'Matching Policyholder Name', minimum_limit: '', kind: 'condition',
+    notes: 'The named insured on the COI matches the carrier name. Minor formatting differences or a DBA that explicitly lists the carrier still count as a match.',
+  },
+  {
+    coverage_type: 'Policy Currently Active', minimum_limit: '', kind: 'condition',
+    notes: 'Every coverage on the COI is in force today, with the effective date in the past and the expiration date in the future.',
+  },
 ]
 
 export interface TemplateVariable {
@@ -117,7 +123,15 @@ export function normalizeRequirementRows(raw: Requirement[]): {
         variables.push({ key, label: token ? humanizeToken(key) : (r.minimum_limit ?? '').trim(), type: 'text', required: true })
       }
     }
-    requirements.push({ coverage_type, minimum_limit, notes: (r.notes ?? '').trim() || null, kind })
+    // Descriptions are required on every row: the requirements parser needs
+    // them to expand a bare title into a checkable requirement (a description-
+    // less condition made VRF-1043 unparseable). Same non-destructive contract
+    // as above: record the error, skip only this row.
+    if (!(r.notes ?? '').trim()) {
+      error ??= `Add a description for "${coverage_type}". Descriptions tell the reviewer (and the parser) what to check.`
+      continue
+    }
+    requirements.push({ coverage_type, minimum_limit, notes: (r.notes ?? '').trim(), kind })
   }
   for (const found of templateTokens({ requirements })) {
     const key = found.toLowerCase()
