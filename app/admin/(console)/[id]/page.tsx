@@ -136,26 +136,17 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 </div>
               </div>
             ))}
-            {(() => {
-              const reqDoc = docsWithUrls.find(d => d.kind === 'requirements')
-              const source = templateName
-                ? `Template: ${templateName}`
-                : requirementsText
-                  ? 'Entered as text'
-                  : reqDoc ? `Uploaded document: ${reqDoc.file_name}` : 'Not submitted'
-              // Uploaded standards docs surface their text after extraction.
-              const body = requirementsText
-                || ((reqDoc?.extracted as { text?: string } | null)?.text ?? '').trim()
-              return (
-                <div style={card()}>
-                  <SectionTitle small>Insurance standards</SectionTitle>
-                  <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 8px' }}>{source}</p>
-                  {body
-                    ? <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{body}</p>
-                    : reqDoc && <Muted>Run extraction to read the requirements out of the document.</Muted>}
-                </div>
-              )
-            })()}
+            {/* Uploaded-doc standards get no card: it would be empty until OCR
+                runs, and after OCR the admin reads the normalized JSON below. */}
+            {(templateName || requirementsText) && (
+              <div style={card()}>
+                <SectionTitle small>Insurance standards</SectionTitle>
+                <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 8px' }}>
+                  {templateName ? `Template: ${templateName}` : 'Entered as text'}
+                </p>
+                <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{requirementsText}</p>
+              </div>
+            )}
           </div>
         </section>
 

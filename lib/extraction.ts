@@ -64,7 +64,11 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
     ? storedReqs.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n')
     : storedReqs?.text ?? ''
   ).trim()
-  for (const d of (docs ?? []).filter(d => d.kind === 'requirements' || d.kind === 'rcs')) {
+  // Standards docs only. "Any other relevant documents" (kind 'rcs') are NOT
+  // OCR'd or parsed into requirements (owner decision 2026-07-11): until we
+  // see what customers actually attach there, their content must not
+  // contaminate the deal's requirements the way the old rate-con slot did.
+  for (const d of (docs ?? []).filter(d => d.kind === 'requirements')) {
     const { bytes, contentType } = await downloadDocument(d.storage_path)
     const mime = d.mime_type || contentType
     const txt = await docToText(bytes, mime, cfg.promptDocTextExtraction)

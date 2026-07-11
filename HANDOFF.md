@@ -294,8 +294,12 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
 - **"Any other relevant documents" replaces "Rate Confirmation Sheet"** on /app/new:
   new `MultiDropZone` (components/UploadCards.tsx, demo's single-file DropZone untouched),
   **up to 5 files**, stored under the legacy `rcs` document kind; `createVerification`
-  de-collides same-name storage keys; extraction already reads ALL `rcs` docs. Customer
-  detail page labels the group "Other documents". `/v1` accepts repeatable
+  de-collides same-name storage keys. **`rcs` docs are NOT OCR'd or parsed into
+  requirements** (owner decision 2026-07-11: unlike the old rate-con slot, arbitrary
+  attachments must not contaminate the deal's requirements; revisit once real usage is
+  seen). Customer detail labels the group "Other documents"; admin uploads label them
+  "Other", and the admin Insurance standards card shows provenance (Template: <name> /
+  Entered as text) but is hidden for uploaded-doc standards. `/v1` accepts repeatable
   `additional_documents` (up to 5) with `rate_confirmation` kept as a silent legacy alias;
   /app/docs updated.
 - **No phone numbers in customer-facing copy** (docs page, PDF footer; the no-org screen
