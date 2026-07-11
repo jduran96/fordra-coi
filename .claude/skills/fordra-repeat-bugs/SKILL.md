@@ -190,3 +190,21 @@ as blocking, so nothing incomplete can be saved or submitted. When adding a new
 validation rule to this function, follow the same pattern: set `error` and
 `continue`; never return empty arrays, because the live form derivation renders
 from them while the user is mid-edit.
+
+## 12. Magic links "already used" for a user on corporate email (DECIDED RISK)
+
+**Symptom:** one specific user (or one company's users) reports every sign-in
+link fails as expired/already-used on first click, while everyone else is fine.
+Gmail/personal-mail users unaffected.
+
+**Root cause:** /auth/link's AutoContinue redirects via JS. Enterprise mail
+scanners that EXECUTE JavaScript (Outlook SafeLinks, Proofpoint URL Defense)
+therefore consume the single-use token before the human clicks. The
+interstitial only defeats non-JS crawlers (entry #10).
+
+**Status (owner decision, 2026-07-10):** keep auto sign-in as-is; solve only
+if a real user hits it. If Jullian says "magic links aren't working again" and
+the affected user is on corporate email, THIS is the first fix to offer:
+remove AutoContinue from app/auth/link and show a "Sign in" button instead
+(one human click; scanners click nothing). Interim unblock: mint a direct
+link from /admin/users and send it over a channel that does not scan links.

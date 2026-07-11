@@ -258,30 +258,29 @@ session; confirmed fixes shipped, the rest is listed under "Outstanding audit fi
 - **/auth/link is spinner-only** (no button/form): nothing on the interstitial is followable
   without executing JS.
 
-**Outstanding audit findings (next session, roughly in order):**
+**All audit findings above were fixed and deployed later on 2026-07-10** (auth callback
+cookie hardening, POST signout on access-denied, users-page `requireAdmin`, docx/txt
+extraction via mammoth/utf-8, `createVerification` compensation + sanitized storage keys,
+submit prechecks + try/catch, the swallowed-error sweep — reads now throw into the branded
+`app/error.tsx`, `app/not-found.tsx` handles bad ids — and the webhook overhaul: publish
+payload = `serializeVerification` everywhere, timestamped signature `t=..,v1=..`, delivery
+recorded on `events.attempts/delivered_at`, endpoint URL guard, migration `0017` makes
+`webhook_endpoints` customer-read-only). Except:
 
-1. `/auth/callback` parses every cookie with `decodeURIComponent` and 500s on any malformed
-   value (`app/auth/callback/route.ts:21-25`) — decode only `login-next` in a try/catch.
-2. `/access-denied` "Sign out" is a GET link to the POST-only signout route → 405 dead end.
-3. `users/page.tsx` is the one /admin page missing `requireAdmin()` before
-   `createServiceClient()`.
-4. `.docx`/`.txt` standards files are accepted but crash extraction (`fileContentBlock` in
-   `lib/claude.ts` sends non-PDF as an image block) — route docx through mammoth like the
-   frozen demo does, pass text straight through.
-5. `createVerification` (`lib/verifications.ts`) has no compensation on partial failure
-   (orphaned pending verifications; /v1 tells clients to retry, minting more) and puts the
-   raw filename in the storage key.
-6. /app/new submit has no try/catch around the action and no client-side size checks → a
-   transport error (e.g. combined body over the 30MB proxy cap) bricks the form spinner.
-7. Swallowed-Supabase-error sweep (~15 sites: /app list, docs page, settings, admin users
-   page, extraction reads, `GET /v1/verifications`, Slack revoke…) — each renders a lying
-   empty state today.
-8. No `error.tsx`/`not-found.tsx` anywhere; a non-UUID `/app/<x>` URL is an unstyled 500.
-9. Webhooks: live publish payload is a subset of the sandbox payload (integrators break at
-   go-live), deliveries are unrecorded, signature is replayable, endpoint URLs unvalidated.
-10. Mail scanners that execute JS (Outlook SafeLinks, Proofpoint) will still consume sign-in
-    tokens through the interstitial — if an enterprise pilot user reports "always already
-    used", the fix is requiring a human click.
+- **Magic-link auto sign-in kept as-is (owner decision).** JS-executing mail scanners
+  (SafeLinks, Proofpoint) can still consume tokens through the interstitial's
+  AutoContinue. If magic links "break again" for a corporate-email user, the ready fix is
+  a human-click Sign in button on /auth/link — see fordra-repeat-bugs #12 for the playbook.
+
+**Pending manual test docket (owner, next session):**
+
+1. Magic-link sign-in, customer and admin (regression on the callback cookie change).
+2. Submit a verification with a `.docx` or `.txt` standards file, then Run extraction on
+   it (this path was a guaranteed crash before; exercises new mammoth/utf-8 code).
+3. Attach a file over 20MB → friendly error, no stuck spinner.
+4. Visit `/app/garbage-id` → branded "Page not found".
+5. Non-admin visits /admin → access-denied → Sign out button actually signs out.
+6. Admin regression pass: queue, detail page, users page, one publish.
 
 ## Deferred (not built yet)
 
