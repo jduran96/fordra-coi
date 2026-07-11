@@ -165,7 +165,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             {coi && <InsurerCard coi={coi} />}
             <JsonCard title="Requirements (normalized)" data={v.requirements_normalized} />
             <JsonCard title="Coverage gap analysis" data={v.gap_analysis} />
-            <JsonCard title="COI extracted" data={v.coi_extracted} />
+            <JsonCard title="COI extracted" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} />
           </div>
         </section>
 
@@ -272,6 +272,41 @@ function FactRow({ label, value }: { label: string; value: string }) {
       <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500 }}>{value}</dd>
     </>
   )
+}
+
+/**
+ * Display-only grouping of the flat COIExtracted shape: the raw field list is
+ * hard to scan, so bucket it by who/what each field describes. Unknown keys
+ * (prompt evolves) land in `other` so nothing silently disappears. The STORED
+ * shape stays flat — the pipeline and customer views depend on it.
+ */
+function groupCoiExtracted(coi: Record<string, unknown>) {
+  const groups: Record<string, string[]> = {
+    insured_party: [
+      'named_insured', 'named_insured_address', 'named_insured_state',
+      'named_insured_phone', 'named_insured_email', 'usdot_number', 'mc_number',
+    ],
+    insurer_and_producer: [
+      'insurance_company', 'insurance_company_contact', 'producer',
+      'insurance_company_phone', 'insurance_company_email', 'insurance_company_address',
+    ],
+    parties_on_certificate: [
+      'certificate_holder', 'additional_insured', 'loss_payee', 'other_named_parties',
+    ],
+    coverages: ['coverages'],
+    terms_and_notes: ['additional_terms', 'raw_notes'],
+  }
+  const placed = new Set(Object.values(groups).flat())
+  const out: Record<string, unknown> = {}
+  for (const [group, keys] of Object.entries(groups)) {
+    const section: Record<string, unknown> = {}
+    for (const k of keys) if (k in coi) section[k] = coi[k]
+    if (Object.keys(section).length) out[group] = group === 'coverages' ? section.coverages : section
+  }
+  const other: Record<string, unknown> = {}
+  for (const k of Object.keys(coi)) if (!placed.has(k)) other[k] = coi[k]
+  if (Object.keys(other).length) out.other = other
+  return out
 }
 
 function JsonCard({ title, data }: { title: string; data: unknown }) {
