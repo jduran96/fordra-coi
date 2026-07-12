@@ -133,7 +133,7 @@ function FirstRunWelcome() {
               <span style={{ fontFamily: C.mono, fontSize: 12, color: C.txt3, letterSpacing: '0.5px' }}>{s.num}</span>
             </div>
             <p style={{ fontFamily: C.sans, fontSize: 15, fontWeight: 600, color: C.txt, margin: '0 0 6px' }}>
-              Step {Number(s.num)} - {s.title}
+              {s.title}
             </p>
             <p style={{ fontFamily: C.sans, fontSize: 13.5, color: C.txt2, lineHeight: 1.55, margin: 0 }}>
               {s.body}
