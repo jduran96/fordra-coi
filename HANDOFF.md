@@ -356,6 +356,21 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
   `NOTIFY_EMAIL_FROM`, default "Fordra <notifications@fordra.com>") in Vercel AND
   .env.local; when missing the alert logs and skips, never failing the submission.
 
+**2026-07-12 second security pass (commit 73ba56f, deployed):** a re-review of
+the day's diff caught 8 more issues, including 2 regressions from the first
+pass. Fixed + verified live: the `in`-against-object kind check (prototype keys
+like "toString" passed and 500-crashed the submit) → explicit KINDS list; the
+IPv6 hex-mapped SSRF bypass (`::ffff:a9fe:a9fe` = 169.254.169.254 slipped the
+guard) → parse hex-form mapped v4; DNS-rebinding TOCTOU → resolve once and PIN
+the connection to that IP via an undici Agent (TLS still validates against the
+hostname, so presigned https links keep working — live-tested with a real PDF);
+reject `?`/`#`/whitespace in storage paths; clean up orphaned uploads on every
+early return; require a 206 + parseable size in statStoredObject; defer the
+new-submission email via `after()` (was up to 8s of inline submit latency + a
+double-submit risk); 50MB aggregate cap on `/v1` additional_documents. Kept by
+owner decision: descriptions required on all rows, `rate_confirmation` stays
+removed. `lib/remote-docs.ts` now depends on `undici` (Node runtime, /v1 only).
+
 **2026-07-11 late-night security pass (commit 20159c8, deployed):** a 27-agent
 code review of the day's diff found 10 confirmed bugs; 8 fixed and shipped —
 path-traversal cross-tenant read + cross-org deletion in `submitVerification`
