@@ -32,12 +32,15 @@ const pillS = (primary: boolean, disabled = false) => ({
   cursor: disabled ? 'not-allowed' : 'pointer',
 })
 
+type SettingsTab = 'standards' | 'org' | 'password'
+
 export default function SettingsClient({ templates, starterRows, members, selfId }: {
   templates: RequirementTemplate[]
   starterRows: Requirement[]
   members: Member[]
   selfId: string
 }) {
+  const [tab, setTab] = useState<SettingsTab>('standards')
   // null = no editor open; 'new' = creating; otherwise the template id being edited.
   const [editing, setEditing] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -82,7 +85,27 @@ export default function SettingsClient({ templates, starterRows, members, selfId
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Same segmented control as the requirements-mode selector on /app/new */}
+      <div style={{ display: 'inline-flex', alignSelf: 'flex-start', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
+        {([
+          ['standards', 'Insurance Standards'],
+          ['org', 'Your Organization'],
+          ['password', 'Password'],
+        ] as const).map(([t, label]) => (
+          <button key={t} type="button" onClick={() => setTab(t)}
+            style={{
+              fontSize: 12, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
+              padding: '6px 14px', borderRadius: 6, border: 'none',
+              background: tab === t ? C.txt : 'transparent',
+              color: tab === t ? C.surface : C.txt3, cursor: 'pointer', transition: 'all 120ms',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'standards' && (
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ ...labelS, marginBottom: 0 }}>Insurance standards</span>
@@ -186,9 +209,10 @@ export default function SettingsClient({ templates, starterRows, members, selfId
           </EditorModal>
         )}
       </section>
+      )}
 
-      <PasswordSection />
-      <TeamSection members={members} selfId={selfId} />
+      {tab === 'org' && <TeamSection members={members} selfId={selfId} />}
+      {tab === 'password' && <PasswordSection />}
     </div>
   )
 }

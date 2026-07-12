@@ -21,7 +21,8 @@ export default function NavBar({
     }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         <LogoMark size={22} />
-        <span style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, letterSpacing: '-0.4px' }}>
+        {/* +1px: optically centers the descender-less wordmark on the mark */}
+        <span style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, letterSpacing: '-0.4px', transform: 'translateY(1px)' }}>
           Fordra
         </span>
       </span>

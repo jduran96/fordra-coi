@@ -61,6 +61,12 @@ nav {
   flex: none;
 }
 
+/* +1px: optically centers the descender-less wordmark on the mark */
+.logo-text {
+  display: inline-block;
+  transform: translateY(1px);
+}
+
 .nav-links {
   margin-left: auto;
   display: flex;
