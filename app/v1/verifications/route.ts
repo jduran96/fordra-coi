@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
 import { resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { emitEvent } from '@/lib/webhooks'
-import { validateUpload, UPLOAD_ALLOW, UPLOAD_MAX_BYTES } from '@/lib/upload-validation'
+import { validateUpload, UPLOAD_ALLOW, UPLOAD_MAX_BYTES, OTHER_DOCS_TOTAL_BYTES } from '@/lib/upload-validation'
 import { isDocumentUrl, fetchRemoteDocument } from '@/lib/remote-docs'
 import { rateLimitAllows } from '@/lib/rate-limit'
 
@@ -172,6 +172,16 @@ export async function POST(request: Request) {
   const firstErr = resolved.find((r): r is { error: string } => 'error' in r)
   if (firstErr) return apiError(firstErr.error)
   const verificationFiles: VerificationFile[] = resolved.flatMap(r => 'vf' in r ? [r.vf] : [])
+
+  // Aggregate cap on the "other documents" (parity with the web form's 50MB
+  // total): each file is already ≤10MB, but links bypass the request-body cap,
+  // so without this a client could push ~50MB+ of extras through in one call.
+  const extrasTotal = verificationFiles
+    .filter(f => f.kind === 'rcs')
+    .reduce((s, f) => s + (f.bytes?.byteLength ?? 0), 0)
+  if (extrasTotal > OTHER_DOCS_TOTAL_BYTES) {
+    return apiError('The additional documents exceed 50 MB together. Send fewer or smaller files.')
+  }
 
   let v: Record<string, unknown>, docRefs
   try {

@@ -54,9 +54,12 @@ export async function createSignedUpload(path: string): Promise<{ path: string; 
  */
 export async function statStoredObject(path: string): Promise<{ head: Uint8Array; size: number } | null> {
   // NOTE: must be the /object/authenticated/ endpoint — the bare /object/
-  // path 400s for service-role GETs (verified 2026-07-11).
+  // path 400s for service-role GETs (verified 2026-07-11). Encode each path
+  // segment so a '?'/'#'/space in the key can't turn into a query string and
+  // stat a DIFFERENT object (callers also reject such paths up front).
+  const encoded = path.split('/').map(encodeURIComponent).join('/')
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/authenticated/${DOCUMENTS_BUCKET}/${path}`,
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/authenticated/${DOCUMENTS_BUCKET}/${encoded}`,
     {
       headers: {
         Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
@@ -65,13 +68,18 @@ export async function statStoredObject(path: string): Promise<{ head: Uint8Array
       },
     },
   )
-  if (!res.ok && res.status !== 206) return null
+  if (res.status !== 206) {
+    // Supabase honors Range and returns 206; anything else (a 200 whole-object
+    // response, or an error) means we can't safely determine size from a
+    // 1KB probe — bail rather than buffer the whole file or trust a wrong size.
+    if (res.body) await res.body.cancel().catch(() => {})
+    return null
+  }
   const head = new Uint8Array(await res.arrayBuffer())
-  // "bytes 0-1023/26214400" → total; a small file may come back as plain 200.
-  const range = res.headers.get('content-range')
-  const total = range?.match(/\/(\d+)$/)?.[1]
-  const size = total ? Number(total) : Number(res.headers.get('content-length') ?? head.byteLength)
-  return { head, size }
+  // "bytes 0-1023/26214400" → the total object size after the slash.
+  const total = res.headers.get('content-range')?.match(/\/(\d+)$/)?.[1]
+  if (!total) return null // no reliable size → reject rather than under-count
+  return { head, size: Number(total) }
 }
 
 /** Download a stored document's bytes + content type (service role — server only). */

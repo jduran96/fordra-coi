@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { after } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { uploadDocument, removeDocuments } from '@/lib/storage'
 import { notifyNewVerification } from '@/lib/notify'
@@ -113,15 +114,19 @@ export async function createVerification(
   }
 
   // Alert the review team (24h SLA starts at submission). notifyNewVerification
-  // never throws; a mail hiccup must not fail a successful submission.
+  // never throws; a mail hiccup must not fail a successful submission. Deferred
+  // past the response with `after` so the customer's submit does NOT wait on an
+  // email round-trip (it used to be awaited inline — up to 8s of added latency,
+  // and a stall there could trip the request and cause a duplicate submit).
   if (input.notify !== false) {
-    await notifyNewVerification({
+    const p = notifyNewVerification({
       verificationId: v.id as string,
       displayId: (v as { display_id?: string }).display_id,
       carrierName: input.carrierName,
       orgId: input.orgId,
       source: input.source,
     })
+    try { after(p) } catch { void p } // no request context (e.g. a script): let it run untracked
   }
 
   return { verification: v, docRefs }
