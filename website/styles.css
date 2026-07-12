@@ -50,6 +50,15 @@ nav {
   letter-spacing: -0.02em;
   color: var(--color-text-primary);
   user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.logo-mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
 
 .nav-links {

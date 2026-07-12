@@ -3,6 +3,7 @@
 import { Suspense, useState, FormEvent } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import LogoMark from '@/components/LogoMark'
 import { C } from '@/lib/theme'
 
 function LoginForm() {
@@ -235,9 +236,12 @@ export default function LoginPage() {
         width: '100%', maxWidth: 380, background: C.surface, border: `1px solid ${C.border}`,
         borderRadius: 16, padding: '40px 36px', boxShadow: '0 4px 24px oklch(0% 0 0 / 0.06)',
       }}>
-        <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: '0 0 32px', textAlign: 'center' }}>
-          Fordra
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '0 0 32px' }}>
+          <LogoMark size={24} />
+          <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: 0 }}>
+            Fordra
+          </p>
+        </div>
         <Suspense>
           <LoginForm />
         </Suspense>

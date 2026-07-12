@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import LogoMark from '@/components/LogoMark'
 import { C } from '@/lib/theme'
 
 /** Top nav shared by the customer portal and admin console. Server component. */
@@ -18,8 +19,11 @@ export default function NavBar({
       display: 'flex', alignItems: 'center', gap: 24, padding: '14px 28px',
       borderBottom: `1px solid ${C.border}`, background: C.surface,
     }}>
-      <span style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, letterSpacing: '-0.4px' }}>
-        Fordra
+      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <LogoMark size={22} />
+        <span style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, letterSpacing: '-0.4px' }}>
+          Fordra
+        </span>
       </span>
       {title && (
         <span style={{ fontSize: 12, color: C.txt3, fontFamily: C.sans, textTransform: 'uppercase', letterSpacing: '0.6px' }}>

@@ -89,9 +89,8 @@ export default function SettingsClient({ templates, starterRows, members, selfId
           <button type="button" onClick={openNew} style={pillS(true)}>+ New template</button>
         </div>
         <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 13.5, lineHeight: 1.6, margin: '6px 0 12px' }}>
-          Save your insurance standards once and reuse them on every verification. When a dollar
-          amount changes deal to deal, set the row&apos;s type to Variable and name the amount
-          (like Asset Sale Price); the number is asked for on each new verification.
+          Save your insurance standards once and reuse them across deals. The type
+          &quot;variable&quot; is for requirements that change deal by deal.
         </p>
 
         {templates.length === 0 && editing === null && (
