@@ -27,6 +27,12 @@
 
 ---
 
+> **2026-07-11 late additions:** the one-click sign-in interstitial (N-series: fresh
+> link, admin, invite token, minted link, reuse error, preview survival, corporate
+> mailbox, incomplete link, deep-link next) **passed in full, owner-tested.** The
+> new-submission email alerts (M-series, M1-M6) are pending owner testing on
+> 2026-07-12 (calendar reminder set).
+
 ## A. Auth and sessions (P0)
 
 - [ ] **A1 [docket #1a].** Customer magic-link sign-in on /login (Gmail account): email
