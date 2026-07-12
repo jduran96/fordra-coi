@@ -129,6 +129,21 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       }
     }
 
+    // Same reading order as the web report: gap analysis, then the calls that
+    // resolved it, then the extracted COI.
+    const notes = (v.call_notes ?? []).filter(n => (n.text ?? '').trim())
+    if (notes.length > 0) {
+      rule()
+      heading('Insurer call notes')
+      for (const n of notes.slice().reverse()) {
+        const who = [n.contact?.name, n.contact?.phone, n.contact?.email].map(s => s?.trim()).filter(Boolean).join('  ·  ')
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
+          .text(`${n.at ? pacificDateTime(n.at) : ''}${who ? `   ·   ${who}` : ''}`)
+        doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text((n.text ?? '').trim(), { width, lineGap: 2 })
+        doc.moveDown(0.45)
+      }
+    }
+
     const coi = v.coi_extracted
     if (coi) {
       rule()
@@ -168,19 +183,6 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         doc.font('Helvetica-Bold').fontSize(9.5).fillColor(GREY).text('Additional terms')
         doc.moveDown(0.15)
         doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(coi.additional_terms.trim(), { width, lineGap: 2 })
-      }
-    }
-
-    const notes = (v.call_notes ?? []).filter(n => (n.text ?? '').trim())
-    if (notes.length > 0) {
-      rule()
-      heading('Insurer call notes')
-      for (const n of notes.slice().reverse()) {
-        const who = [n.contact?.name, n.contact?.phone, n.contact?.email].map(s => s?.trim()).filter(Boolean).join('  ·  ')
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
-          .text(`${n.at ? pacificDateTime(n.at) : ''}${who ? `   ·   ${who}` : ''}`)
-        doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text((n.text ?? '').trim(), { width, lineGap: 2 })
-        doc.moveDown(0.45)
       }
     }
 

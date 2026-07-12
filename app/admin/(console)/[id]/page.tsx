@@ -166,6 +166,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             <JsonCard title="Requirements (normalized)" data={v.requirements_normalized} />
             <JsonCard title="Coverage gap analysis" data={v.gap_analysis} />
             <JsonCard title="COI extracted" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} />
+            <QuestionsCard questions={(Array.isArray(v.agent_questions) ? v.agent_questions : []) as string[]} extracted={!!v.coi_extracted} />
           </div>
         </section>
 
@@ -307,6 +308,26 @@ function groupCoiExtracted(coi: Record<string, unknown>) {
   for (const k of Object.keys(coi)) if (!placed.has(k)) other[k] = coi[k]
   if (Object.keys(other).length) out.other = other
   return out
+}
+
+/** Call prep produced by extraction: what to ask the insurer to resolve the gaps. */
+function QuestionsCard({ questions, extracted }: { questions: string[]; extracted: boolean }) {
+  return (
+    <div style={card()}>
+      <SectionTitle small>Questions for the insurer</SectionTitle>
+      {questions.length === 0 ? (
+        <Muted>{extracted
+          ? 'None generated. Re-run extraction to generate call questions from the gap analysis.'
+          : 'Run extraction first; questions are generated from the gap analysis.'}</Muted>
+      ) : (
+        <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {questions.map((q, i) => (
+            <li key={i} style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.55 }}>{q}</li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
 }
 
 function JsonCard({ title, data }: { title: string; data: unknown }) {

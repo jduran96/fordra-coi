@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, analyzeGaps } from '@/lib/claude'
+import { extractCOIFields, extractTextFromFile, parseRequirements, analyzeGaps, generateAgentQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -85,10 +85,22 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
     ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1])
     : null
 
+  // Questions for the insurer call, derived from the gap analysis. Best-effort:
+  // a failure here must not discard the finished extraction above.
+  let agentQuestions: string[] | null = null
+  if (gap) {
+    try {
+      agentQuestions = await generateAgentQuestions(gap, (coiExtracted as { named_insured?: string } | null)?.named_insured)
+    } catch (e) {
+      console.error('agent question generation failed', e)
+    }
+  }
+
   const { error: werr } = await supabase.from('verifications').update({
     coi_extracted: coiExtracted,
     requirements_normalized: requirements,
     gap_analysis: gap,
+    agent_questions: agentQuestions,
     case_status: 'ocr_complete',
     error_detail: null,
   }).eq('id', verificationId)

@@ -166,8 +166,10 @@ export default async function CustomerVerification({ params }: { params: Promise
             </>
           )}
 
-          {coi && <CertificateCard coi={coi} />}
+          {/* Reading order (design-partner request): gap stats above, then the
+              calls that resolved them, then the extracted COI and supplements. */}
           <CallNotesCard notes={(Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]} />
+          {coi && <CertificateCard coi={coi} />}
           <SubmittedCard docs={docsWithUrls} requirementsText={requirementsText} templateName={templateName} />
         </div>
       )}
@@ -175,7 +177,11 @@ export default async function CustomerVerification({ params }: { params: Promise
   )
 }
 
-/** Calls made to the insurer during review, newest first. */
+/**
+ * Calls made to the insurer during review, newest first. Stacked entries, not a
+ * table: transcripts can run long, so the text gets the card's full width and
+ * nothing is clamped or scrolled — the whole thing prints.
+ */
 function CallNotesCard({ notes }: { notes: CallNote[] }) {
   return (
     <div style={cardC()}>
@@ -183,26 +189,22 @@ function CallNotesCard({ notes }: { notes: CallNote[] }) {
       {notes.length === 0 ? (
         <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>No calls made.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                <th style={thC()}>When</th><th style={thC()}>Contact</th><th style={thC()}>Phone</th><th style={thC()}>Email</th><th style={thC()}>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {notes.slice().reverse().map((n, i) => (
-                <tr key={i} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
-                  <td style={{ ...tdC(), whiteSpace: 'nowrap', color: C.txt3 }}>{pacificDateTime(n.at)}</td>
-                  <td style={tdC()}>{n.contact?.name?.trim() || '—'}</td>
-                  <td style={{ ...tdC(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
-                  <td style={tdC()}>{n.contact?.email?.trim() || '—'}</td>
-                  <td style={{ ...tdC(), color: C.txt, whiteSpace: 'pre-wrap', minWidth: 220, lineHeight: 1.55 }}>{n.text}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        notes.slice().reverse().map((n, i) => {
+          const who = [n.contact?.name, n.contact?.phone, n.contact?.email]
+            .map(s => s?.trim()).filter(Boolean).join(' · ')
+          return (
+            <div key={i} style={{
+              padding: '14px 0',
+              borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+            }}>
+              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
+                <span style={{ fontWeight: 600, color: C.txt }}>{pacificDateTime(n.at)}</span>
+                {who && <span style={{ color: C.txt3 }}> · {who}</span>}
+              </p>
+              <p style={{ fontSize: 13.5, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: 0 }}>{n.text}</p>
+            </div>
+          )
+        })
       )}
     </div>
   )
