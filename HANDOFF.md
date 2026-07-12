@@ -356,6 +356,21 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
   `NOTIFY_EMAIL_FROM`, default "Fordra <notifications@fordra.com>") in Vercel AND
   .env.local; when missing the alert logs and skips, never failing the submission.
 
+**2026-07-12 queue (owner-scheduled, calendar reminder set):**
+
+1. M-series email-alert tests (M1-M6 in TEST_PLAN.md) — the last gate before
+   tagging `freeze-2026-07-w2`.
+2. **Standard e2e test setup** (owner request 2026-07-11): a repeatable automated
+   suite so the agent can exercise the app itself, no owner clicking. Plan:
+   Playwright against localhost (`npm run dev`), auth bootstrapped by minting a
+   token_hash sign-in link with the service key (repeat-bugs #1 documents the
+   admin generate_link recipe), fixtures from TEST_PLAN's docket (submit via
+   template/manual/upload, big file, publish gating, closed-case lock, cross-org
+   404), a dedicated seeded test org torn down after each run (shared prod DB —
+   cleanup is mandatory). Complemented by agent-driven exploratory passes via the
+   Chrome MCP tools. Test-only code; agree whether it lands during freeze week
+   (tests don't touch app code) or after.
+
 **Backlog test queue (post-freeze or as time allows):**
 
 1. D8 webhook delivery (register a receiver, verify `t=..,v1=..` HMAC, `events.delivered_at`).
