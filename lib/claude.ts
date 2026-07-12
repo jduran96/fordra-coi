@@ -345,6 +345,55 @@ Before returning, review your list: remove any duplicate or near-duplicate quest
   return [...mandatory, ...generated];
 }
 
+/**
+ * Admin-pipeline variant: one question per requirement in the org's standards
+ * (not just the uncertain ones), each worded around what OCR already read off
+ * the COI (e.g. "The certificate shows X as the named insured — are there
+ * other insured parties?"). Used only by runExtractionPipeline; the frozen
+ * /demo flow keeps generateAgentQuestions above.
+ */
+export async function generateInsurerQuestions(
+  requirements: Requirement[],
+  gaps: GapAnalysis | null,
+  coi: COIExtracted | null,
+): Promise<string[]> {
+  const mandatory = [
+    `Is the COI for ${coi?.named_insured || 'the carrier'} still active and in force?`,
+  ];
+  if (!requirements.length) return mandatory;
+
+  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to verify a Certificate of Insurance against a customer's insurance requirements.
+
+Draft EXACTLY ONE question per requirement, in the same order the requirements are given, covering every requirement — including ones the certificate appears to satisfy (those become confirmation questions).
+
+Ground each question in what was already read from the certificate:
+- If the certificate shows a relevant value, reference it ("The certificate shows $1,000,000 per occurrence for Auto Liability — is that the current limit?").
+- If a value conflicts with the requirement, name what was seen and probe the discrepancy ("We see ACME LLC as the named insured — are there other insured parties on the policy?").
+- If the certificate is silent on the requirement, ask directly whether the policy includes it.
+
+Each question must be:
+- 25 words or fewer
+- Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
+- About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
+- Specific: answerable with a yes/no or a single concrete value
+
+Return ONLY a valid JSON array of question strings, one per requirement, same order. No prose.`;
+
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: 'user',
+      content: [
+        `Customer requirements (one question per row, in order):\n${JSON.stringify(requirements, null, 2)}`,
+        gaps ? `Automated comparison of the certificate against these requirements (status + evidence per requirement):\n${JSON.stringify(gaps, null, 2)}` : '',
+        coi ? `Fields read from the certificate:\n${JSON.stringify(coi, null, 2)}` : '',
+      ].filter(Boolean).join('\n\n'),
+    },
+  ];
+
+  const generated = await claudeJSON<string[]>(system, messages, 2048);
+  return [...mandatory, ...generated];
+}
+
 // ─── 6. Parse call transcript ─────────────────────────────────────────────────
 
 export async function parseTranscript(
