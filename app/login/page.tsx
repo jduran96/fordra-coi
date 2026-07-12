@@ -137,7 +137,7 @@ function LoginForm() {
         {loading === 'password' ? 'Signing in…' : 'Sign in'}
       </button>
       <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 0', fontFamily: C.sans, lineHeight: 1.5 }}>
-        Forgot your password? Sign in with an email link, then set a new one in Settings.
+        Need to create an account? Contact a Fordra admin.
       </p>
 
       <hr style={{ width: '100%', border: 'none', borderTop: `1px solid ${C.border}`, margin: '10px 0' }} />
@@ -156,7 +156,7 @@ function LoginForm() {
         Email me a sign-in link
       </button>
       <p style={{ fontSize: 12.5, color: C.txt3, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
-        Need to create an account? Contact a Fordra admin.
+        Forgot your password? Sign in via your email instead.
       </p>
 
       {linkOpen && (
@@ -235,7 +235,7 @@ export default function LoginPage() {
         width: '100%', maxWidth: 380, background: C.surface, border: `1px solid ${C.border}`,
         borderRadius: 16, padding: '40px 36px', boxShadow: '0 4px 24px oklch(0% 0 0 / 0.06)',
       }}>
-        <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: '0 0 32px' }}>
+        <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: '0 0 32px', textAlign: 'center' }}>
           Fordra
         </p>
         <Suspense>

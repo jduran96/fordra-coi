@@ -68,7 +68,7 @@ function FirstRunWelcome() {
   const steps = [
     {
       num: '01',
-      title: 'Start a new verification',
+      title: 'Start a verification',
       body: 'Use the button on the top right to upload a COI and specify your insurance standards.',
       icon: (
         // file-plus
@@ -82,8 +82,8 @@ function FirstRunWelcome() {
     },
     {
       num: '02',
-      title: 'Receive a verification report',
-      body: 'Within 24 hours of uploading (via web, Slack, or API), use this page to view or export a verification report.',
+      title: 'Get a report',
+      body: 'Within 24 hours, we read what you uploaded, make calls, and share an exportable report.',
       icon: (
         // clipboard-check
         <>
@@ -96,7 +96,7 @@ function FirstRunWelcome() {
     {
       num: '03',
       title: 'Make your life easier',
-      body: 'Go to Settings to create insurance standard templates (so you spend less time re-typing) and invite your teammates to Fordra.',
+      body: 'Use Settings to create repeatable insurance standards and invite your teammates.',
       icon: (
         // sliders
         <>
