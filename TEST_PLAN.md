@@ -27,11 +27,14 @@
 
 ---
 
-> **2026-07-11 late additions:** the one-click sign-in interstitial (N-series: fresh
-> link, admin, invite token, minted link, reuse error, preview survival, corporate
-> mailbox, incomplete link, deep-link next) **passed in full, owner-tested.** The
-> new-submission email alerts (M-series, M1-M6) are pending owner testing on
-> 2026-07-12 (calendar reminder set).
+> **STATUS 2026-07-11 end of day: every test in this plan has passed** (owner-run
+> rounds 1-4 plus agent-run Section D and G6), including the late additions: the
+> one-click sign-in interstitial (N-series), big-file direct-to-storage uploads
+> (B16: 5-9MB COI works in prod, 11MB gets the friendly error), the closed-case
+> call-note lock (B17), cross-org privacy (G1), and the other-docs edge cases
+> (B15: duplicate filenames, 5-file cap, Remove). **The ONLY remaining item is the
+> M-series email-alert tests (M1-M6), owner-scheduled for 2026-07-12, 9 AM ET.**
+> After M passes: tag freeze-2026-07-w2.
 
 ## A. Auth and sessions (P0)
 
