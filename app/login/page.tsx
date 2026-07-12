@@ -94,7 +94,7 @@ function LoginForm() {
       )}
       {linkError && (
         <p style={{ fontSize: 13, color: C.error, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
-          Your sign-in link is expired or was already used. Contact a Fordra admin for help.
+          Your sign-in link expired. Contact a Fordra admin for help.
         </p>
       )}
       <input
