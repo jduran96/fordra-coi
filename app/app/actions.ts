@@ -149,20 +149,34 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     return { error: 'Insurance standards are required. Pick a saved template, write an explanation, or upload a file.' }
   }
 
-  // Verify every referenced object: right org prefix, finished uploading,
-  // right magic bytes, within its slot's size cap, other-docs total ≤ 50MB.
+  // FIRST validate ownership of every referenced object, BEFORE any deletion:
+  // the paths are client-supplied (the server action is directly callable), so
+  // a crafted path must never (a) escape this org's incoming/ prefix via `..`
+  // traversal and read/attach another org's object, nor (b) get handed to the
+  // service-role cleanup and delete another org's document. Only paths that
+  // pass this gate are eligible for cleanup.
+  const prefix = `${profile.org_id}/incoming/`
+  const ownsPath = (p: unknown): p is string =>
+    typeof p === 'string' && p.startsWith(prefix) && !p.split('/').includes('..')
+  const seenEarly = new Set<string>()
+  for (const u of uploaded) {
+    if (!ownsPath(u.path) || seenEarly.has(u.path) || !(u.kind in { coi: 0, rcs: 0, requirements: 0 })) {
+      // Nothing validated yet has been deleted; remove only this org's own
+      // incoming objects that we can prove belong to us.
+      await removeDocuments(uploaded.map(x => x.path).filter(ownsPath))
+      return { error: 'Could not read the uploaded documents. Please retry the submission.' }
+    }
+    seenEarly.add(u.path)
+  }
+
+  // Every path is now proven to be under THIS org's incoming/ prefix, so the
+  // cleanup list can never touch another tenant's storage.
   const allPaths = uploaded.map(u => u.path)
   const abort = async (error: string) => { await removeDocuments(allPaths); return { error } }
-  const prefix = `${profile.org_id}/incoming/`
   const counts: Record<DocumentKind, number> = { coi: 0, rcs: 0, requirements: 0 }
   let otherTotal = 0
   const files: VerificationFile[] = []
-  const seenPaths = new Set<string>()
   for (const u of uploaded) {
-    if (!u.path?.startsWith(prefix) || seenPaths.has(u.path) || !(u.kind in counts)) {
-      return abort('Could not read the uploaded documents. Please retry the submission.')
-    }
-    seenPaths.add(u.path)
     counts[u.kind]++
     const stat = await statStoredObject(u.path)
     if (!stat) return abort(`"${u.name}" did not finish uploading. Please retry the submission.`)

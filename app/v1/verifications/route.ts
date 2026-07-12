@@ -7,7 +7,9 @@ import { validateUpload, UPLOAD_ALLOW, UPLOAD_MAX_BYTES } from '@/lib/upload-val
 import { isDocumentUrl, fetchRemoteDocument } from '@/lib/remote-docs'
 import { rateLimitAllows } from '@/lib/rate-limit'
 
-export const maxDuration = 60
+// Headroom for parallel link downloads (20s each) + storage writes + the
+// awaited webhook/notify, so the worst case can't be killed mid-createVerification.
+export const maxDuration = 120
 
 /** Canned result returned immediately for sandbox (sk_test_) verifications. */
 function sandboxResult() {
@@ -146,13 +148,17 @@ export async function POST(request: Request) {
   }
 
   const autoCall = String(form.get('auto_call') || '') === 'true'
-  const verificationFiles: VerificationFile[] = []
-  for (const { file, kind } of files) {
+  // Resolve every document (link download OR attached-file read) in PARALLEL:
+  // sequential remote downloads (up to 6 × 20s) could blow past the function's
+  // own maxDuration and strand a half-created verification.
+  type Resolved = { error: string } | { vf: VerificationFile }
+  const resolved: Resolved[] = await Promise.all(files.map(async ({ file, kind }): Promise<Resolved> => {
     const maxBytes = UPLOAD_MAX_BYTES[kind as keyof typeof UPLOAD_MAX_BYTES]
+    const isLink = typeof file === 'string'
     let bytes: ArrayBuffer, name: string, declaredMime: string
     if (typeof file === 'string') {
       const remote = await fetchRemoteDocument(file, maxBytes)
-      if (!remote.ok) return apiError(`\`${kind}\` link: ${remote.error}`)
+      if (!remote.ok) return { error: `\`${kind}\` link: ${remote.error}` }
       ;({ bytes, name, contentType: declaredMime } = remote)
     } else {
       bytes = await file.arrayBuffer()
@@ -160,14 +166,12 @@ export async function POST(request: Request) {
       declaredMime = file.type
     }
     const check = validateUpload(bytes, declaredMime, UPLOAD_ALLOW[kind as keyof typeof UPLOAD_ALLOW], maxBytes)
-    if (!check.ok) return apiError(`\`${kind}\` ${typeof file === 'string' ? 'link' : 'file'} "${name}": ${check.error}`)
-    verificationFiles.push({
-      bytes,
-      name,
-      mimeType: check.mimeType,
-      kind: kind as VerificationFile['kind'],
-    })
-  }
+    if (!check.ok) return { error: `\`${kind}\` ${isLink ? 'link' : 'file'} "${name}": ${check.error}` }
+    return { vf: { bytes, name, mimeType: check.mimeType, kind: kind as VerificationFile['kind'] } }
+  }))
+  const firstErr = resolved.find((r): r is { error: string } => 'error' in r)
+  if (firstErr) return apiError(firstErr.error)
+  const verificationFiles: VerificationFile[] = resolved.flatMap(r => 'vf' in r ? [r.vf] : [])
 
   let v: Record<string, unknown>, docRefs
   try {

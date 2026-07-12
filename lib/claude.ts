@@ -292,17 +292,22 @@ function dedupeGapAnalysis(gap: GapAnalysis): GapAnalysis {
   const uncertain = take(gap.uncertain);
   const met = take(gap.met);
 
-  // The model occasionally drops an item into the wrong array while its own
-  // `status` field (and evidence) say otherwise — seen live: a not_met item
-  // inside `met`. The per-item status is authoritative; re-bucket by it, and
-  // stamp a missing/invalid status with the bucket the model chose.
+  // The model occasionally disagrees with itself: an item's array placement
+  // and its per-item `status` field point at different buckets (seen live: a
+  // not_met item inside `met`). Resolve to the MORE SEVERE of the two signals
+  // (not_met > uncertain > met) so a stray status can never DOWNGRADE a
+  // failing requirement to passing in the published report — only ever flag it
+  // more strictly. Missing/invalid status falls back to the array placement.
+  const severity = { not_met: 3, uncertain: 2, met: 1 } as const;
+  type Bucket = keyof typeof severity;
   const out: GapAnalysis = { met: [], not_met: [], uncertain: [] };
   for (const [bucket, items] of [['met', met], ['not_met', not_met], ['uncertain', uncertain]] as const) {
     for (const item of items) {
-      const s = item.status === 'met' || item.status === 'not_met' || item.status === 'uncertain'
+      const claimed: Bucket = item.status === 'met' || item.status === 'not_met' || item.status === 'uncertain'
         ? item.status
         : bucket;
-      out[s].push({ ...item, status: s });
+      const worst: Bucket = severity[claimed] >= severity[bucket] ? claimed : bucket;
+      out[worst].push({ ...item, status: worst });
     }
   }
   return out;

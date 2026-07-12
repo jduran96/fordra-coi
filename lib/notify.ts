@@ -23,6 +23,12 @@ export async function getNotificationEmails(): Promise<string[]> {
 
 const SOURCE_LABEL: Record<string, string> = { web: 'the web portal', api: 'the API', slack: 'Slack' }
 
+/** Escape untrusted text before it lands in the alert email's HTML body. */
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
 export interface NewVerificationNotice {
   verificationId: string
   displayId?: string
@@ -58,9 +64,9 @@ export async function notifyNewVerification(n: NewVerificationNotice): Promise<v
       `${orgName} submitted a new verification for ${n.carrierName} via ${SOURCE_LABEL[n.source] ?? n.source}.\n`
       + `Submitted: ${when}\n\nReview it: ${link}\n`
     const html =
-      `<p>${orgName} submitted a new verification for <strong>${n.carrierName}</strong> via ${SOURCE_LABEL[n.source] ?? n.source}.</p>`
-      + `<p>Submitted: ${when}</p>`
-      + `<p><a href="${link}">Review it in the Fordra admin console</a></p>`
+      `<p>${esc(orgName)} submitted a new verification for <strong>${esc(n.carrierName)}</strong> via ${esc(SOURCE_LABEL[n.source] ?? n.source)}.</p>`
+      + `<p>Submitted: ${esc(when)}</p>`
+      + `<p><a href="${esc(link)}">Review it in the Fordra admin console</a></p>`
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',

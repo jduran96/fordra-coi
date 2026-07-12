@@ -319,6 +319,14 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
                   This standard has no requirement rows yet. Click Edit to add them for this deal.
                 </p>
               )}
+              {/* Without this, a saved standard with an incomplete row (e.g. a
+                  missing description) would silently disable Submit with no
+                  explanation — surface why, and point at the fix. */}
+              {normalizedTpl.error && (
+                <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: '10px 0 0', lineHeight: 1.5 }}>
+                  {normalizedTpl.error} Click Edit to fix this standard for this deal.
+                </p>
+              )}
             </div>
           </div>
         ) : reqMode === 'upload' ? (
