@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { uploadDocument, removeDocuments } from '@/lib/storage'
+import { notifyNewVerification } from '@/lib/notify'
 
 export type DocumentKind = 'coi' | 'rcs' | 'requirements'
 
@@ -28,6 +29,8 @@ export interface CreateVerificationInput {
   autoCall?: boolean
   createdBy?: string
   files: VerificationFile[]
+  /** Email alert to the configured admins (default true; sandbox passes false). */
+  notify?: boolean
   /**
    * Columns to return from the insert. Default '*' (fine for the service
    * client). The web path passes the RLS session client, where column-level
@@ -107,6 +110,18 @@ export async function createVerification(
     await removeDocuments(uploadedPaths)
     await db.from('verifications').delete().eq('id', v.id as string).then(() => {}, () => {})
     throw e
+  }
+
+  // Alert the review team (24h SLA starts at submission). notifyNewVerification
+  // never throws; a mail hiccup must not fail a successful submission.
+  if (input.notify !== false) {
+    await notifyNewVerification({
+      verificationId: v.id as string,
+      displayId: (v as { display_id?: string }).display_id,
+      carrierName: input.carrierName,
+      orgId: input.orgId,
+      source: input.source,
+    })
   }
 
   return { verification: v, docRefs }

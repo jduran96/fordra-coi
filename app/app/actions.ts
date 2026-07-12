@@ -188,7 +188,8 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
       createdBy: profile.id,
       files,
       // Session client: column-level grants forbid select('*') on verifications.
-      select: 'id',
+      // display_id is SELECT-granted and rides into the email alert.
+      select: 'id, display_id',
     })
   } catch (e) {
     console.error('new verification: create failed', e)

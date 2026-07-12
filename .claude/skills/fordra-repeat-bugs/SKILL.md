@@ -202,9 +202,10 @@ scanners that EXECUTE JavaScript (Outlook SafeLinks, Proofpoint URL Defense)
 therefore consume the single-use token before the human clicks. The
 interstitial only defeats non-JS crawlers (entry #10).
 
-**Status (owner decision, 2026-07-10):** keep auto sign-in as-is; solve only
-if a real user hits it. If Jullian says "magic links aren't working again" and
-the affected user is on corporate email, THIS is the first fix to offer:
-remove AutoContinue from app/auth/link and show a "Sign in" button instead
-(one human click; scanners click nothing). Interim unblock: mint a direct
-link from /admin/users and send it over a channel that does not scan links.
+**Status (RESOLVED 2026-07-11, ahead of the Dakota/HaulPay pilot):**
+AutoContinue is gone; /auth/link shows a human-click "Sign in" button (form
+GET to the callback). Scanners render but do not click buttons, so tokens now
+survive JS-executing scanners too. Do not reintroduce auto-navigation or a
+plain link to the callback on that page. If a corporate user STILL reports
+dead links, their scanner is one of the rare form-submitting kind: mint a
+direct link from /admin/users and send it over a channel that does not scan.

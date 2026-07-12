@@ -10,6 +10,8 @@ import { STARTER_REQUIREMENTS, TEMPLATE_SELECT, type RequirementTemplate } from 
 import { C } from '@/lib/theme'
 import { savePrompt } from './actions'
 import OrgStandards from './OrgStandards'
+import NotificationEmails from './NotificationEmails'
+import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +30,11 @@ export default async function AdminSettings() {
     .order('is_default', { ascending: false })
     .order('name', { ascending: true })
   if (tplError) throw new Error(`Could not load templates: ${tplError.message}`)
+
+  const { data: notifyRow, error: notifyError } = await svc
+    .from('app_config').select('value').eq('key', NOTIFICATION_EMAILS_KEY).maybeSingle()
+  if (notifyError) throw new Error(`Could not load notification settings: ${notifyError.message}`)
+  const notifyEmails = typeof notifyRow?.value === 'string' ? notifyRow.value : ''
 
   const prompts = [
     {
@@ -95,6 +102,17 @@ export default async function AdminSettings() {
             </form>
           </section>
         ))}
+
+        {/* New-submission email alerts */}
+        <section>
+          <SectionTitle>New-submission email alerts</SectionTitle>
+          <p style={hintStyle()}>
+            Every new verification submission sends an email alert to these addresses
+            (sandbox API submissions excluded). Separate multiple addresses with commas.
+            Leave empty to reset to {DEFAULT_NOTIFICATION_EMAILS.join(', ')}.
+          </p>
+          <NotificationEmails current={notifyEmails} fallback={DEFAULT_NOTIFICATION_EMAILS.join(', ')} />
+        </section>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CONFIG_KEYS, setConfig, deleteConfig } from '@/lib/config'
+import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
 
@@ -23,6 +24,28 @@ export async function savePrompt(which: string, formData: FormData) {
   if (reset || !text) await deleteConfig(key)
   else await setConfig(key, text)
   revalidatePath('/admin/settings')
+}
+
+export interface NotifyEmailsState { ok?: boolean; error?: string }
+
+/**
+ * Save the new-submission alert recipients (comma-separated). Empty input
+ * resets to the built-in default recipient.
+ */
+export async function saveNotificationEmails(_prev: NotifyEmailsState, formData: FormData): Promise<NotifyEmailsState> {
+  await requireAdmin()
+  const raw = String(formData.get('emails') || '').trim()
+  if (!raw) {
+    await deleteConfig(NOTIFICATION_EMAILS_KEY)
+    revalidatePath('/admin/settings')
+    return { ok: true }
+  }
+  const emails = raw.split(',').map(e => e.trim()).filter(Boolean)
+  const bad = emails.find(e => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+  if (bad) return { error: `"${bad}" is not a valid email address.` }
+  await setConfig(NOTIFICATION_EMAILS_KEY, emails.join(', '))
+  revalidatePath('/admin/settings')
+  return { ok: true }
 }
 
 export interface OrgTemplateState { ok?: boolean; error?: string }

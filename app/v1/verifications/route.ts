@@ -180,6 +180,8 @@ export async function POST(request: Request) {
       templateId,
       autoCall,
       files: verificationFiles,
+      // Sandbox auto-completes with canned data; nobody needs to review it.
+      notify: auth.mode !== 'sandbox',
     }))
   } catch (e) {
     // Internal detail stays in the logs; API clients get a generic failure.

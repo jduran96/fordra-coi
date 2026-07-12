@@ -268,10 +268,9 @@ payload = `serializeVerification` everywhere, timestamped signature `t=..,v1=..`
 recorded on `events.attempts/delivered_at`, endpoint URL guard, migration `0017` makes
 `webhook_endpoints` customer-read-only). Except:
 
-- **Magic-link auto sign-in kept as-is (owner decision).** JS-executing mail scanners
-  (SafeLinks, Proofpoint) can still consume tokens through the interstitial's
-  AutoContinue. If magic links "break again" for a corporate-email user, the ready fix is
-  a human-click Sign in button on /auth/link — see fordra-repeat-bugs #12 for the playbook.
+- ~~Magic-link auto sign-in kept as-is~~ **Superseded 2026-07-11 (pre-pilot):** /auth/link
+  now shows a human-click Sign in button (form GET; AutoContinue removed), so
+  JS-executing mail scanners no longer consume tokens. See fordra-repeat-bugs #12.
 
 **Pending manual test docket (owner, next session):** — expanded into the full
 pre-freeze checklist in **`TEST_PLAN.md`** (2026-07-11); the six items below are
@@ -347,7 +346,15 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
   link submit 201, 404/html/oversize links produce clean 4xx JSON.
 - **Website copy (2026-07-11, owner-authored):** hero subtext, "See a demo" button
   removed, "Fordra in Action" section title, Check/Track/Automate card subtexts, CTA
-  band ("Don't waste your time on hold." / "Get AI to chase insurers for you.").
+  band ("Don't waste your time on phone tag." / "Get AI to chase insurers.").
+- **New-submission email alerts (2026-07-11):** `createVerification` fires
+  `notifyNewVerification` (lib/notify.ts, Resend REST API) on every non-sandbox
+  submission — web, /v1, and Slack. Recipients are admin-configured at
+  /admin/settings ("New-submission email alerts", app_config key
+  `notification_emails`, comma-separated); unset falls back to
+  jullianalfonso96@gmail.com. **Requires `RESEND_API_KEY` env** (plus optional
+  `NOTIFY_EMAIL_FROM`, default "Fordra <notifications@fordra.com>") in Vercel AND
+  .env.local; when missing the alert logs and skips, never failing the submission.
 
 **Backlog test queue (post-freeze or as time allows):**
 
