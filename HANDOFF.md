@@ -3,17 +3,35 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-12, latest commit 06fdea4)
+## ⏱️ START HERE (as of 2026-07-12 evening, latest commit bdfae19 — CODE FREEZE)
 
-**Where things stand:** pilot go-live prep for Dakota Financial + HaulPay. A large
-batch of hardening shipped 2026-07-11/12 (big-file uploads, /v1 document links,
-scanner-proof one-click sign-in, new-submission email alerts) followed by TWO
-multi-agent security reviews; all confirmed findings are fixed, deployed, and
-prod-verified. `main` is clean, `tsc` + `next build` pass. Prod is live.
+**Where things stand:** the owner declared code freeze at the end of the
+2026-07-12 polish session. That session shipped (all deployed + prod-verified):
+- **/login rework:** password-first form, divider, "Email me a sign-in link"
+  popup ("Sign in via email link" modal), show/hide password toggle, helper
+  texts swapped. Dakota/HaulPay users get owner-created passwords and change
+  them in Settings (which already had a password section).
+- **First-run welcome page** on /app (3 step cards with line icons); renders
+  only while the org has zero verifications.
+- **Settings tabs** (Insurance Standards / Your Organization / Password) using
+  the /app/new segmented-control style.
+- **Logo mark** (`components/LogoMark.tsx`) next to the wordmark on NavBar,
+  login, and the marketing site header, wordmark nudged +1.5px (optical center).
+- **Customer report reorder** (web + PDF): gaps → call notes → COI → submitted;
+  call notes are stacked full-width entries, printable, no table.
+- **Admin insurer questions:** `runExtractionPipeline` now fills the existing
+  `agent_questions` column via NEW `generateInsurerQuestions` (one question per
+  requirement, grounded in the extracted COI). Rendered on /admin/[id] under
+  the extracted JSONs. Admin-only: /v1 serializer, customer page, and PDF never
+  expose it; the frozen /demo keeps the old `generateAgentQuestions`.
+  Questions exist only for verifications extracted after bdfae19 (re-run to get them).
 
-**The ONLY open gate before code freeze (`freeze-2026-07-w2`):** the owner's
-**M-series email-alert tests** (M1–M6 in `TEST_PLAN.md`) — scheduled 2026-07-12
-9 AM ET, calendar reminder set. Everything else in the test docket has passed.
+**Owner's testing state at freeze:** end-to-end verification + report email
+passed. M-series email tests passed earlier. Remaining suggested manual cases
+were handed to the owner in-session (link-popup flow, password set/sign-in
+round-trip, long-transcript print/PDF, per-requirement questions on re-run).
+Fordra Testing AND Dakota Financial orgs were wiped clean of verification data
+(rows + storage) for fresh pilot starts.
 
 **Open items for the next session (none are blockers, but decide deliberately):**
 1. **`undici` is imported directly in `lib/remote-docs.ts` but is NOT in
