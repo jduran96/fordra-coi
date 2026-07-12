@@ -20,6 +20,7 @@ function LoginForm() {
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkEmail, setLinkEmail] = useState('')
   const [popupError, setPopupError] = useState('')
+  const [showPw, setShowPw] = useState(false)
 
   // Primary: email + password. Sign-in is invite-only, so there is no signup
   // form; users without a password use the email-link path below.
@@ -116,14 +117,34 @@ function LoginForm() {
         required
         style={inputS}
       />
-      <input
-        type="password"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        placeholder="Password"
-        autoComplete="current-password"
-        style={inputS}
-      />
+      <div style={{ position: 'relative' }}>
+        <input
+          type={showPw ? 'text' : 'password'}
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          placeholder="Password"
+          autoComplete="current-password"
+          style={{ ...inputS, paddingRight: 42 }}
+        />
+        <button
+          type="button" onClick={() => setShowPw(s => !s)}
+          aria-label={showPw ? 'Hide password' : 'Show password'}
+          title={showPw ? 'Hide password' : 'Show password'}
+          style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, padding: 0, border: 'none', borderRadius: 6,
+            background: 'transparent', color: C.txt3, cursor: 'pointer',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+            <circle cx="12" cy="12" r="3" />
+            {showPw && <line x1="4" y1="4" x2="20" y2="20" />}
+          </svg>
+        </button>
+      </div>
       {error && <p style={{ fontSize: 13, color: C.error, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>{error}</p>}
       <button
         type="submit"
