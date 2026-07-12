@@ -64,7 +64,7 @@ nav {
 /* +1px: optically centers the descender-less wordmark on the mark */
 .logo-text {
   display: inline-block;
-  transform: translateY(1px);
+  transform: translateY(1.5px);
 }
 
 .nav-links {

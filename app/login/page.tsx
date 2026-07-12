@@ -238,7 +238,7 @@ export default function LoginPage() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '0 0 32px' }}>
           <LogoMark size={24} />
-          <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: 0, transform: 'translateY(1px)' }}>
+          <p style={{ fontFamily: C.serif, fontSize: 26, letterSpacing: '-0.5px', color: C.txt, margin: 0, transform: 'translateY(1.5px)' }}>
             Fordra
           </p>
         </div>
