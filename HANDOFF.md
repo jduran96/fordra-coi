@@ -356,6 +356,22 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
   `NOTIFY_EMAIL_FROM`, default "Fordra <notifications@fordra.com>") in Vercel AND
   .env.local; when missing the alert logs and skips, never failing the submission.
 
+**2026-07-11 late-night security pass (commit 20159c8, deployed):** a 27-agent
+code review of the day's diff found 10 confirmed bugs; 8 fixed and shipped —
+path-traversal cross-tenant read + cross-org deletion in `submitVerification`
+(paths now ownership-checked before any read/delete), gap-analysis re-bucket that
+could downgrade a failing check to passing (now takes the most-severe of
+placement vs status), SSRF in `lib/remote-docs.ts` (DNS-resolves and rejects
+private IPs, guards each redirect hop, streams with a byte cap), URL-shaped
+standards text no longer fetched as a doc, `/v1` downloads parallelized +
+maxDuration 120, alert-email HTML escaping, and the /app/new template error is
+now surfaced. API-surface fixes verified live against prod (SSRF rejects,
+text-vs-link, link submit, errors, auth) with test data cleaned up. NOT
+browser-verified (Chrome MCP extension was offline): the web-path fixes
+(traversal/cross-org/template-error) are logic-tested + deployed but want a
+manual /app/new click-through. Finding #6 (rate_confirmation field removed) is
+the owner's earlier decision, left as-is.
+
 **2026-07-12 queue (owner-scheduled, calendar reminder set):**
 
 1. M-series email-alert tests (M1-M6 in TEST_PLAN.md) — the last gate before
