@@ -3,6 +3,34 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
+## ⏱️ START HERE (as of 2026-07-12, latest commit 06fdea4)
+
+**Where things stand:** pilot go-live prep for Dakota Financial + HaulPay. A large
+batch of hardening shipped 2026-07-11/12 (big-file uploads, /v1 document links,
+scanner-proof one-click sign-in, new-submission email alerts) followed by TWO
+multi-agent security reviews; all confirmed findings are fixed, deployed, and
+prod-verified. `main` is clean, `tsc` + `next build` pass. Prod is live.
+
+**The ONLY open gate before code freeze (`freeze-2026-07-w2`):** the owner's
+**M-series email-alert tests** (M1–M6 in `TEST_PLAN.md`) — scheduled 2026-07-12
+9 AM ET, calendar reminder set. Everything else in the test docket has passed.
+
+**Open items for the next session (none are blockers, but decide deliberately):**
+1. **`undici` is imported directly in `lib/remote-docs.ts` but is NOT in
+   `package.json`** — it resolves transitively via Next 16 (prod build is green),
+   but a Next upgrade could remove it. Fix: `npm install undici` to pin it as a
+   direct dep (no code change), then build-verify. Low urgency, real footgun.
+2. Standing up the **e2e test suite** (owner request — see the 2026-07-12 queue
+   below). Two manual security reviews this cycle each caught regressions the
+   other introduced; automated coverage is the fix.
+3. Optionally, a third multi-agent review over commit 73ba56f's diff to confirm
+   the second-pass fixes introduced nothing new.
+
+**Design/process notes:** all new user-facing copy needs owner approval before
+push (he often supplies exact wording). No em dashes, no phone numbers in
+customer copy. `/demo` is frozen. Descriptions are required on all requirement
+rows; the `/v1` `rate_confirmation` field was intentionally removed (no alias).
+
 ---
 
 ## What this app is
