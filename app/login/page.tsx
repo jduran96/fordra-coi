@@ -13,8 +13,12 @@ function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [sent, setSent] = useState(false)
+  const [sentTo, setSentTo] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<'password' | 'link' | null>(null)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkEmail, setLinkEmail] = useState('')
+  const [popupError, setPopupError] = useState('')
 
   // Primary: email + password. Sign-in is invite-only, so there is no signup
   // form; users without a password use the email-link path below.
@@ -39,11 +43,11 @@ function LoginForm() {
     }
   }
 
-  // Secondary: magic link. Also the recovery path for forgotten passwords
-  // (sign in with a link, then set a new password in Settings).
+  // Secondary: magic link, sent from the popup. Also the recovery path for
+  // forgotten passwords (sign in with a link, then set a new one in Settings).
   async function handleLinkSubmit() {
-    if (!email) return
-    setError('')
+    if (!linkEmail) return
+    setPopupError('')
     setLoading('link')
     try {
       const supabase = createClient()
@@ -54,17 +58,21 @@ function LoginForm() {
         ? `login-next=${encodeURIComponent(next)}; path=/; max-age=3600; samesite=lax`
         : 'login-next=; path=/; max-age=0'
       const { error } = await supabase.auth.signInWithOtp({
-        email,
+        email: linkEmail,
         // Invite-only: a link never creates a brand-new account.
         options: { emailRedirectTo: `${window.location.origin}/auth/link`, shouldCreateUser: false },
       })
       if (error) {
-        setError(/signup|not allowed|not found/i.test(error.message)
+        setPopupError(/signup|not allowed|not found/i.test(error.message)
           ? 'No account found for that email. Contact a Fordra admin to get invited.'
           : error.message)
-      } else setSent(true)
+      } else {
+        setSentTo(linkEmail)
+        setSent(true)
+        setLinkOpen(false)
+      }
     } catch {
-      setError('Unexpected sign-in error. Please contact a Fordra admin for help.')
+      setPopupError('Unexpected sign-in error. Please contact a Fordra admin for help.')
     } finally {
       setLoading(null)
     }
@@ -73,7 +81,7 @@ function LoginForm() {
   if (sent) {
     return (
       <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: 0 }}>
-        Check <strong style={{ color: C.txt }}>{email}</strong> for a sign-in link. You can close
+        Check <strong style={{ color: C.txt }}>{sentTo}</strong> for a sign-in link. You can close
         this tab once you click it.
       </p>
     )
@@ -128,25 +136,91 @@ function LoginForm() {
       >
         {loading === 'password' ? 'Signing in…' : 'Sign in'}
       </button>
-      <button
-        type="button"
-        onClick={handleLinkSubmit}
-        disabled={!email || loading !== null}
-        style={{
-          width: '100%', padding: 11, background: 'transparent',
-          color: email ? C.txt2 : C.txt3, fontSize: 13.5, fontWeight: 600,
-          fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
-          cursor: email && !loading ? 'pointer' : 'not-allowed',
-        }}
-      >
-        {loading === 'link' ? 'Sending…' : 'Email me a sign-in link'}
-      </button>
       <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 0', fontFamily: C.sans, lineHeight: 1.5 }}>
         Forgot your password? Sign in with an email link, then set a new one in Settings.
       </p>
+
+      <hr style={{ width: '100%', border: 'none', borderTop: `1px solid ${C.border}`, margin: '10px 0' }} />
+
+      <button
+        type="button"
+        onClick={() => { setLinkEmail(email); setPopupError(''); setLinkOpen(true) }}
+        disabled={loading !== null}
+        style={{
+          width: '100%', padding: 11, background: 'transparent',
+          color: C.txt2, fontSize: 13.5, fontWeight: 600,
+          fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
+          cursor: loading ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Email me a sign-in link
+      </button>
       <p style={{ fontSize: 12.5, color: C.txt3, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>
         Need to create an account? Contact a Fordra admin.
       </p>
+
+      {linkOpen && (
+        <div
+          onClick={() => { if (!loading) setLinkOpen(false) }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(20, 20, 19, 0.4)', zIndex: 50,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 380, background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 16, padding: '28px 28px 24px', boxShadow: '0 12px 40px oklch(0% 0 0 / 0.18)',
+            }}
+          >
+            <p style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, margin: '0 0 6px' }}>
+              Sign in via email link
+            </p>
+            <p style={{ fontSize: 13, color: C.txt2, fontFamily: C.sans, lineHeight: 1.5, margin: '0 0 16px' }}>
+              Input your email, and we&apos;ll send you a one-time sign-in URL.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input
+                type="email"
+                value={linkEmail}
+                onChange={e => setLinkEmail(e.target.value)}
+                placeholder="you@company.com"
+                autoComplete="email"
+                autoFocus
+                style={{ ...inputS, borderColor: popupError ? C.error : C.border }}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLinkSubmit() } }}
+              />
+              {popupError && <p style={{ fontSize: 13, color: C.error, margin: 0, fontFamily: C.sans, lineHeight: 1.5 }}>{popupError}</p>}
+              <button
+                type="button"
+                onClick={handleLinkSubmit}
+                disabled={!linkEmail || loading !== null}
+                style={{
+                  width: '100%', padding: 12, background: linkEmail ? C.earthy : C.border,
+                  color: linkEmail ? C.onDark : C.txt3, fontSize: 14, fontWeight: 600,
+                  fontFamily: C.sans, borderRadius: 9999, border: 'none',
+                  cursor: linkEmail && !loading ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {loading === 'link' ? 'Sending…' : 'Send'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLinkOpen(false)}
+                disabled={loading !== null}
+                style={{
+                  width: '100%', padding: 8, background: 'transparent', color: C.txt3,
+                  fontSize: 13, fontWeight: 600, fontFamily: C.sans, border: 'none',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }

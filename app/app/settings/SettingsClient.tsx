@@ -262,8 +262,7 @@ function PasswordSection() {
       <span style={labelS}>Password</span>
       <div style={{ ...cardS, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <p style={{ fontSize: 13, color: C.txt2, fontFamily: C.sans, margin: 0, lineHeight: 1.6 }}>
-          Set a password to sign in without waiting for an email link. If you ever forget it,
-          sign in with an email link and set a new one here.
+          Create a new password here. If you forget it, sign in with an email link instead.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <PasswordInput value={pw} onChange={setPw} placeholder="New password" />

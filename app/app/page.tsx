@@ -35,11 +35,7 @@ export default async function PortalDashboard() {
       </div>
 
       {!rows?.length ? (
-        <div style={card()}>
-          <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 14 }}>
-            No verifications yet. <Link href="/app/new" style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>Submit your first one →</Link>
-          </p>
-        </div>
+        <FirstRunWelcome />
       ) : (
         <div style={card(0)}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
@@ -62,6 +58,89 @@ export default async function PortalDashboard() {
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Shown only while the org has zero verifications; the table replaces it
+ *  as soon as the first one lands. */
+function FirstRunWelcome() {
+  const steps = [
+    {
+      num: '01',
+      title: 'Start a new verification',
+      body: 'Use the button on the top right to upload a COI and specify your insurance standards.',
+      icon: (
+        // file-plus
+        <>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="12" y1="18" x2="12" y2="12" />
+          <line x1="9" y1="15" x2="15" y2="15" />
+        </>
+      ),
+    },
+    {
+      num: '02',
+      title: 'Receive a verification report',
+      body: 'Within 24 hours of uploading (via web, Slack, or API), use this page to view or export a verification report.',
+      icon: (
+        // clipboard-check
+        <>
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" />
+          <polyline points="9 13 11.5 15.5 15.5 10.5" />
+        </>
+      ),
+    },
+    {
+      num: '03',
+      title: 'Make your life easier',
+      body: 'Go to Settings to create insurance standard templates (so you spend less time re-typing) and invite your teammates to Fordra.',
+      icon: (
+        // sliders
+        <>
+          <line x1="4" y1="21" x2="4" y2="14" />
+          <line x1="4" y1="10" x2="4" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12" y2="3" />
+          <line x1="20" y1="21" x2="20" y2="16" />
+          <line x1="20" y1="12" x2="20" y2="3" />
+          <line x1="1" y1="14" x2="7" y2="14" />
+          <line x1="9" y1="8" x2="15" y2="8" />
+          <line x1="17" y1="16" x2="23" y2="16" />
+        </>
+      ),
+    },
+  ]
+
+  return (
+    <div style={{ ...card(0), padding: '44px 40px 40px' }}>
+      <h2 style={{ fontFamily: C.serif, fontSize: 30, fontWeight: 400, color: C.txt, margin: '0 0 10px' }}>
+        Welcome to Fordra!
+      </h2>
+      <p style={{ fontFamily: C.sans, fontSize: 15, color: C.txt2, lineHeight: 1.6, margin: '0 0 32px' }}>
+        We automate COI verification by reading docs and calling insurers. Getting started is simple:
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+        {steps.map(s => (
+          <div key={s.num} style={{ background: C.cream, borderRadius: 12, padding: '22px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke={C.txt}
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {s.icon}
+              </svg>
+              <span style={{ fontFamily: C.mono, fontSize: 12, color: C.txt3, letterSpacing: '0.5px' }}>{s.num}</span>
+            </div>
+            <p style={{ fontFamily: C.sans, fontSize: 15, fontWeight: 600, color: C.txt, margin: '0 0 6px' }}>
+              Step {Number(s.num)} - {s.title}
+            </p>
+            <p style={{ fontFamily: C.sans, fontSize: 13.5, color: C.txt2, lineHeight: 1.55, margin: 0 }}>
+              {s.body}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
