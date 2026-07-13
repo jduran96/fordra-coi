@@ -43,6 +43,25 @@ interface COI {
   other_named_parties?: string
 }
 
+/**
+ * Split one submitted-standards line into display parts. Template submissions
+ * serialize rows as "Coverage type: limit (notes)" (resolveTemplate), so peel
+ * the trailing (notes) then the ": limit"; free-text lines that don't match
+ * just come back whole as the title.
+ */
+function parseStandardLine(line: string): { title: string; limit?: string; notes?: string } {
+  let head = line
+  let notes: string | undefined
+  const open = head.indexOf(' (')
+  if (head.endsWith(')') && open > 0) {
+    notes = head.slice(open + 2, -1).trim()
+    head = head.slice(0, open).trim()
+  }
+  const colon = head.indexOf(': ')
+  if (colon > 0) return { title: head.slice(0, colon).trim(), limit: head.slice(colon + 2).trim(), notes }
+  return { title: head, notes }
+}
+
 function gapItems(g: Gap | null | undefined): GapItem[] {
   if (!g) return []
   return [...(g.not_met ?? []), ...(g.uncertain ?? []), ...(g.met ?? [])]
@@ -165,10 +184,23 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             {(templateName || requirementsText) && (
               <div style={card()}>
                 <SectionTitle small>Insurance standards</SectionTitle>
-                <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 8px' }}>
+                <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 12px' }}>
                   {templateName ? `Template: ${templateName}` : 'Entered as text'}
                 </p>
-                <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{requirementsText}</p>
+                {/* Read-only render of the submitted standards, one numbered item
+                    per line. The submitter's text is never editable here. */}
+                <ol style={{ margin: 0, paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {requirementsText.split('\n').map(l => l.trim()).filter(Boolean).map((line, i) => {
+                    const r = parseStandardLine(line)
+                    return (
+                      <li key={i} style={{ fontSize: 14, lineHeight: 1.55, color: C.txt }}>
+                        <span style={{ fontWeight: 700 }}>{r.title}</span>
+                        {r.limit ? <span style={{ fontWeight: 600 }}>{`: ${r.limit}`}</span> : null}
+                        {r.notes ? <div style={{ fontSize: 13, color: C.txt2, marginTop: 3, lineHeight: 1.6 }}>{r.notes}</div> : null}
+                      </li>
+                    )
+                  })}
+                </ol>
               </div>
             )}
             {templateVariables.length > 0 && (
@@ -209,32 +241,25 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           <SectionTitle>Verification call notes</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {notes.length === 0 && <Muted>No calls logged yet.</Muted>}
-            {notes.length > 0 && (
-              <div style={{ ...card(), overflowX: 'auto' }}>
-                <SectionTitle small>Saved notes</SectionTitle>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      <th style={thN()}>When</th><th style={thN()}>Contact</th><th style={thN()}>Phone</th><th style={thN()}>Email</th><th style={thN()}>Note</th><th style={thN()} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {notes.slice().reverse().map((n, i) => (
-                      <tr key={i} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
-                        <td style={{ ...tdN(), whiteSpace: 'nowrap', color: C.txt3 }}>{pacificDateTime(n.at)}</td>
-                        <td style={tdN()}>{n.contact?.name?.trim() || '—'}</td>
-                        <td style={{ ...tdN(), whiteSpace: 'nowrap' }}>{n.contact?.phone?.trim() || '—'}</td>
-                        <td style={tdN()}>{n.contact?.email?.trim() || '—'}</td>
-                        <td style={{ ...tdN(), color: C.txt, whiteSpace: 'pre-wrap', minWidth: 220, lineHeight: 1.55 }}>{n.text}</td>
-                        <td style={{ ...tdN(), textAlign: 'right' }}>
-                          {!caseIsClosed && <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* One card per call: who/when header on top, the note spread across
+                the full width beneath — long summaries and transcripts stay
+                readable (and printable) instead of being squeezed into a column. */}
+            {notes.slice().reverse().map((n, i) => (
+              <div key={i} style={card()}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', paddingBottom: 10, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.txt }}>{n.contact?.name?.trim() || 'Unnamed contact'}</span>
+                  <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(n.at)}</span>
+                  {n.contact?.phone?.trim() && <span style={{ fontSize: 13, color: C.txt2, whiteSpace: 'nowrap' }}>{n.contact.phone.trim()}</span>}
+                  {n.contact?.email?.trim() && <span style={{ fontSize: 13, color: C.txt2 }}>{n.contact.email.trim()}</span>}
+                  {!caseIsClosed && (
+                    <span style={{ marginLeft: 'auto' }}>
+                      <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13.5, color: C.txt, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere' }}>{n.text}</div>
               </div>
-            )}
+            ))}
             {caseIsClosed ? (
               <Muted>This case is closed. Click Edit Status below to reopen it before logging calls.</Muted>
             ) : (
@@ -383,7 +408,5 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <p style={{ color: C.txt3, fontSize: 13.5, margin: 0 }}>{children}</p>
 }
 const card = () => ({ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 })
-const thN = () => ({ padding: '6px 12px 6px 0', fontWeight: 600 as const })
-const tdN = () => ({ padding: '9px 12px 9px 0', color: C.txt2 })
 const smallBtn = () => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: 'pointer' })
 const primaryBtn = () => ({ padding: '8px 20px', background: C.earthy, color: C.onDark, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer' })
