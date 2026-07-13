@@ -8,6 +8,7 @@ import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
+import { humanizeToken } from '@/lib/templates'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
@@ -64,6 +65,12 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     notFound()
   }
 
+  // created_by is null for API/Slack submissions; web submissions record the
+  // portal user's profile id.
+  const { data: uploader } = v.created_by
+    ? await withRetry(() => supabase.from('profiles').select('email').eq('id', v.created_by).maybeSingle())
+    : { data: null }
+
   const { data: docs, error: docsErr } = await supabase
     .from('documents')
     .select('id, kind, file_name, mime_type, storage_path, extracted, extraction_status')
@@ -88,6 +95,15 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     const r = v.requirements as { template_name?: string } | { type?: string; template_name?: string }[] | null
     if (Array.isArray(r)) return r.find(x => x?.type === 'template')?.template_name ?? ''
     return r?.template_name ?? ''
+  })()
+
+  // Per-deal template variable values ride in the same provenance (web keeps
+  // them on the object, API on the { type: 'template' } entry). carrier_name is
+  // auto-filled from the carrier field, not a submitter input, so it is skipped.
+  const templateVariables = (() => {
+    const r = v.requirements as { variables?: Record<string, string> } | { type?: string; variables?: Record<string, string> }[] | null
+    const vars = Array.isArray(r) ? r.find(x => x?.type === 'template')?.variables : r?.variables
+    return Object.entries(vars ?? {}).filter(([k]) => k !== 'carrier_name')
   })()
 
   const adminStatus = deriveAdminStatus(v)
@@ -127,6 +143,14 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <section>
           <SectionTitle>Uploads</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            <div style={card()}>
+              <SectionTitle small>Submission</SectionTitle>
+              <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+                <FactRow label="Carrier name (as submitted)" value={v.carrier_name || '—'} />
+                <FactRow label="Uploaded by" value={uploader?.email ?? (v.source === 'web' ? '—' : `via ${v.source}`)} />
+                <FactRow label="Organization" value={(v.orgs as { name?: string } | null)?.name ?? '—'} />
+              </dl>
+            </div>
             {docsWithUrls.length === 0 && <Muted>No documents uploaded.</Muted>}
             {docsWithUrls.map(d => (
               <div key={d.id} style={card()}>
@@ -145,6 +169,16 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                   {templateName ? `Template: ${templateName}` : 'Entered as text'}
                 </p>
                 <p style={{ fontSize: 14, color: C.txt, whiteSpace: 'pre-wrap', margin: 0 }}>{requirementsText}</p>
+              </div>
+            )}
+            {templateVariables.length > 0 && (
+              <div style={card()}>
+                <SectionTitle small>Variable inputs (entered by submitter)</SectionTitle>
+                <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+                  {templateVariables.map(([key, val]) => (
+                    <FactRow key={key} label={humanizeToken(key)} value={val?.trim() || '—'} />
+                  ))}
+                </dl>
               </div>
             )}
           </div>
