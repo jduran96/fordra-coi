@@ -239,9 +239,16 @@ export async function extractCOIFields(
 export async function analyzeGaps(
   requirements: Requirement[],
   extracted: COIExtracted,
+  // The carrier this deal is for. Requirements like "insured party must be the
+  // carrier" are unjudgeable without it (the model marks them not_met/uncertain
+  // even on an exact name match). Optional: the frozen /demo caller omits it.
+  carrierName?: string,
 ): Promise<GapAnalysis> {
   const allRequirements = requirements
-  const system = `You are a COI compliance analyst for a trucking freight factoring company.
+  const carrierLine = carrierName?.trim()
+    ? `\nThe carrier (trucking company) this verification is for is "${carrierName.trim()}". When a requirement references "the carrier", it means this company. Match names leniently: ignore case, punctuation, and entity-suffix formatting (LLC, Inc, Corp).`
+    : ''
+  const system = `You are a COI compliance analyst for a trucking freight factoring company.${carrierLine}
 Today's date is ${new Date().toISOString().slice(0, 10)} — use it when judging whether policy dates are current.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
 - "met": The COI clearly satisfies the requirement with explicit evidence.

@@ -82,7 +82,7 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // Requirements are entirely org-owned: templates and submitted standards carry
   // the full checklist (including condition rows); nothing is merged in globally.
   const gap = coiExtracted && requirements.length
-    ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1])
+    ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], v.carrier_name)
     : null
 
   // Questions for the insurer call: one per requirement, worded around what
