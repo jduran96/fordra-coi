@@ -473,6 +473,14 @@ the owner's earlier decision, left as-is.
 - **Collapse/expand for long call notes** (2026-07-13): an expander for transcript-length
   notes on `/admin/[id]`. Parked because collapsed content doesn't print and printability
   was required; needs a print-expands-all treatment (e.g. `@media print`) if built.
+- **Email on verification completion** (2026-07-13): notify the submitting user
+  (`verifications.created_by` → profiles.email) when their verification is published.
+  Blocked on the same SMTP setup as magic-link email (currently owner-only delivery);
+  API/Slack submissions have no `created_by`, so decide the fallback (org members? skip?).
+- **Customer dashboard: completed vs pending split** (2026-07-13): the `/app` verification
+  list should clearly delineate completed requests from pending ones (separate sections or
+  grouping, not just a status chip per row). Customer-visible status comes from
+  `my_verifications` / `published_at`, NOT `lib/admin-status.ts` (admin-only derivation).
 
 ---
 
