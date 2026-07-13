@@ -466,6 +466,13 @@ the owner's earlier decision, left as-is.
 - **Azure Document Intelligence** as a swappable stage-1 OCR layer (`Extractor` interface) — Phase C.
 - **Self-serve webhook registration** (`POST /v1/webhooks`); webhook **retries/backoff**.
 - **Document reuse** across verifications (deliberately removed; each submission is self-contained).
+- **Markdown rendering for admin call notes** (2026-07-13): pasted call summaries carry
+  `###` headings / `**bold**` / checklists that currently render as plain pre-wrap text.
+  Needs a markdown dependency (none in the app today) — decide lib + sanitization then render
+  in the note cards on `/admin/[id]`.
+- **Collapse/expand for long call notes** (2026-07-13): an expander for transcript-length
+  notes on `/admin/[id]`. Parked because collapsed content doesn't print and printability
+  was required; needs a print-expands-all treatment (e.g. `@media print`) if built.
 
 ---
 
