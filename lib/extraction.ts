@@ -1,7 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, analyzeGaps, generateInsurerQuestions } from '@/lib/claude'
+import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, analyzeGaps, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
+import type { GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -38,6 +39,46 @@ export type AssessmentMode = 'refresh' | 'keep' | 'overwrite'
 const hasItems = (g: unknown): boolean => {
   const gg = g as { met?: unknown[]; not_met?: unknown[]; uncertain?: unknown[] } | null
   return !!gg && [(gg.met ?? []), (gg.not_met ?? []), (gg.uncertain ?? [])].some(a => Array.isArray(a) && a.length > 0)
+}
+
+/**
+ * Every requirement must surface as a requirement check: anything the gap
+ * model failed to give a verdict lands in `uncertain` instead of silently
+ * disappearing from the report.
+ */
+function ensureAllRequirementsJudged(gap: GapAnalysis, requirements: Requirement[]): GapAnalysis {
+  const key = (r?: { coverage_type?: string }) => (r?.coverage_type ?? '').trim().toLowerCase()
+  const judged = new Set([...gap.met, ...gap.not_met, ...gap.uncertain].map(i => key(i.requirement)))
+  const missing = requirements.filter(r => !judged.has(key(r)))
+  if (!missing.length) return gap
+  console.error(`gap analysis dropped ${missing.length} requirement(s); adding as uncertain: ${missing.map(r => r.coverage_type).join(', ')}`)
+  return {
+    ...gap,
+    uncertain: [
+      ...gap.uncertain,
+      ...missing.map(requirement => ({
+        requirement,
+        status: 'uncertain' as const,
+        evidence: 'This standard could not be assessed automatically and needs manual review.',
+      })),
+    ],
+  }
+}
+
+/** Insurer-call questions, best-effort: a failure here must not discard the
+ *  finished extraction, so it degrades to null rather than throwing. */
+async function questionsFor(
+  requirements: Requirement[],
+  gap: GapAnalysis | null,
+  coiExtracted: unknown,
+): Promise<string[] | null> {
+  if (!requirements.length || !coiExtracted) return null
+  try {
+    return await generateInsurerQuestions(requirements, gap, coiExtracted as Parameters<typeof generateInsurerQuestions>[2])
+  } catch (e) {
+    console.error('insurer question generation failed', e)
+    return null
+  }
 }
 
 /**
@@ -85,7 +126,7 @@ export async function runExtractionPipeline(
   // requirements: free text + rate con / requirements docs → text → parsed.
   // Two stored shapes: web submissions { text }, API submissions [{ type: 'text', value }].
   const storedReqs = v?.requirements as { text?: string } | { type?: string; value?: string }[] | null
-  let reqText = (Array.isArray(storedReqs)
+  const manualText = (Array.isArray(storedReqs)
     ? storedReqs.filter(x => x?.type === 'text' && x.value).map(x => x.value).join('\n')
     : storedReqs?.text ?? ''
   ).trim()
@@ -93,6 +134,7 @@ export async function runExtractionPipeline(
   // OCR'd or parsed into requirements (owner decision 2026-07-11): until we
   // see what customers actually attach there, their content must not
   // contaminate the deal's requirements the way the old rate-con slot did.
+  let docText = ''
   for (const d of (docs ?? []).filter(d => d.kind === 'requirements')) {
     const { bytes, contentType } = await downloadDocument(d.storage_path)
     const mime = d.mime_type || contentType
@@ -100,10 +142,18 @@ export async function runExtractionPipeline(
     await supabase.from('documents')
       .update({ extracted: { text: txt }, extractor: mime === 'text/plain' || mime === DOCX_MIME ? 'local' : 'claude', extraction_status: 'processed' })
       .eq('id', d.id)
-    reqText += `\n${txt}`
+    docText += `\n${txt}`
   }
 
-  const requirements = reqText.trim() ? await parseRequirements(reqText, cfg.promptRequirementsParsing) : []
+  // The submitter's own standards are line-structured and parse under a strict
+  // one-requirement-per-line contract (with a deterministic fallback), so
+  // every submitted standard is GUARANTEED its own requirement — the model may
+  // not merge a "Vehicle VIN" line into a broader "Vehicle listed" line.
+  // Uploaded standards documents are free-form prose and keep the open parse.
+  const manualLines = manualText.split('\n').map(l => l.trim()).filter(Boolean)
+  const manualReqs = manualLines.length ? await parseRequirementLines(manualLines, cfg.promptRequirementsParsing) : []
+  const docReqs = docText.trim() ? await parseRequirements(docText.trim(), cfg.promptRequirementsParsing) : []
+  const requirements = [...manualReqs, ...docReqs]
 
   const update: Record<string, unknown> = {
     coi_extracted: coiExtracted,
@@ -118,25 +168,23 @@ export async function runExtractionPipeline(
     // Requirements are entirely org-owned: templates and submitted standards carry
     // the full checklist (including condition rows); nothing is merged in globally.
     const gap = coiExtracted && requirements.length
-      ? await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], v.carrier_name)
+      ? ensureAllRequirementsJudged(
+          await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], v.carrier_name),
+          requirements,
+        )
       : null
-
-    // Questions for the insurer call: one per requirement, worded around what
-    // OCR read off the COI. Best-effort: a failure here must not discard the
-    // finished extraction above.
-    let agentQuestions: string[] | null = null
-    if (requirements.length && coiExtracted) {
-      try {
-        agentQuestions = await generateInsurerQuestions(requirements, gap, coiExtracted as Parameters<typeof generateInsurerQuestions>[2])
-      } catch (e) {
-        console.error('insurer question generation failed', e)
-      }
-    }
     update.gap_analysis = gap
-    update.agent_questions = agentQuestions
+    update.agent_questions = await questionsFor(requirements, gap, coiExtracted)
     // Overwrite: the fresh automated verdicts become the visible copy, so the
     // admin's previous manual assessment (checks + summary) is dropped.
     if (opts.assessment === 'overwrite') update.final_report = null
+  } else {
+    // The assessment is kept, but the insurer questions must still track the
+    // CURRENT standards (one question per requirement, additions and removals
+    // included), grounded in the kept verdicts. On failure, keep the old
+    // questions rather than wiping them.
+    const regenerated = await questionsFor(requirements, (v.gap_analysis ?? null) as GapAnalysis | null, coiExtracted)
+    if (regenerated) update.agent_questions = regenerated
   }
 
   const { error: werr } = await supabase.from('verifications').update(update).eq('id', verificationId)

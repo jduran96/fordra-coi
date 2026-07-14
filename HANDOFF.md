@@ -5,6 +5,24 @@
 
 ## ⏱️ START HERE (as of 2026-07-14 — visual COI report)
 
+**2026-07-14 follow-up (standards → checks guarantee):** a Dakota standard
+("Vehicle VIN") vanished from VRF-1055's checks because the free-form
+requirements parse MERGED it into the broader "Vehicle listed" line. Fixes:
+- `parseRequirementLines` (`lib/claude.ts`): the submitter's own standards are
+  line-structured and now parse under a STRICT one-requirement-per-line
+  contract (no merging/dropping; deterministic `parseStandardLine` fallback if
+  the model breaks it). Uploaded standards DOCS keep the free-form parse.
+- `ensureAllRequirementsJudged` (`lib/extraction.ts`): any requirement the gap
+  model fails to judge is appended to `uncertain`, never silently dropped.
+- Insurer questions now regenerate on EVERY re-run (keep mode included) from
+  the current requirements, so added/removed standards propagate; on failure
+  in keep mode the old questions are preserved.
+- Admin assessment (`/admin/[id]`): normalized requirements missing from the
+  saved rows are appended as Unconfirmed rows (matched by label, then notes).
+  On assessments drafted before this change, a renamed legacy row can show up
+  once as a duplicate next to its old-label twin — admin removes one; it
+  self-heals on save. Never hide a standard to avoid a dupe.
+
 **2026-07-14 session (owner-approved post-freeze change):** customer report redesign
 per design-partner feedback ("layer the checks on top of the actual COI"):
 - **/app/[id] published view is now a split review:** the ACTUAL uploaded COI

@@ -119,12 +119,22 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   // analysis, then the org's parsed requirements so a fully manual review is
   // possible (the form lets the admin add rows freely when nothing is parsed yet).
   const reviewItems: GapItem[] = (() => {
-    const fromFinal = gapItems(v.final_report as Gap | null)
-    if (fromFinal.length) return fromFinal
-    const fromGap = gapItems(v.gap_analysis as Gap | null)
-    if (fromGap.length) return fromGap
     const parsed = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
-    return parsed.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))
+    const fromFinal = gapItems(v.final_report as Gap | null)
+    const fromGap = gapItems(v.gap_analysis as Gap | null)
+    const base = fromFinal.length ? fromFinal : fromGap
+    if (!base.length) return parsed.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))
+    // Standards added AFTER this assessment was drafted (e.g. the submitter
+    // amended their requirements and extraction was re-run) must still surface
+    // as review rows, or they silently never reach the published report. Match
+    // leniently by label then by notes wording; anything unmatched is appended
+    // as an unassessed row the admin can judge or remove.
+    const label = (r?: Requirement) => (r?.coverage_type ?? '').trim().toLowerCase()
+    const note = (r?: Requirement) => (r?.notes ?? '').trim().toLowerCase()
+    const haveLabels = new Set(base.map(i => label(i.requirement)))
+    const haveNotes = new Set(base.map(i => note(i.requirement)).filter(Boolean))
+    const missing = parsed.filter(r => !haveLabels.has(label(r)) && !(note(r) && haveNotes.has(note(r))))
+    return [...base, ...missing.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))]
   })()
   const summaryDefault = (v.final_report as { narrative_summary?: string } | null)?.narrative_summary ?? ''
 

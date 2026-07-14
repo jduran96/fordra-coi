@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { curlFetch } from './anthropic-fetch';
+import { parseStandardLine } from './templates';
 import type {
   Requirement,
   COIExtracted,
@@ -145,6 +146,45 @@ export async function parseRequirements(docText: string, promptOverride?: string
   ];
 
   return claudeJSON<Requirement[]>(system, messages, 2048);
+}
+
+/**
+ * Strict variant for the submitter's own standards, which are line-structured
+ * (one standard per line — templates serialize "Type: limit (notes)", manual
+ * entry follows the same shape). Guarantees EXACTLY one requirement per line,
+ * in order: the model may not merge overlapping lines (seen live: a separate
+ * "Vehicle VIN" line swallowed by a broader "Vehicle listed" line), drop
+ * lines, or invent extras. When the model breaks the contract anyway, falls
+ * back to a deterministic per-line parse — so a submitted standard can never
+ * silently vanish from the requirement checks.
+ */
+export async function parseRequirementLines(lines: string[], promptOverride?: string): Promise<Requirement[]> {
+  if (!lines.length) return [];
+  const base = promptOverride?.trim() || DEFAULT_REQUIREMENTS_PARSING_PROMPT;
+  const system = `${base}
+
+STRICT LINE CONTRACT — the input is the customer's own list of insurance standards, ONE standard per numbered line:
+- Return EXACTLY ${lines.length} requirement objects: one per line, in line order.
+- NEVER merge two lines into one object, even when they overlap or one looks redundant (e.g. a "vehicle listed" line and a separate "vehicle VIN" line each get their own object).
+- NEVER drop a line, and never add objects that have no line.
+- coverage_type is a short label for THAT line; carry the line's full condition wording in notes and its stated amount in minimum_limit.`;
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: 'user',
+      content: `Insurance standards (${lines.length} lines):\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}\n\nReturn the JSON array of exactly ${lines.length} requirements now.`,
+    },
+  ];
+  try {
+    const parsed = await claudeJSON<Requirement[]>(system, messages, 4096);
+    if (Array.isArray(parsed) && parsed.length === lines.length) return parsed;
+    console.error(`parseRequirementLines: contract violated (${lines.length} lines -> ${Array.isArray(parsed) ? parsed.length : 'non-array'}); using deterministic per-line fallback`);
+  } catch (e) {
+    console.error('parseRequirementLines: model call failed; using deterministic per-line fallback', e);
+  }
+  return lines.map(line => {
+    const r = parseStandardLine(line);
+    return { coverage_type: r.title, minimum_limit: r.limit ?? '', notes: r.notes ?? null };
+  });
 }
 
 // ─── 3. Extract COI fields via Vision ────────────────────────────────────────
