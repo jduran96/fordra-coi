@@ -9,6 +9,8 @@ import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline } from '@/lib/extraction'
+import { verifyInsurerContact } from '@/lib/claude'
+import type { COIExtracted } from '@/lib/types'
 
 /**
  * Run OCR/extraction on a verification's documents and store the parsed analysis.
@@ -34,6 +36,33 @@ export async function runExtraction(verificationId: string, formData?: FormData)
       .then(() => {}, () => {})
     throw e
   }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Web-search verification of the agent/producer contact printed on the COI.
+ * Deliberately its own button, NOT part of runExtraction: the check costs
+ * real money per run (up to 5 web searches + their result tokens, roughly
+ * $0.10-0.20), so the admin spends it only when they actually want it.
+ * Requires a completed extraction (it reads coi_extracted).
+ */
+export async function runContactCheck(verificationId: string) {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const { data: v, error } = await supabase.from('verifications')
+    .select('coi_extracted')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v?.coi_extracted) {
+    throw new Error('Run extraction first: the contact check reads the extracted COI.')
+  }
+  // verifyInsurerContact never throws; null means the COI names no agency or
+  // the search failed — store it so the card shows the honest empty state.
+  const check = await verifyInsurerContact(v.coi_extracted as COIExtracted)
+  const { error: werr } = await supabase.from('verifications')
+    .update({ contact_check: check })
+    .eq('id', verificationId)
+  if (werr) throw new Error(`Could not save the contact check: ${werr.message}`)
   revalidatePath(`/admin/${verificationId}`)
 }
 

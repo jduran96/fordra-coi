@@ -13,7 +13,7 @@ import type { AgentContactCheck } from '@/lib/types'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
-import { runExtraction, saveCallNote, saveAssessment, deleteCallNote, setInternalFlag } from '../actions'
+import { runExtraction, runContactCheck, saveCallNote, saveAssessment, deleteCallNote, setInternalFlag } from '../actions'
 import DeleteNoteButton from './DeleteNoteButton'
 import InternalFlagPicker from './InternalFlagPicker'
 
@@ -241,9 +241,20 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* 3 — Agent contact check: who the COI says to call vs the web */}
+        {/* 3 — Agent contact check: who the COI says to call vs the web.
+            Its own button, not part of extraction: each run spends web
+            searches, so it only happens when the admin asks for it. */}
         <section>
-          <SectionTitle>Agent contact check</SectionTitle>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <SectionTitle>Agent contact check</SectionTitle>
+            {v.coi_extracted && (
+              <form action={runContactCheck.bind(null, id)} style={{ marginLeft: 'auto' }}>
+                <PendingButton pendingLabel="Checking the web… (can take a minute)" style={smallBtn()}>
+                  {v.contact_check ? 'Re-run contact check' : 'Run contact check'}
+                </PendingButton>
+              </form>
+            )}
+          </div>
           <div style={{ marginTop: 10 }}>
             <ContactCheckCard check={(v.contact_check ?? null) as AgentContactCheck | null} extracted={!!v.coi_extracted} />
           </div>
@@ -349,8 +360,8 @@ function ContactCheckCard({ check, extracted }: { check: AgentContactCheck | nul
     return (
       <div style={card()}>
         <Muted>{extracted
-          ? 'No contact check available. Re-run extraction to verify the agent contact against the web (older extractions predate this check, and it is skipped when the COI names no agency).'
-          : 'Run extraction first; the agent contact on the COI is then checked against the web.'}</Muted>
+          ? 'Not checked yet. Run contact check to verify the agent contact on the COI against the web. A blank result after a run means the COI names no agency or nothing credible was found.'
+          : 'Run extraction first; the contact check reads the agent details from the extracted COI.'}</Muted>
       </div>
     )
   }

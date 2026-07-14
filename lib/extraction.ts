@@ -1,8 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, analyzeGaps, generateInsurerQuestions, verifyInsurerContact } from '@/lib/claude'
+import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, analyzeGaps, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
-import type { COIExtracted, GapAnalysis, Requirement } from '@/lib/types'
+import type { GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -160,14 +160,8 @@ export async function runExtractionPipeline(
     requirements_normalized: requirements,
     error_detail: null,
   }
-
-  // Agent contact check: web-search the producer/agent printed on the COI and
-  // record what publicly matches (admin-only column). Refreshed on every
-  // extraction run, keep mode included: it derives from the COI, not the
-  // assessment. verifyInsurerContact never throws; null means unverifiable.
-  if (coiExtracted) {
-    update.contact_check = await verifyInsurerContact(coiExtracted as COIExtracted)
-  }
+  // The agent contact check is NOT run here: it costs web searches per run,
+  // so it has its own button on the admin page (runContactCheck action).
 
   if (!keepAssessment) {
     // A kept assessment also keeps its case_status (a published case must not
