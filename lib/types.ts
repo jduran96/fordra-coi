@@ -45,7 +45,26 @@ export interface COICoverage {
   /** Optional: older extractions predate these fields. */
   additional_insured?: string;
   loss_payee?: string;
+  /** Where this coverage row sits on the original document, for report
+   *  highlighting. Percent-of-page coordinates. Older extractions lack it. */
+  location?: FieldLocation | null;
 }
+
+/** A region on the uploaded certificate: 1-based page, box as percentages of
+ *  the page's width/height — [x_left, y_top, x_right, y_bottom], 0-100. */
+export interface FieldLocation {
+  page: number;
+  box: [number, number, number, number];
+}
+
+/** Keys of the non-coverage regions the extractor locates on the document. */
+export type FieldLocationKey =
+  | 'producer'
+  | 'insured'
+  | 'insurers'
+  | 'certificate_holder'
+  | 'additional_insured'
+  | 'description_of_operations';
 
 export interface COIExtracted {
   named_insured: string;
@@ -70,6 +89,9 @@ export interface COIExtracted {
    *  DBAs, endorsement parties) with where each was found — the owner-operator hook. */
   other_named_parties?: string;
   coverages: COICoverage[];
+  /** Where key regions sit on the original document, for report highlighting.
+   *  Older extractions lack it; re-run extraction to backfill. */
+  field_locations?: Partial<Record<FieldLocationKey, FieldLocation | null>>;
 }
 
 export interface GapItem {

@@ -16,10 +16,14 @@ import { runExtractionPipeline } from '@/lib/extraction'
  * /api/admin/run-extraction route (raised maxDuration on Vercel — Claude vision
  * regularly exceeds the default limit; prefer the route in production).
  */
-export async function runExtraction(verificationId: string) {
+export async function runExtraction(verificationId: string, formData?: FormData) {
   await requireAdmin()
+  // "Keep requirement checks & summary" checkbox: checked re-extracts the
+  // documents without touching an existing assessment; unchecked regenerates
+  // the checks and drops the manual summary so the fresh copy shows.
+  const assessment = formData?.get('keep_assessment') === 'on' ? 'keep' : 'overwrite'
   try {
-    await runExtractionPipeline(verificationId)
+    await runExtractionPipeline(verificationId, { assessment })
   } catch (e) {
     // Record why extraction died (error_detail was previously never written
     // by anything), then let the error surface to the admin.

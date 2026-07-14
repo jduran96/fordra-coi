@@ -171,6 +171,13 @@ These identity fields matter: they confirm the certificate belongs to the right 
 - policy_number: Read each alphanumeric character by character. Do not truncate, guess, or normalize. Note ambiguous characters (0 vs O, 1 vs l) in raw_notes.
 - conditions_and_exceptions (per coverage): Types of goods or cargo covered, situations covered, exclusions, sub-limits, endorsements, or any restrictions on the coverage. Copy relevant text verbatim. Use "" if none stated.
 
+FIELD LOCATIONS — bounding boxes for highlighting regions on the original document:
+- For each coverage row and each region in field_locations, report where it sits on the document: "page" is the 1-based page number; "box" is [x_left, y_top, x_right, y_bottom] as PERCENTAGES of that page's full width and height (numbers 0-100). y=0 is the very TOP edge of the page image (including any margin above the title), y=100 the very bottom edge.
+- Each box must cover the ENTIRE printed box or table row for that region, edge to edge — the whole coverage row including its type, policy number, dates, and limits columns; the whole Producer box; the whole Certificate Holder box, and so on.
+- CALIBRATE CAREFULLY: boxes are commonly reported too low on the page. Before finalizing each box, verify that the region's FIRST line of text sits just below y_top and its LAST line sits just above y_bottom, and that no neighboring row's text falls inside the box. Adjacent coverage rows must not overlap: each row's y_bottom is the next row's y_top.
+- A coverage's location is its full row (or row group) in the coverage table. description_of_operations is the Description of Operations / Remarks box. additional_insured is the dedicated additional-insured box if one exists, otherwise null.
+- If you cannot locate a region confidently, use null for its location. Never guess.
+
 Return ONLY a valid JSON object — no prose, no markdown:
 {
   "named_insured": string,
@@ -203,9 +210,18 @@ Return ONLY a valid JSON object — no prose, no markdown:
       "conditions_and_exceptions": string,
       "additional_insured": string,
       "loss_payee": string,
-      "raw_notes": string
+      "raw_notes": string,
+      "location": { "page": number, "box": [number, number, number, number] } | null
     }
-  ]
+  ],
+  "field_locations": {
+    "producer": { "page": number, "box": [number, number, number, number] } | null,
+    "insured": { "page": number, "box": [number, number, number, number] } | null,
+    "insurers": { "page": number, "box": [number, number, number, number] } | null,
+    "certificate_holder": { "page": number, "box": [number, number, number, number] } | null,
+    "additional_insured": { "page": number, "box": [number, number, number, number] } | null,
+    "description_of_operations": { "page": number, "box": [number, number, number, number] } | null
+  }
 }
 Per-coverage additional_insured / loss_payee: the entity holding that status on THAT specific coverage line, when the certificate ties it to a coverage (e.g. additional insured on liability, loss payee on physical damage). Use "" when not tied to the coverage.
 named_insured_state: 2-letter US state from named insured's address (e.g. "FL", "TX"). Use "" if not found.

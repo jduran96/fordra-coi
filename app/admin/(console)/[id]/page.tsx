@@ -8,7 +8,7 @@ import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
-import { humanizeToken } from '@/lib/templates'
+import { humanizeToken, parseStandardLine } from '@/lib/templates'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
@@ -42,25 +42,6 @@ interface COI {
   additional_insured?: string
   loss_payee?: string
   other_named_parties?: string
-}
-
-/**
- * Split one submitted-standards line into display parts. Template submissions
- * serialize rows as "Coverage type: limit (notes)" (resolveTemplate), so peel
- * the trailing (notes) then the ": limit"; free-text lines that don't match
- * just come back whole as the title.
- */
-function parseStandardLine(line: string): { title: string; limit?: string; notes?: string } {
-  let head = line
-  let notes: string | undefined
-  const open = head.indexOf(' (')
-  if (head.endsWith(')') && open > 0) {
-    notes = head.slice(open + 2, -1).trim()
-    head = head.slice(0, open).trim()
-  }
-  const colon = head.indexOf(': ')
-  if (colon > 0) return { title: head.slice(0, colon).trim(), limit: head.slice(colon + 2).trim(), notes }
-  return { title: head, notes }
 }
 
 function gapItems(g: Gap | null | undefined): GapItem[] {
@@ -224,7 +205,16 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <SectionTitle>OCR Analysis</SectionTitle>
-            <form action={runExtraction.bind(null, id)} style={{ marginLeft: 'auto' }}>
+            <form action={runExtraction.bind(null, id)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+              {/* Checked: re-extract the documents (incl. field locations for the
+                  customer report) without touching the current requirement checks
+                  or summary. Unchecked: regenerate them and drop the manual copy. */}
+              {v.coi_extracted && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" name="keep_assessment" defaultChecked style={{ accentColor: C.txt }} />
+                  Keep requirement checks &amp; summary
+                </label>
+              )}
               <PendingButton pendingLabel="Extracting… (can take a minute)" style={smallBtn()}>
                 {v.coi_extracted ? 'Re-run extraction' : 'Run extraction'}
               </PendingButton>

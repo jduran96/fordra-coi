@@ -3,7 +3,44 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-12 evening, latest commit bdfae19 — CODE FREEZE)
+## ⏱️ START HERE (as of 2026-07-14 — visual COI report)
+
+**2026-07-14 session (owner-approved post-freeze change):** customer report redesign
+per design-partner feedback ("layer the checks on top of the actual COI"):
+- **/app/[id] published view is now a split review:** the ACTUAL uploaded COI
+  (images directly; PDFs page-by-page via `pdfjs-dist`, worker at
+  `public/pdf.worker.min.mjs`, multi-page stacks vertically) beside the
+  requirement-check cards. Hover/tap a check highlights the exact region on the
+  document. Zoom control 100–250%; doc sits in a scrollable frame. The COI
+  Details card is gone (the document replaces it); reading order is summary →
+  verdict strip → split review → call notes → "what you submitted" (other docs
+  absent renders "N/A"; standards render via the shared `parseStandardLine`,
+  now exported from `lib/templates.ts` and used by admin, customer, and PDF).
+- **Extraction returns bounding boxes** (`location` per coverage +
+  `field_locations`, prompt in `lib/claude.ts`, types in `lib/types.ts`). The
+  model's boxes drift several % down the page, so they are treated as
+  APPROXIMATE ANCHORS ONLY: `components/CoiSplitReview.tsx` detects the form's
+  printed horizontal rules from the rendered pixels and snaps boxes onto them
+  (coverage table matched by row-spacing fingerprint after removing linear
+  drift, remarks/holder from ACORD adjacency, other boxes affine-corrected).
+  Do not trust raw model boxes without the snap. Verifications extracted
+  before this change have no boxes: the doc renders, cards just don't
+  highlight — backfill via admin re-run with "keep" checked.
+- **Admin re-run has keep/overwrite modes** (`AssessmentMode` in
+  `lib/extraction.ts`; checkbox on /admin/[id], default keep): keep =
+  re-extract documents only, preserving gap_analysis / final_report / insurer
+  questions / case_status; overwrite = regenerate gaps + questions AND clear
+  final_report so the fresh automated copy shows.
+- **Customer PDF download** now mirrors the slimmed content set: summary,
+  checks, call notes, what-you-submitted. No COI details, no re-rendered docs.
+- **Seeded UI-test rows in Fordra Testing (kept intentionally for testing):**
+  VRF-TEST-UI `bdd7149d-a4d5-4506-b2af-8d0cd5946be1` (PNG) and VRF-TEST-PDF
+  `f9ee3e43-26d8-4fca-8ab7-0373e1c9710d` (2-page PDF). ⚠️ VRF-TEST-UI's
+  document row POINTS AT VRF-1054's storage object — when cleaning up, delete
+  the row only, never that storage object. VRF-TEST-PDF has its own object
+  (`.../f9ee3e43.../coi-Sample_COI_2page.pdf`), safe to delete with it.
+
+## Previous state (as of 2026-07-12 evening, commit bdfae19 — CODE FREEZE)
 
 **Where things stand:** the owner declared code freeze at the end of the
 2026-07-12 polish session. That session shipped (all deployed + prod-verified):

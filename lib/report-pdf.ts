@@ -1,11 +1,14 @@
 import PDFDocument from 'pdfkit'
 import { pacificDate, pacificDateTime } from '@/lib/dates'
+import { parseStandardLine } from '@/lib/templates'
 
 /**
  * Renders a published verification report as a downloadable PDF. Mirrors the
- * customer results page: summary, requirement verdicts (not met, uncertain,
- * met, same ordering), COI details, call notes. Built with pdfkit standard
- * fonts (Helvetica), ink on white, no remote assets.
+ * customer results page's content set (owner decision 2026-07-14): summary,
+ * requirement verdicts (not met, uncertain, met, same ordering), call notes,
+ * and the "what you submitted" record (file names only plus the written
+ * insurance standards; documents are not re-rendered). Built with pdfkit
+ * standard fonts (Helvetica), ink on white, no remote assets.
  */
 
 interface ReportItem {
@@ -14,26 +17,6 @@ interface ReportItem {
   evidence?: string
 }
 interface Report { met?: ReportItem[]; not_met?: ReportItem[]; uncertain?: ReportItem[]; narrative_summary?: string }
-interface Coverage {
-  type?: string
-  policy_number?: string
-  effective_date?: string
-  expiration_date?: string
-  each_occurrence_limit?: string
-  aggregate_limit?: string
-}
-interface COI {
-  named_insured?: string
-  named_insured_address?: string
-  usdot_number?: string
-  mc_number?: string
-  producer?: string
-  insurance_company?: string
-  certificate_holder?: string
-  additional_insured?: string
-  additional_terms?: string
-  coverages?: Coverage[]
-}
 interface CallNote { at?: string; text?: string; contact?: { name?: string; phone?: string; email?: string } }
 
 export interface ReportPdfInput {
@@ -43,8 +26,10 @@ export interface ReportPdfInput {
   published_at: string
   final_report: Report | null
   gap_analysis: Report | null
-  coi_extracted: COI | null
   call_notes: CallNote[] | null
+  documents: { kind: string; file_name: string }[]
+  requirements_text: string
+  template_name: string
 }
 
 const INK = '#141413'
@@ -144,46 +129,40 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       }
     }
 
-    const coi = v.coi_extracted
-    if (coi) {
-      rule()
-      heading('COI details')
-      const facts: [string, string | undefined][] = [
-        ['Policyholder', coi.named_insured],
-        ['Address', coi.named_insured_address],
-        ['USDOT number', coi.usdot_number],
-        ['MC number', coi.mc_number],
-        ['Insurance company', coi.insurance_company],
-        ['Producer', coi.producer],
-        ['Certificate holder', coi.certificate_holder],
-        ['Additional insured', coi.additional_insured],
-      ]
-      for (const [label, val] of facts) {
-        doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(`${label}:  `, { continued: true })
-        doc.fillColor(INK).text(val?.trim() || '-')
-        doc.moveDown(0.15)
-      }
-      const coverages = (coi.coverages ?? []).filter(c => c.type)
-      if (coverages.length > 0) {
-        doc.moveDown(0.4)
-        for (const c of coverages) {
-          doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(c.type!)
-          const parts = [
-            c.policy_number ? `Policy ${c.policy_number}` : null,
-            c.effective_date || c.expiration_date ? `${c.effective_date || '?'} to ${c.expiration_date || '?'}` : null,
-            c.each_occurrence_limit ? `${c.each_occurrence_limit} per occurrence` : null,
-            c.aggregate_limit ? `${c.aggregate_limit} aggregate` : null,
-          ].filter(Boolean)
-          if (parts.length) doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(parts.join('   ·   '), { lineGap: 2 })
-          doc.moveDown(0.35)
+    // What the customer submitted: file names only (documents are not
+    // re-rendered here), plus the written insurance standards.
+    rule()
+    heading('What you submitted')
+    const byKind = (kind: string) =>
+      v.documents.filter(d => d.kind === kind).map(d => d.file_name).join(', ')
+    const standardsFallback = v.template_name
+      ? `Used template: ${v.template_name}`
+      : v.requirements_text.trim() ? 'Entered manually' : 'Not submitted'
+    const submittedRows: [string, string][] = [
+      ['COI document', byKind('coi') || 'Not submitted'],
+      ['Other documents', byKind('rcs') || 'N/A'],
+      ['Insurance standards', byKind('requirements') || standardsFallback],
+    ]
+    for (const [label, val] of submittedRows) {
+      doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(`${label}:  `, { continued: true })
+      doc.fillColor(INK).text(val)
+      doc.moveDown(0.15)
+    }
+    if (v.requirements_text.trim()) {
+      doc.moveDown(0.4)
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(GREY).text('Insurance standards')
+      doc.moveDown(0.2)
+      const lines = v.requirements_text.split('\n').map(l => l.trim()).filter(Boolean)
+      lines.forEach((line, i) => {
+        const r = parseStandardLine(line)
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
+          .text(`${i + 1}.  ${r.title}${r.limit ? `: ${r.limit}` : ''}`, { width, lineGap: 2 })
+        if (r.notes) {
+          doc.font('Helvetica').fontSize(9).fillColor(GREY).text(r.notes, 56 + 14, doc.y, { width: width - 14, lineGap: 2 })
+          doc.x = 56
         }
-      }
-      if (coi.additional_terms?.trim()) {
         doc.moveDown(0.3)
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(GREY).text('Additional terms')
-        doc.moveDown(0.15)
-        doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(coi.additional_terms.trim(), { width, lineGap: 2 })
-      }
+      })
     }
 
     doc.moveDown(1)

@@ -163,6 +163,26 @@ export function editableRows(t: Pick<RequirementTemplate, 'requirements' | 'vari
   })
 }
 
+/**
+ * Split one submitted-standards line into display parts. Template submissions
+ * serialize rows as "Coverage type: limit (notes)" (resolveTemplate below), so
+ * peel the trailing (notes) then the ": limit"; free-text lines that don't
+ * match just come back whole as the title. Shared by the admin detail page,
+ * the customer report, and the report PDF.
+ */
+export function parseStandardLine(line: string): { title: string; limit?: string; notes?: string } {
+  let head = line
+  let notes: string | undefined
+  const open = head.indexOf(' (')
+  if (head.endsWith(')') && open > 0) {
+    notes = head.slice(open + 2, -1).trim()
+    head = head.slice(0, open).trim()
+  }
+  const colon = head.indexOf(': ')
+  if (colon > 0) return { title: head.slice(0, colon).trim(), limit: head.slice(colon + 2).trim(), notes }
+  return { title: head, notes }
+}
+
 export interface ResolvedTemplate {
   /** Serialized requirements text — same shape the manual web form produces. */
   text: string
