@@ -12,8 +12,9 @@ import { humanizeToken } from '@/lib/templates'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
-import { runExtraction, saveCallNote, saveAssessment, deleteCallNote } from '../actions'
+import { runExtraction, saveCallNote, saveAssessment, deleteCallNote, setInternalFlag } from '../actions'
 import DeleteNoteButton from './DeleteNoteButton'
+import InternalFlagPicker from './InternalFlagPicker'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -152,6 +153,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>{adminStatus}</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <InternalFlagPicker initialValue={(v.internal_flag as string | null) ?? null} action={setInternalFlag.bind(null, id)} />
+        </span>
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 22px' }}>
         {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}

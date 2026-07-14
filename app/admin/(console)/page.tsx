@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
+import { internalFlagLabel, internalFlagColor } from '@/lib/internal-flag'
 import { pacificDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,7 @@ interface Row {
   manual_notes: string | null
   insurance_contact: unknown
   final_report: unknown
+  internal_flag: string | null
   orgs: { name: string } | null
 }
 
@@ -32,7 +34,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, orgs(name)')
+    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, internal_flag, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -71,7 +73,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
         <thead>
           <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th>
+            <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
             <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
           </tr>
         </thead>
@@ -86,6 +88,9 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
               <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
               <td style={td()}>
                 <AdminStatusPill row={r} />
+              </td>
+              <td style={td()}>
+                <InternalFlagPill value={r.internal_flag} />
               </td>
               <td style={{ ...td(), color: C.txt3 }}>
                 {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
@@ -103,6 +108,15 @@ function AdminStatusPill({ row }: { row: Row }) {
   const color = adminStatusColor(s)
   return (
     <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20 }}>{s}</span>
+  )
+}
+
+function InternalFlagPill({ value }: { value: string | null }) {
+  const label = internalFlagLabel(value)
+  if (!label) return <span style={{ color: C.txt3 }}>—</span>
+  const color = internalFlagColor(value)
+  return (
+    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20 }}>{label}</span>
   )
 }
 

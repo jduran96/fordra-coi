@@ -219,6 +219,27 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   revalidatePath(`/admin/${verificationId}`)
 }
 
+const INTERNAL_FLAG_VALUES = ['called_jd', 'called_em', 'voicemail_jd', 'voicemail_em']
+
+/**
+ * Set (or clear) the internal admin organization flag on a verification —
+ * who called / left a voicemail. Admin-only bookkeeping: plain column, no
+ * grants to `authenticated`, not in my_verifications, so it never reaches
+ * the customer app or the /v1 API.
+ */
+export async function setInternalFlag(verificationId: string, flag: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const value = INTERNAL_FLAG_VALUES.includes(flag) ? flag : null
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('verifications').update({ internal_flag: value }).eq('id', verificationId)
+  if (error) {
+    console.error('setInternalFlag failed', error)
+    return { error: 'Could not save. Please retry.' }
+  }
+  revalidatePath('/admin')
+  revalidatePath(`/admin/${verificationId}`)
+}
+
 export interface CreateOrgState { ok?: boolean; error?: string }
 
 /** Create a new customer org. Members are then added via Invite User. */
