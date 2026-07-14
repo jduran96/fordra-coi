@@ -52,11 +52,22 @@ per design-partner feedback ("layer the checks on top of the actual COI"):
 - **Customer PDF download** now mirrors the slimmed content set: summary,
   checks, call notes, what-you-submitted. No COI details, no re-rendered docs.
 - **Seeded UI-test rows in Fordra Testing (kept intentionally for testing):**
-  VRF-TEST-UI `bdd7149d-a4d5-4506-b2af-8d0cd5946be1` (PNG) and VRF-TEST-PDF
-  `f9ee3e43-26d8-4fca-8ab7-0373e1c9710d` (2-page PDF). ⚠️ VRF-TEST-UI's
-  document row POINTS AT VRF-1054's storage object — when cleaning up, delete
-  the row only, never that storage object. VRF-TEST-PDF has its own object
-  (`.../f9ee3e43.../coi-Sample_COI_2page.pdf`), safe to delete with it.
+  VRF-TEST-UI `bdd7149d-a4d5-4506-b2af-8d0cd5946be1` (PNG), VRF-TEST-PDF
+  `f9ee3e43-26d8-4fca-8ab7-0373e1c9710d` (2-page PDF), and VRF-TEST-1055
+  `20f98120-e1db-4130-82ea-2c34575abde0` (clone of Dakota's real VRF-1055 for
+  highlight testing). ⚠️ VRF-TEST-UI's document row POINTS AT VRF-1054's
+  storage object and VRF-TEST-1055's points at VRF-1055's — when cleaning up
+  those two, delete the rows only, never their storage objects. VRF-TEST-PDF
+  has its own object (`.../f9ee3e43.../coi-Sample_COI_2page.pdf`), safe to
+  delete with it.
+- **PDF highlights are TEXT-ANCHORED** (2026-07-14, second fix): on real
+  certificates the extracted coverages are NOT adjacent table rows (empty
+  umbrella/WC rows between them), so box-snapping mis-fit. For PDFs with a
+  text layer, `CoiSplitReview` now locates highlights by searching pdf.js
+  text runs for values extraction already read (row labels, policy numbers,
+  the insured's name, dates, VINs — vehicle checks find the ACORD 101
+  schedule on page 2 and the frame auto-scrolls to it). Model boxes are only
+  a disambiguation prior + the scanned-image fallback.
 
 ## Previous state (as of 2026-07-12 evening, commit bdfae19 — CODE FREEZE)
 

@@ -2,24 +2,31 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '@/lib/theme'
-import type { COIExtracted, FieldLocation } from '@/lib/types'
+import type { COICoverage, COIExtracted, FieldLocation } from '@/lib/types'
 
 /**
  * Split review: the customer's ACTUAL submitted certificate beside the
  * requirement-check cards. Hovering (or tapping) a check highlights the
- * region of the document it was verified against, using the percent-of-page
- * bounding boxes the extraction step records (`location` per coverage,
- * `field_locations` for the fixed boxes). Verifications extracted before
- * locations existed still render the document; their cards just don't
- * highlight. Images render directly; PDFs render page-by-page via pdf.js
- * (worker served from /pdf.worker.min.mjs).
+ * region of the document it was verified against. Images render directly;
+ * PDFs render page-by-page via pdf.js (worker at /pdf.worker.min.mjs),
+ * stacked vertically inside a scrollable, zoomable frame.
  *
- * SNAP-TO-LINES: the model's boxes are treated as approximate anchors, not
- * gospel — vision coordinates drift several % down the page. Once a page is
- * rendered we detect the certificate's printed horizontal rules from its
- * pixels and snap the boxes onto them (see snapLocations below). Detection
- * failing (tainted canvas, photo with no clean rules) just leaves the raw
- * boxes in place.
+ * HOW HIGHLIGHTS ARE LOCATED, most precise first:
+ * 1. TEXT ANCHORING (PDFs with a text layer): highlights are found by
+ *    searching the pdf.js text layer for the values extraction already read —
+ *    the policy number for a coverage row, the insured's name, the VIN in a
+ *    vehicle requirement, the policy dates. This is exact and works across
+ *    pages (e.g. the ACORD 101 vehicle schedule on page 2). The model's boxes
+ *    are used only to disambiguate when a value appears more than once.
+ * 2. SNAPPED MODEL BOXES (scanned images / no text layer): the extraction
+ *    model's percent-of-page boxes, snapped onto the document's printed rules
+ *    detected from the rendered pixels (see snapLocations). Vision coordinates
+ *    drift several % down the page — never trust them raw when a snap or
+ *    anchor is available.
+ * 3. RAW MODEL BOXES: last resort when detection fails (tainted canvas,
+ *    photo without clean rules).
+ * A check whose location cannot be established at all simply renders as a
+ * non-interactive card — never a wrong highlight by construction.
  */
 
 export interface CheckItem {
@@ -39,7 +46,7 @@ const TAG = {
   uncertain: { label: 'Unconfirmed', color: C.warn },
 } as const
 
-// ─── Check → document-region matching ───────────────────────────────────────
+// ─── Check → rule classification ─────────────────────────────────────────────
 // Requirement names are free text from the gap analysis; coverage types are
 // free text from extraction. Both funnel through canonical keys so
 // "Auto Liability $1M CSL" finds the "AUTOMOBILE LIABILITY" row.
@@ -65,40 +72,43 @@ function coverageKey(s?: string): string | null {
   return null
 }
 
-/** Document locations a requirement check anchors to (empty = no highlight). */
-function locationsFor(item: CheckItem, coi: COIExtracted | null): FieldLocation[] {
-  if (!coi) return []
-  const fl = coi.field_locations ?? {}
-  const coverages = (coi.coverages ?? []).filter(c => c?.type)
-  const covLocs = coverages.map(c => c.location).filter(Boolean) as FieldLocation[]
+type RegionKey = 'producer' | 'insured' | 'insurers' | 'certificate_holder' | 'additional_insured' | 'description_of_operations'
+type Rule =
+  | { type: 'region'; key: RegionKey }
+  | { type: 'coverage'; index: number }
+  | { type: 'dates' }
+  | { type: 'search' }
+
+/** Classify a requirement check into how its document location is found. */
+function ruleFor(item: CheckItem, coverages: COICoverage[]): Rule {
   const r = norm(item.requirement?.coverage_type)
-  if (!r) return []
-  const one = (l?: FieldLocation | null) => (l ? [l] : [])
+  if (!r) return { type: 'search' }
   // Identity / party checks first: their wording often also mentions a coverage.
-  if (r.includes('certificate holder')) return one(fl.certificate_holder)
-  if (r.includes('additional insured')) return one(fl.additional_insured ?? fl.description_of_operations)
-  if (r.includes('loss payee')) return one(fl.description_of_operations)
-  if (r.includes('policyholder') || r.includes('named insured') || r.includes('carrier name')) return one(fl.insured)
-  if (r.includes('usdot') || r.includes('mc number')) return one(fl.insured)
-  if (r.includes('producer') || r.includes('agency')) return one(fl.producer)
-  if (r.includes('insurance company') || r.includes('insurer name') || r.includes('am best') || r.includes('rating')) return one(fl.insurers)
+  if (r.includes('certificate holder')) return { type: 'region', key: 'certificate_holder' }
+  if (r.includes('additional insured')) return { type: 'region', key: 'additional_insured' }
+  if (r.includes('loss payee')) return { type: 'region', key: 'description_of_operations' }
+  if (r.includes('policyholder') || r.includes('named insured') || r.includes('carrier name') || r.includes('insured party')) return { type: 'region', key: 'insured' }
+  if (r.includes('usdot') || r.includes('mc number')) return { type: 'region', key: 'insured' }
+  if (r.includes('producer') || r.includes('agency')) return { type: 'region', key: 'producer' }
+  if (r.includes('insurance company') || r.includes('insurer name') || r.includes('am best') || r.includes('rating')) return { type: 'region', key: 'insurers' }
+  // Vehicle / VIN / driver checks carry their own distinctive values (a VIN, a
+  // make/model) — text search finds them wherever they sit (often the ACORD
+  // 101 schedule page).
+  if (/\bvins?\b/.test(r) || r.includes('vehicle') || r.includes('driver')) return { type: 'search' }
   const rKey = coverageKey(r)
-  const cov = coverages.find(c => {
+  const covIdx = coverages.findIndex(c => {
     const cn = norm(c.type)
     if (!cn) return false
     if (rKey && coverageKey(cn) === rKey) return true
     return cn.includes(r) || r.includes(cn)
   })
-  if (cov) return one(cov.location)
-  // Date/active checks light the whole coverage table when no single coverage
-  // claimed them above.
-  if (r.includes('active') || r.includes('in force') || r.includes('expir') || r.includes('effective') || r.includes('date')) return covLocs
-  // Restrictions/endorsements without a coverage row live in the remarks box.
-  if (r.includes('restriction') || r.includes('endorsement') || r.includes('radius') || r.includes('deductible')) return one(fl.description_of_operations)
-  return []
+  if (covIdx >= 0) return { type: 'coverage', index: covIdx }
+  if (r.includes('active') || r.includes('in force') || r.includes('expir') || r.includes('effective') || r.includes('date')) return { type: 'dates' }
+  if (r.includes('restriction') || r.includes('endorsement') || r.includes('radius') || r.includes('deductible')) return { type: 'region', key: 'description_of_operations' }
+  return { type: 'search' }
 }
 
-// ─── Snap model boxes to the document's printed rules ───────────────────────
+// ─── Rule-line detection + model-box snapping (image / no-text fallback) ────
 
 interface RuleLine { pct: number }
 
@@ -140,7 +150,10 @@ function detectLines(canvas: HTMLCanvasElement): RuleLine[] {
  * The coverage table's K row boundaries are K consecutive detected rules.
  * Slide a window of K consecutive rules and score each against the model's
  * boundary chain after removing a linear drift (least-squares on offsets);
- * the lowest residual wins. Null when nothing fits sanely.
+ * the lowest residual wins. Null when nothing fits sanely. NOTE: only valid
+ * when the extracted coverages really are adjacent table rows — real
+ * certificates often have empty rows between them, which is why PDFs use
+ * text anchoring instead and this stays a scanned-image fallback.
  */
 function fitChain(modelChain: number[], L: number[]): number[] | null {
   const K = modelChain.length
@@ -238,6 +251,202 @@ function snapLocations(coi: COIExtracted, linesByPage: Record<number, RuleLine[]
   return out
 }
 
+// ─── Text anchoring (PDF text layer) ─────────────────────────────────────────
+
+interface TextItem { str: string; x: number; y: number; w: number; h: number }
+type TextByPage = Record<number, TextItem[]>
+
+const normText = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+/** Text items containing the needle (or fully contained by it, for split runs). */
+function findMatches(items: TextItem[], needle: string): TextItem[] {
+  const n = normText(needle)
+  if (n.length < 4) return []
+  return items.filter(it => {
+    const s = normText(it.str)
+    if (s.length < 4) return false
+    return s.includes(n) || (n.includes(s) && s.length >= Math.min(8, n.length))
+  })
+}
+
+const padBox = (x0: number, y0: number, x1: number, y1: number): [number, number, number, number] =>
+  [Math.max(0, x0 - 1), Math.max(0, y0 - 0.5), Math.min(100, x1 + 1), Math.min(100, y1 + 0.5)]
+
+/** Grow a text bbox vertically to the enclosing printed rules when nearby. */
+function growToLines(y0: number, y1: number, lines: number[], tol = 6): [number, number] {
+  const above = lines.filter(l => l <= y0 + 0.2 && y0 - l <= tol)
+  const below = lines.filter(l => l >= y1 - 0.2 && l - y1 <= tol)
+  return [above.length ? Math.max(...above) : y0 - 0.6, below.length ? Math.min(...below) : y1 + 0.6]
+}
+
+/**
+ * Anchor one region by searching for values extraction already read. Needles
+ * are tried in order (most distinctive first); when a needle matches in
+ * several places the match nearest the model's box wins.
+ */
+function anchorByNeedles(
+  needles: (string | undefined)[],
+  textByPage: TextByPage,
+  linesByPage: Record<number, RuleLine[]>,
+  prior: FieldLocation | null | undefined,
+  opts: { fullWidth?: boolean; lineTol?: number } = {},
+): FieldLocation[] {
+  for (const needle of needles) {
+    if (!needle || normText(needle).length < 4) continue
+    const all: { page: number; it: TextItem }[] = []
+    for (const [pageStr, items] of Object.entries(textByPage)) {
+      const page = Number(pageStr)
+      for (const it of findMatches(items, needle)) all.push({ page, it })
+    }
+    if (!all.length) continue
+    // The model knows which PAGE a region sits on even when its box drifts.
+    // A needle that only matches elsewhere (e.g. the insured's name quoted on
+    // the remarks page while page 1 is a scan) is the wrong anchor — skip it
+    // and let the snapped box handle the region.
+    if (prior && !all.some(m => m.page === prior.page)) continue
+    let chosen = all
+    if (all.length > 1 && prior) {
+      // Disambiguate repeats (e.g. the holder's name also quoted in the
+      // remarks) with the model's approximate location.
+      const cy = (prior.box[1] + prior.box[3]) / 2
+      chosen = [all.reduce((best, cand) => {
+        const d = (c: { page: number; it: TextItem }) =>
+          Math.abs((c.it.y + c.it.h / 2) - cy) + (c.page === prior.page ? 0 : 200)
+        return d(cand) < d(best) ? cand : best
+      })]
+    }
+    // Group by page, one box per page around the matched runs.
+    const byPage = new Map<number, TextItem[]>()
+    for (const { page, it } of chosen) byPage.set(page, [...(byPage.get(page) ?? []), it])
+    const locs: FieldLocation[] = []
+    for (const [page, its] of byPage) {
+      const x0 = Math.min(...its.map(i => i.x))
+      const x1 = Math.max(...its.map(i => i.x + i.w))
+      const [gy0, gy1] = growToLines(Math.min(...its.map(i => i.y)), Math.max(...its.map(i => i.y + i.h)), (linesByPage[page] ?? []).map(l => l.pct), opts.lineTol)
+      locs.push({ page, box: padBox(opts.fullWidth ? 2 : x0, gy0, opts.fullWidth ? 98 : x1, gy1) })
+    }
+    if (locs.length) return locs
+  }
+  return []
+}
+
+// Words too generic to locate a check by on an insurance form.
+const STOPWORDS = new Set(['vehicle', 'vehicles', 'listed', 'certificate', 'policy', 'policies', 'insurance', 'insured', 'liability', 'coverage', 'holder', 'active', 'currently', 'must', 'match', 'matches', 'minimum', 'amount', 'with', 'that', 'this', 'every', 'each', 'deal'])
+
+/**
+ * Locate a check by its own distinctive values (a VIN, a make/model, a
+ * limit) anywhere in the document — how vehicle-schedule requirements find
+ * the ACORD 101 page. Every line containing enough of the tokens lights up.
+ */
+function tokenSearch(item: CheckItem, textByPage: TextByPage, linesByPage: Record<number, RuleLine[]>): FieldLocation[] {
+  const source = `${item.requirement?.minimum_limit ?? ''} ${item.requirement?.coverage_type ?? ''}`
+  const tokens = [...new Set(
+    source.split(/[^A-Za-z0-9$,.]+/)
+      .map(t => t.replace(/[$,.]/g, ''))
+      .filter(t => t.length >= 4 && !STOPWORDS.has(t.toLowerCase())),
+  )]
+  if (!tokens.length) return []
+  const locs: FieldLocation[] = []
+  for (const [pageStr, items] of Object.entries(textByPage)) {
+    const page = Number(pageStr)
+    const lines = (linesByPage[page] ?? []).map(l => l.pct)
+    for (const it of items) {
+      const s = normText(it.str)
+      if (s.length < 4) continue
+      const hits = tokens.filter(t => s.includes(normText(t)))
+      // Two corroborating tokens, or one long distinctive one (a VIN, a
+      // policy number) that doesn't blanket the page.
+      const strong = hits.some(t => t.length >= 7)
+      if (hits.length >= 2 || (hits.length === 1 && strong)) {
+        const [gy0, gy1] = growToLines(it.y, it.y + it.h, lines)
+        locs.push({ page, box: padBox(it.x, gy0, it.x + it.w, gy1) })
+      }
+    }
+  }
+  return locs.length <= 12 ? locs : [] // a token that lights half the page located nothing
+}
+
+/** Resolve every check to its document locations. */
+function resolveChecks(
+  items: CheckItem[],
+  coi: COIExtracted | null,
+  textByPage: TextByPage,
+  linesByPage: Record<number, RuleLine[]>,
+): FieldLocation[][] {
+  if (!coi) return items.map(() => [])
+  const coverages = (coi.coverages ?? []).filter(c => c?.type)
+  const hasText = Object.values(textByPage).some(a => a.length > 0)
+  const snapped = Object.keys(linesByPage).length ? snapLocations(coi, linesByPage) : coi
+  const snappedCovs = (snapped.coverages ?? []).filter(c => c?.type)
+  const fl = snapped.field_locations ?? {}
+
+  const regionNeedles: Record<RegionKey, (string | undefined)[]> = {
+    insured: [coi.named_insured, coi.usdot_number && `USDOT ${coi.usdot_number}`],
+    producer: [coi.producer],
+    insurers: [coi.insurance_company, coi.insurance_company?.split(',')[0]],
+    certificate_holder: [coi.certificate_holder],
+    additional_insured: [coi.additional_insured, coi.certificate_holder],
+    description_of_operations: ['DESCRIPTION OF OPERATIONS', coi.additional_terms?.slice(0, 40)],
+  }
+
+  const coverageLocs = (i: number): FieldLocation[] => {
+    const cov = coverages[i]
+    if (hasText) {
+      // The row LABEL comes first: policy numbers are often shared across
+      // rows on real certificates (one policy, several coverages).
+      const anchored = anchorByNeedles(
+        [cov.type, cov.policy_number, cov.each_occurrence_limit],
+        textByPage, linesByPage, cov.location, { fullWidth: true, lineTol: 9.5 },
+      )
+      if (anchored.length) return anchored
+    }
+    return snappedCovs[i]?.location ? [snappedCovs[i].location!] : []
+  }
+
+  return items.map(item => {
+    const rule = ruleFor(item, coverages)
+    switch (rule.type) {
+      case 'region': {
+        const prior = fl[rule.key]
+        if (hasText) {
+          const anchored = anchorByNeedles(
+            regionNeedles[rule.key], textByPage, linesByPage, prior,
+            { fullWidth: rule.key === 'description_of_operations' },
+          )
+          if (anchored.length) return anchored
+        }
+        // The model's (snapped) box outranks token search here: a region the
+        // anchor couldn't confirm on its own page shouldn't jump to a stray
+        // mention elsewhere in the document.
+        if (prior) return [prior]
+        return hasText ? tokenSearch(item, textByPage, linesByPage) : []
+      }
+      case 'coverage':
+        return coverageLocs(rule.index)
+      case 'dates': {
+        if (hasText) {
+          // Light the policy-period cells themselves: exact date strings.
+          const dates = [...new Set(coverages.flatMap(c => [c.effective_date, c.expiration_date]).filter(Boolean))] as string[]
+          const locs: FieldLocation[] = []
+          for (const [pageStr, pageItems] of Object.entries(textByPage)) {
+            const page = Number(pageStr)
+            for (const it of pageItems) {
+              const s = it.str.trim()
+              if (dates.some(d => s === d || s.startsWith(`${d} `) || s.endsWith(` ${d}`))) {
+                locs.push({ page, box: padBox(it.x, it.y - 0.3, it.x + it.w, it.y + it.h + 0.3) })
+              }
+            }
+          }
+          if (locs.length && locs.length <= 12) return locs
+        }
+        return coverages.map((_, i) => coverageLocs(i)).flat()
+      }
+      case 'search':
+        return hasText ? tokenSearch(item, textByPage, linesByPage) : []
+    }
+  })
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CoiSplitReview({
@@ -252,26 +461,47 @@ export default function CoiSplitReview({
   const [active, setActive] = useState<{ locs: FieldLocation[]; color: string } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [linesByPage, setLinesByPage] = useState<Record<number, RuleLine[]>>({})
-  const snapped = useMemo(
-    () => (coi && Object.keys(linesByPage).length ? snapLocations(coi, linesByPage) : coi),
-    [coi, linesByPage],
+  const [textByPage, setTextByPage] = useState<TextByPage>({})
+  const scrollBoxRef = useRef<HTMLDivElement>(null)
+  const resolved = useMemo(
+    () => resolveChecks(items, coi, textByPage, linesByPage),
+    [items, coi, textByPage, linesByPage],
   )
-  const matched = items.map(item => ({ item, locs: locationsFor(item, snapped) }))
 
   if (!doc && items.length === 0) return null
+
+  /** Bring the first highlight into view inside the document's scroll frame. */
+  const revealLoc = (loc: FieldLocation | undefined) => {
+    const box = scrollBoxRef.current
+    if (!box || !loc) return
+    const pageEl = box.querySelector<HTMLElement>(`[data-doc-page="${loc.page}"]`)
+    if (!pageEl) return
+    // Rect math, not offsetTop: the page wrappers' offsetParent is unrelated
+    // to the scroll frame.
+    const pageRect = pageEl.getBoundingClientRect()
+    const boxRect = box.getBoundingClientRect()
+    const target = pageRect.top - boxRect.top + box.scrollTop + (loc.box[1] / 100) * pageRect.height
+    const viewTop = box.scrollTop
+    const viewBottom = viewTop + box.clientHeight
+    if (target < viewTop + 30 || target > viewBottom - 80) {
+      box.scrollTo({ top: Math.max(0, target - box.clientHeight * 0.3), behavior: 'smooth' })
+    }
+  }
 
   const checkCards = (
     <div style={{ flex: 1, minWidth: 300 }}>
       <h2 style={h2()}>Requirement check</h2>
-      {matched.map(({ item, locs }, i) => {
+      {items.map((item, i) => {
+        const locs = resolved[i] ?? []
         const tag = TAG[item.status] ?? TAG.uncertain
         const interactive = !!doc && locs.length > 0
+        const activate = () => { setActive({ locs, color: tag.color }); revealLoc(locs[0]) }
         return (
           <div
             key={i}
-            onMouseEnter={interactive ? () => setActive({ locs, color: tag.color }) : undefined}
+            onMouseEnter={interactive ? activate : undefined}
             onMouseLeave={interactive ? () => setActive(null) : undefined}
-            onClick={interactive ? () => setActive(a => (a?.locs === locs ? null : { locs, color: tag.color })) : undefined}
+            onClick={interactive ? activate : undefined}
             style={{
               background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${tag.color}`,
               borderRadius: 12, padding: '13px 16px', marginBottom: 10,
@@ -327,7 +557,7 @@ export default function CoiSplitReview({
                 <ZoomButton label="+" disabled={zoom >= 2.5} onClick={() => setZoom(z => Math.min(2.5, +(z + 0.25).toFixed(2)))} />
               </div>
             </div>
-            <div style={{
+            <div ref={scrollBoxRef} style={{
               overflow: 'auto', maxHeight: 'calc(100vh - 120px)',
               border: `1px solid ${C.border}`, borderRadius: 8, background: C.cream, padding: 10,
             }}>
@@ -336,6 +566,7 @@ export default function CoiSplitReview({
                   doc={doc}
                   active={active}
                   onLines={(page, lines) => setLinesByPage(prev => ({ ...prev, [page]: lines }))}
+                  onText={(page, text) => setTextByPage(prev => ({ ...prev, [page]: text }))}
                 />
               </div>
             </div>
@@ -394,11 +625,12 @@ interface DocViewProps {
   doc: CoiDocFile
   active: { locs: FieldLocation[]; color: string } | null
   onLines: (page: number, lines: RuleLine[]) => void
+  onText: (page: number, text: TextItem[]) => void
 }
 
-function DocumentView({ doc, active, onLines }: DocViewProps) {
-  if (doc.mime === 'application/pdf') return <PdfView url={doc.url} active={active} onLines={onLines} />
-  return <ImageView doc={doc} active={active} onLines={onLines} />
+function DocumentView({ doc, active, onLines, onText }: DocViewProps) {
+  if (doc.mime === 'application/pdf') return <PdfView url={doc.url} active={active} onLines={onLines} onText={onText} />
+  return <ImageView doc={doc} active={active} onLines={onLines} onText={onText} />
 }
 
 function ImageView({ doc, active, onLines }: DocViewProps) {
@@ -422,7 +654,7 @@ function ImageView({ doc, active, onLines }: DocViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.url])
   return (
-    <div style={pageFrame()}>
+    <div style={pageFrame()} data-doc-page={1}>
       <img src={doc.url} alt={doc.fileName} style={{ display: 'block', width: '100%', height: 'auto' }} />
       <Highlights page={1} active={active} />
     </div>
@@ -431,11 +663,13 @@ function ImageView({ doc, active, onLines }: DocViewProps) {
 
 /**
  * Renders each PDF page to a canvas via pdf.js (client-only dynamic import so
- * the worker and DOM APIs never run on the server). Canvases render at 2x the
- * column width for sharp text, displayed at 100% width; highlight overlays
- * use percent coordinates so no pixel math is needed.
+ * the worker and DOM APIs never run on the server), reporting each page's
+ * detected rules and positioned text runs (both in percent-of-page units) for
+ * highlight anchoring. Canvases render at 2.5x the column width for sharp
+ * text at max zoom; highlight overlays use percent coordinates so no pixel
+ * math is needed.
  */
-function PdfView({ url, active, onLines }: { url: string } & Omit<DocViewProps, 'doc'>) {
+function PdfView({ url, active, onLines, onText }: { url: string } & Omit<DocViewProps, 'doc'>) {
   const holder = useRef<HTMLDivElement>(null)
   const [pageCount, setPageCount] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -460,7 +694,28 @@ function PdfView({ url, active, onLines }: { url: string } & Omit<DocViewProps, 
           canvas.width = viewport.width
           canvas.height = viewport.height
           await page.render({ canvas, viewport }).promise
-          if (!cancelled) onLines(p, detectLines(canvas))
+          if (cancelled) return
+          onLines(p, detectLines(canvas))
+          // Positioned text runs for anchor-by-value highlighting.
+          try {
+            const content = await page.getTextContent()
+            const items: TextItem[] = []
+            for (const raw of content.items as { str?: string; transform?: number[]; width?: number }[]) {
+              if (!raw.str?.trim() || !raw.transform) continue
+              const m = pdfjs.Util.transform(viewport.transform, raw.transform)
+              const fh = Math.hypot(m[2], m[3])
+              items.push({
+                str: raw.str,
+                x: (m[4] / viewport.width) * 100,
+                y: ((m[5] - fh) / viewport.height) * 100,
+                w: (((raw.width ?? 0) * scale) / viewport.width) * 100,
+                h: (fh / viewport.height) * 100,
+              })
+            }
+            if (!cancelled) onText(p, items)
+          } catch (e) {
+            console.error('PDF text layer read failed', e)
+          }
         }
       } catch (e) {
         console.error('PDF render failed', e)
@@ -483,7 +738,7 @@ function PdfView({ url, active, onLines }: { url: string } & Omit<DocViewProps, 
   return (
     <div ref={holder} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {Array.from({ length: Math.max(pageCount, 1) }, (_, i) => (
-        <div key={i} style={pageFrame()}>
+        <div key={i} style={pageFrame()} data-doc-page={i + 1}>
           <canvas data-page={i + 1} style={{ display: 'block', width: '100%', height: 'auto' }} />
           <Highlights page={i + 1} active={active} />
         </div>
