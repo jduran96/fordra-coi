@@ -209,3 +209,29 @@ survive JS-executing scanners too. Do not reintroduce auto-navigation or a
 plain link to the callback on that page. If a corporate user STILL reports
 dead links, their scanner is one of the rare form-submitting kind: mint a
 direct link from /admin/users and send it over a channel that does not scan.
+
+## 13. A submitted insurance standard silently vanishes from the checks
+
+**Symptom:** a standard the submitter entered (or added later) never appears in
+the requirement checks, insurer questions, or admin assessment — most often a
+line that OVERLAPS a broader one (seen live: a "Vehicle VIN" line swallowed by
+"Vehicle listed", VRF-1055).
+
+**Root cause:** free-form requirements parsing lets the model merge or drop
+lines it judges redundant; everything downstream (gap analysis, questions,
+assessment rows) only ever sees parsed requirements, so a merged line is
+unrecoverable.
+
+**Fix (in place — keep these contracts):**
+- The submitter's own standards parse via `parseRequirementLines`
+  (`lib/claude.ts`): STRICT one-requirement-per-numbered-line, with a
+  deterministic `parseStandardLine` fallback when the model breaks the
+  contract. Only uploaded standards DOCUMENTS (free-form prose) go through
+  the open `parseRequirements`.
+- `ensureAllRequirementsJudged` (`lib/extraction.ts`) appends any requirement
+  the gap model failed to judge to `uncertain` — never silently dropped.
+- Insurer questions regenerate from CURRENT requirements on every re-run,
+  keep mode included, so added/removed standards propagate.
+- The admin assessment appends normalized requirements missing from the saved
+  rows as Unconfirmed rows (label/notes match). Legacy assessments can show a
+  one-time renamed-row duplicate — remove one; never hide a standard instead.
