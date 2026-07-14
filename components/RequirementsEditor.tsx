@@ -8,7 +8,11 @@ import { C } from '@/lib/theme'
 /**
  * Shared requirements grid used by /app/settings templates, the admin
  * org-standard editor, and the new-verification form. Each row is one of:
- * - limit: a coverage with a fixed dollar minimum
+ * - limit (shown as "Amount"): a coverage with a fixed dollar threshold. In
+ *   insurance a stated amount is a minimum unless the description says
+ *   otherwise (a deductible cap, an exact value); the gap analysis reads the
+ *   direction from the description. The stored kind stays 'limit' — renaming
+ *   it would orphan every saved template row.
  * - variable: a coverage whose value changes per deal (a dollar amount, a
  *   make/model/VIN, etc.) — the Amount cell holds the human title ("Asset Sale
  *   Price"); normalizeRequirementRows turns it into an {asset_sale_price}
@@ -105,9 +109,9 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
               style={inputS}
             />
             <select value={kind} onChange={e => setKind(i, e.target.value as 'limit' | 'condition' | 'variable')}
-              title="Limit: fixed dollar minimum. Variable: value entered on each deal. Condition: no dollar amount, judged by its notes."
+              title="Amount: a fixed dollar threshold, read with the description (a minimum unless the description says otherwise). Variable: value entered on each deal. Condition: no dollar amount, judged by its notes."
               style={{ ...inputS, padding: '10px 8px', color: C.txt2 }}>
-              <option value="limit">Limit</option>
+              <option value="limit">Amount</option>
               <option value="variable">Variable</option>
               <option value="condition">Condition</option>
             </select>

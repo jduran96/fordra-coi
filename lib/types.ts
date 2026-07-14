@@ -11,7 +11,9 @@ export interface Requirement {
   minimum_limit: string;
   notes: string | null;
   /**
-   * 'limit' = numeric coverage minimum; 'condition' = qualitative check with no
+   * 'limit' = numeric dollar threshold, shown as "Amount" in the UI (a minimum
+   * unless the notes state otherwise — a cap, an exact value; the gap analysis
+   * reads the direction from the notes); 'condition' = qualitative check with no
    * dollar amount (loss payee, name match, endorsements); 'variable' = a dollar
    * amount that changes per deal — minimum_limit holds a {token} placeholder in
    * storage (asked for at submission), or the plain human title while being
@@ -92,6 +94,25 @@ export interface COIExtracted {
   /** Where key regions sit on the original document, for report highlighting.
    *  Older extractions lack it; re-run extraction to backfill. */
   field_locations?: Partial<Record<FieldLocationKey, FieldLocation | null>>;
+}
+
+/**
+ * Web-search verification of the insurance agent/producer contact printed on
+ * the COI (admin-only; stored in verifications.contact_check). "coi" is what
+ * the certificate says to call; "web" is what an independent web search found
+ * for that agency, with per-field match verdicts.
+ */
+export interface AgentContactCheck {
+  coi: { producer: string; insurer: string; contact: string; phone: string; email: string };
+  web: {
+    phone: string;
+    email: string;
+    phone_match: 'match' | 'mismatch' | 'not_found';
+    email_match: 'match' | 'mismatch' | 'not_found';
+    summary: string;
+    sources: string[];
+  };
+  checked_at: string;
 }
 
 export interface GapItem {

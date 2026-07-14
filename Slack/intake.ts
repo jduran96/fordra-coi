@@ -1,14 +1,18 @@
 /**
  * Deterministic slot-filling conversation for creating a verification from a
- * Slack DM. No LLM: files and text answers fill slots in a fixed order
- * (COI file, carrier name, insurance requirements, optional rate confirmation).
+ * Slack DM. No LLM in the conversation itself: files and text answers fill
+ * slots in a fixed order (COI file, carrier name, insurance requirements,
+ * optional rate confirmation). One exception at submit time: a free-text
+ * amendment to a saved standard is merged into its lines by
+ * applyStandardAmendment (deterministic append fallback).
  * Session state lives in slack_intake_sessions keyed by (team_id, channel_id).
  */
 import { randomUUID } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { uploadDocument, downloadDocument } from '@/lib/storage'
 import { createVerification, type VerificationFile } from '@/lib/verifications'
-import { listTemplates, resolveTemplate, type RequirementTemplate } from '@/lib/templates'
+import { editableRows, listTemplates, resolveTemplate, type RequirementTemplate } from '@/lib/templates'
+import { applyStandardAmendment } from '@/lib/claude'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { downloadSlackFile, postMessage } from './slack'
@@ -52,9 +56,17 @@ interface StoredFile {
 interface SessionState {
   carrier_name?: string
   requirements_text?: string
-  /** Saved standard selected by name; variables collected one at a time. */
+  /** Saved standard selected by menu number, "yes", or exact name; variables collected one at a time. */
   template_id?: string
   template_vars?: Record<string, string>
+  /** Free-text changes to the selected standard (the "edit" path); merged at submit. */
+  template_amendment?: string
+  /** Standards-step sub-state: 'pick' (choose by number, multi only), 'confirm'
+   * (yes / edit / new on one standard), 'edit' (next reply is the change),
+   * 'new' (next reply or doc is the new standards). Absent until the step starts. */
+  standards_mode?: 'pick' | 'confirm' | 'edit' | 'new'
+  /** The standard being confirmed or edited, before it becomes template_id. */
+  pending_template_id?: string
   files: StoredFile[]
 }
 
@@ -170,21 +182,58 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   // ---- Text answers fill the next empty slot (files from this message count).
   const hasCoi = state.files.some(f => f.kind === 'coi')
   const hasReqs = !!state.requirements_text || !!state.template_id || state.files.some(f => f.kind === 'requirements')
-  // File captions are not answers; only plain text messages fill slots.
-  if (text && !isSubmitWord(lower) && (!ev.files || ev.files.length === 0)) {
+  // Feedback for the standards re-ask below, set while parsing this message.
+  let standardsNote = ''
+  let remind = false
+  // File captions are not answers; only plain text messages fill slots. Submit
+  // words are ignored as answers EXCEPT at the standards step, where "yes"
+  // accepts the pending saved standard (never stored as free text; see below).
+  const awaitingStandards = hasCoi && !!state.carrier_name && !hasReqs
+  if (text && (!isSubmitWord(lower) || awaitingStandards) && (!ev.files || ev.files.length === 0)) {
     const t = selectedTemplate()
     if (hasCoi && !state.carrier_name) {
       state.carrier_name = text
     } else if (hasCoi && state.carrier_name && t && missingVars(t).length > 0) {
       state.template_vars = { ...(state.template_vars ?? {}), [missingVars(t)[0].key]: text }
-    } else if (hasCoi && state.carrier_name && !hasReqs) {
-      // Tolerate a copied *bold* name keeping its mrkdwn asterisks.
-      const replyName = lower.replace(/^\*+|\*+$/g, '').trim()
-      const match = templates.find(x => x.name.trim().toLowerCase() === replyName)
-      if (match) {
-        state.template_id = match.id
-        state.template_vars = {}
-      } else {
+    } else if (awaitingStandards) {
+      const { mode, pending } = resolveStandardsState(state, templates)
+      if (isRemind(lower)) {
+        remind = true
+      } else if (mode === 'pick') {
+        const pick = parseStandardPick(text, templates)
+        if (pick?.kind === 'choice') {
+          state.pending_template_id = pick.template.id
+          state.standards_mode = 'confirm'
+        } else if (pick?.kind === 'bad_number') {
+          standardsNote = `I do not have a standard number ${pick.number}. `
+        } else if (isNewWord(lower)) {
+          state.standards_mode = 'new'
+        } else {
+          standardsNote = 'Sorry, I did not catch that. '
+        }
+      } else if (mode === 'confirm' && pending) {
+        if (isYes(lower)) {
+          state.template_id = pending.id
+          state.template_vars = {}
+        } else if (isEditWord(lower)) {
+          state.standards_mode = 'edit'
+          state.pending_template_id = pending.id
+        } else if (isNewWord(lower)) {
+          state.standards_mode = 'new'
+        } else {
+          standardsNote = 'Sorry, I did not catch that. '
+        }
+      } else if (mode === 'edit' && pending) {
+        if (isNewWord(lower)) {
+          state.standards_mode = 'new'
+        } else if (!isSubmitWord(lower)) {
+          // The reply IS the change: use the pending standard with this edit.
+          state.template_id = pending.id
+          state.template_vars = {}
+          state.template_amendment = text
+        }
+      } else if (!isSubmitWord(lower)) {
+        // 'new': the reply IS the new standards.
         state.requirements_text = text
       }
     }
@@ -207,12 +256,48 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     return
   }
   if (!nowHasReqs) {
-    if (templates.length > 0) {
-      const names = templates.map(t => `*${t.name}*${t.is_default ? ' (default)' : ''}`).join(', ')
-      await say(
-        `Got it. Which of your saved insurance standards do you want to use? ${names}. ` +
-        'Copy ONE in your reply OR share new, custom standards.',
-      )
+    const { mode, pending } = resolveStandardsState(state, templates)
+    if (mode === 'pick') {
+      if (remind) {
+        await say(
+          `${templates.map(formatStandard).join('\n\n')}\n\n` +
+          '*Please reply with ONE number to select a standard.* You can also reply "new" to specify new standards.',
+        )
+      } else {
+        const menu = templates.map((t, i) => `${i + 1}. *${t.name}*${t.is_default ? ' (default)' : ''}`).join('\n')
+        await say(
+          `${standardsNote || 'Got it. '}You have ${templates.length} saved insurance standards:\n${menu}\n\n` +
+          '*Please reply with ONE number to select a standard.* You can also reply "remind me" to see what each standard includes, or "new" to send new standards instead.',
+        )
+      }
+    } else if (mode === 'confirm' && pending) {
+      if (remind) {
+        await say(
+          `${formatStandard(pending)}\n\n` +
+          'Do you want to use these? Reply "yes" if so. Otherwise, reply "edit" to make changes or "new" to specify new standards.',
+        )
+      } else {
+        const intro = templates.length === 1
+          ? `${standardsNote || 'Got it. '}Do you want to use your saved insurance standard "${pending.name}"?`
+          : `${standardsNote}You selected "${pending.name}". Do you want to use it?`
+        await say(
+          `${intro}\n` +
+          '• Reply "yes" to use it\n' +
+          '• Reply "remind me" to see this standard\n' +
+          '• Reply "edit" to change something about it\n' +
+          '• Reply "new" to send new standards',
+        )
+      }
+    } else if (mode === 'edit' && pending) {
+      if (remind) {
+        await say(`${formatStandard(pending)}\n\nWhat do you want to change about these? (explain in plain English)`)
+      } else {
+        await say('Sure thing. Please explain (in plain English) what you want to change about your saved standard. You can also reply "remind me" if you want me to repeat your saved standards list.')
+      }
+    } else if (templates.length > 0) {
+      // mode 'new' with saved standards: remind still shows them for reference.
+      const ask = 'Great. Please explain (in plain English) what standards you want to use OR upload a document.'
+      await say(remind ? `${templates.map(formatStandard).join('\n\n')}\n\n${ask}` : ask)
     } else {
       await say('Got it. What insurance coverage do you require? (write out an explanation in your reply OR upload a document with your insurance standards)')
     }
@@ -222,12 +307,15 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     const t = selectedTemplate()
     if (t && missingVars(t).length > 0) {
       const v = missingVars(t)[0]
-      await say(`Using insurance standard: *${t.name}*. What is the ${v.label.toLowerCase()} for this deal?`)
+      const edited = state.template_amendment ? ' (with your edits)' : ''
+      await say(`Using insurance standard: *${t.name}*${edited}. What is the ${v.label.toLowerCase()} for this deal?`)
       return
     }
   }
   if (!isSubmitWord(lower)) {
-    await say('Great. Final step: attach any other relevant documents (up to 5, optional) OR reply *done* to submit this verification.')
+    const t = selectedTemplate()
+    const ack = t ? `Using insurance standard: *${t.name}*${state.template_amendment ? ' (with your edits)' : ''}.` : 'Great.'
+    await say(`${ack} Final step: attach any other relevant documents (up to 5, optional) OR reply *done* to submit this verification.`)
     return
   }
 
@@ -245,7 +333,18 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
         carrier_name: state.carrier_name!,
         ...(state.template_vars ?? {}),
       })
-      requirements = [{ type: 'text', value: resolved.text }, { type: 'template', ...resolved.provenance }]
+      let value = resolved.text
+      if (state.template_amendment?.trim()) {
+        // Merge the amendment INTO the standard's lines: appending it raw
+        // would leave the amended line and its replacement as two conflicting
+        // requirements under the strict one-per-line parse.
+        const lines = await applyStandardAmendment(value.split('\n').map(l => l.trim()).filter(Boolean), state.template_amendment.trim())
+        value = lines.join('\n')
+      }
+      requirements = [
+        { type: 'text', value },
+        { type: 'template', ...resolved.provenance, ...(state.template_amendment?.trim() ? { amendment: state.template_amendment.trim() } : {}) },
+      ]
     } catch (e) {
       // Error detail stays in server logs; the user just needs a way out.
       console.error('slack intake: could not apply template', finalTemplate.id, e)
@@ -291,4 +390,62 @@ function classifyFile(state: SessionState, name: string): StoredFile['kind'] {
 
 function isSubmitWord(lower: string): boolean {
   return ['done', 'submit', 'yes', 'go', 'send it'].includes(lower)
+}
+
+// ─── Standards-step helpers ──────────────────────────────────────────────────
+
+/** Reply-word matchers for the standards step. All take the lowercased reply. */
+export const isYes = (s: string) => /^(?:yes|yep|yeah|y|sure|ok|okay|use it|use them)[.!]*$/.test(s)
+export const isRemind = (s: string) => /^(?:remind me|remind|show me|repeat)[.!]*$/.test(s)
+export const isEditWord = (s: string) => /^(?:edit|edit it|change|amend|make changes)[.!]*$/.test(s)
+export const isNewWord = (s: string) => /^(?:new|new standards?|new ones?|other|none|no|nope)[.!]*$/.test(s)
+
+/**
+ * Resolve the standards-step sub-state, tolerating stale session data (a
+ * pending standard that was deleted falls back to picking or free text).
+ */
+function resolveStandardsState(state: SessionState, templates: RequirementTemplate[]): {
+  mode: 'pick' | 'confirm' | 'edit' | 'new'
+  pending?: RequirementTemplate
+} {
+  const pending = templates.find(x => x.id === state.pending_template_id)
+    ?? (templates.length === 1 ? templates[0] : undefined)
+  let mode = state.standards_mode ?? (templates.length > 1 ? 'pick' : templates.length === 1 ? 'confirm' : 'new')
+  if ((mode === 'confirm' || mode === 'edit') && !pending) mode = templates.length > 1 ? 'pick' : 'new'
+  return { mode, pending }
+}
+
+/**
+ * Parse a reply in 'pick' mode: ONE menu number ("2", "2.", "#2") or the exact
+ * standard name. An out-of-menu number is reported so the user gets a
+ * correction; anything else returns null and the menu is asked again.
+ * Exported for tests only.
+ */
+export function parseStandardPick(text: string, templates: RequirementTemplate[]):
+  | { kind: 'choice'; template: RequirementTemplate }
+  | { kind: 'bad_number'; number: number }
+  | null {
+  // Tolerate a copied *bold* name keeping its mrkdwn asterisks.
+  const clean = text.replace(/^\*+|\*+$/g, '').trim()
+  const byName = templates.find(t => t.name.trim().toLowerCase() === clean.toLowerCase())
+  if (byName) return { kind: 'choice', template: byName }
+  const num = clean.match(/^#?(\d{1,2})[).:]?$/)
+  if (num) {
+    const n = Number(num[1])
+    if (n >= 1 && n <= templates.length) return { kind: 'choice', template: templates[n - 1] }
+    return { kind: 'bad_number', number: n }
+  }
+  return null
+}
+
+/** One saved standard, formatted for a "remind me" reply. Variable rows show
+ *  their human label ("Asset Sale Price") instead of the raw {token}. */
+function formatStandard(t: RequirementTemplate): string {
+  const lines = editableRows(t).map(r => {
+    const amount = r.minimum_limit.trim()
+    const notes = (r.notes ?? '').trim()
+    return `• ${r.coverage_type.trim()}${amount ? `: ${amount}` : ''}${notes ? ` (${notes})` : ''}`
+  })
+  if (t.details?.trim()) lines.push(`• Additional details: ${t.details.trim()}`)
+  return `*${t.name}*\n${lines.join('\n')}`
 }

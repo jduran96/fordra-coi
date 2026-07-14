@@ -9,6 +9,7 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
+import type { AgentContactCheck } from '@/lib/types'
 import PendingButton from '@/components/PendingButton'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
@@ -240,7 +241,15 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* 3 — Verification call notes */}
+        {/* 3 — Agent contact check: who the COI says to call vs the web */}
+        <section>
+          <SectionTitle>Agent contact check</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <ContactCheckCard check={(v.contact_check ?? null) as AgentContactCheck | null} extracted={!!v.coi_extracted} />
+          </div>
+        </section>
+
+        {/* 4 — Verification call notes */}
         <section>
           <SectionTitle>Verification call notes</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -272,7 +281,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* 4 — Assessment & publish */}
+        {/* 5 — Assessment & publish */}
         <section>
           <SectionTitle>Assessment</SectionTitle>
           <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.6, margin: '8px 0 10px' }}>
@@ -327,6 +336,90 @@ function InsurerCard({ coi }: { coi: COI }) {
       </dl>
     </div>
   )
+}
+
+/**
+ * Web verification of the agent/producer contact printed on the COI: the
+ * details the certificate says to call, side by side with the phone/email a
+ * web search could match to that agency. Populated by extraction
+ * (verifyInsurerContact); refreshed on every extraction run.
+ */
+function ContactCheckCard({ check, extracted }: { check: AgentContactCheck | null; extracted: boolean }) {
+  if (!check) {
+    return (
+      <div style={card()}>
+        <Muted>{extracted
+          ? 'No contact check available. Re-run extraction to verify the agent contact against the web (older extractions predate this check, and it is skipped when the COI names no agency).'
+          : 'Run extraction first; the agent contact on the COI is then checked against the web.'}</Muted>
+      </div>
+    )
+  }
+  const verdict = (m: 'match' | 'mismatch' | 'not_found') =>
+    m === 'match' ? { label: 'Matches web', color: '#2e7d32' }
+    : m === 'mismatch' ? { label: 'Differs from web', color: '#c62828' }
+    : { label: 'Not found online', color: C.txt3 }
+  const chip = (m: 'match' | 'mismatch' | 'not_found') => {
+    const vd = verdict(m)
+    return (
+      <span style={{
+        marginLeft: 8, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+        color: vd.color, background: `color-mix(in oklch, ${vd.color} 10%, transparent)`,
+        padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' as const, verticalAlign: 'middle',
+      }}>
+        {vd.label}
+      </span>
+    )
+  }
+  return (
+    <div style={card()}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div>
+          <SectionTitle small>On the COI</SectionTitle>
+          <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 14, rowGap: 7 }}>
+            <FactRow label="Agency (producer)" value={check.coi.producer || check.coi.insurer || '—'} />
+            <FactRow label="Contact name" value={check.coi.contact || '—'} />
+            <FactRow label="Phone" value={check.coi.phone || '—'} />
+            <FactRow label="Email" value={check.coi.email || '—'} />
+          </dl>
+        </div>
+        <div>
+          <SectionTitle small>Found by web search</SectionTitle>
+          <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 14, rowGap: 7 }}>
+            <dt style={{ fontSize: 13, color: C.txt3 }}>Phone</dt>
+            <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500 }}>
+              {check.web.phone || '—'}{chip(check.web.phone_match)}
+            </dd>
+            <dt style={{ fontSize: 13, color: C.txt3 }}>Email</dt>
+            <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500, overflowWrap: 'anywhere' }}>
+              {check.web.email || '—'}{chip(check.web.email_match)}
+            </dd>
+          </dl>
+        </div>
+      </div>
+      {check.web.summary && (
+        <p style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, margin: '14px 0 0', paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+          {check.web.summary}
+        </p>
+      )}
+      {check.web.sources.length > 0 && (
+        <p style={{ fontSize: 12, color: C.txt3, margin: '10px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+          Sources:{' '}
+          {check.web.sources.map((s, i) => (
+            <span key={i}>
+              {i > 0 && ' · '}
+              <a href={s} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(s)}</a>
+            </span>
+          ))}
+          {' · '}checked {pacificDateTime(check.checked_at)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Bare hostname for compact source links; falls back to the raw string. */
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
 
 function FactRow({ label, value }: { label: string; value: string }) {
