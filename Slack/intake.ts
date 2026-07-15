@@ -67,6 +67,9 @@ interface SessionState {
   standards_mode?: 'pick' | 'confirm' | 'edit' | 'new'
   /** The standard being confirmed or edited, before it becomes template_id. */
   pending_template_id?: string
+  /** Set once "remind me" is used: later prompts stop offering it (the user
+   * has already seen their standards in this request). */
+  reminded?: boolean
   files: StoredFile[]
 }
 
@@ -205,6 +208,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       const { mode, pending } = resolveStandardsState(state, templates)
       if (isRemind(lower)) {
         remind = true
+        state.reminded = true
       } else if (mode === 'pick') {
         const pick = parseStandardPick(text, templates)
         if (pick?.kind === 'choice') {
@@ -279,8 +283,11 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     } else if (mode === 'confirm' && pending) {
       if (remind) {
         await say(
-          `${formatStandard(pending)}\n\n` +
-          'Do you want to use these? Reply "yes" if so. Otherwise, reply "edit" to make changes or "new" to specify new standards.',
+          `${formatStandard(pending)}\n\n\n` +
+          'Do you want to use these?\n' +
+          '• Reply "yes" if so\n' +
+          '• Reply "edit" to make changes\n' +
+          '• Reply "new" to specify new standards',
         )
       } else {
         const intro = templates.length === 1
@@ -298,7 +305,10 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       if (remind) {
         await say(`${formatStandard(pending)}\n\nWhat do you want to change about these? (explain in plain English)`)
       } else {
-        await say('Sure thing. Please explain (in plain English) what you want to change about your saved standard. You can also reply "remind me" if you want me to repeat your saved standards list.')
+        await say(
+          'Sure thing. Please explain (in plain English) what you want to change about your saved standard.' +
+          (state.reminded ? '' : ' You can also reply "remind me" if you want me to repeat your saved standards list.'),
+        )
       }
     } else if (templates.length > 0) {
       // mode 'new' with saved standards: remind still shows them for reference.
