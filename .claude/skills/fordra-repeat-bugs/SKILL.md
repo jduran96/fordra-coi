@@ -235,3 +235,20 @@ unrecoverable.
 - The admin assessment appends normalized requirements missing from the saved
   rows as Unconfirmed rows (label/notes match). Legacy assessments can show a
   one-time renamed-row duplicate — remove one; never hide a standard instead.
+
+## 14. Slack intake: one reply word triggers TWO steps in the same turn
+
+**Symptom:** a single Slack reply advances the intake conversation two steps
+at once — seen live: replying "yes" to confirm the saved standard ALSO
+submitted the verification, skipping the optional-documents prompt.
+
+**Root cause:** the intake handler is one linear pass per message. A reply
+consumed by an earlier step (the standards state machine) still falls through
+to later gates in the same invocation, and "yes" is both the standard-confirm
+word and a member of isSubmitWord (done/submit/yes/go/send it).
+
+**Fix (in place — keep the contract):** any message consumed as an answer to
+the standards step sets `standardsConsumedReply` in `Slack/intake.ts`, and
+the final submit gate treats such a message as never being the submit word.
+When adding new reply keywords to any intake step, check they don't collide
+with isSubmitWord (or any later gate) for the same message.
