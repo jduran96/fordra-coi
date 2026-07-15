@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { renameOrg, deleteOrg } from '../actions'
 import { C } from '@/lib/theme'
+import PaginatedTable from '@/components/PaginatedTable'
 
 export interface OrgRow {
   id: string
@@ -48,27 +49,22 @@ export default function OrgsTable({ orgs }: { orgs: OrgRow[] }) {
 
   return (
     <div>
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              <th style={th}>Org name</th><th style={th}>Members</th><th style={th}>Verifications</th><th style={th} />
-            </tr>
-          </thead>
-          <tbody>
-            {orgs.length === 0 && (
-              <tr><td style={{ ...td, color: C.txt3 }} colSpan={4}>No orgs yet.</td></tr>
-            )}
-            {orgs.map(o => (
-              <OrgTableRow
-                key={o.id} org={o} pending={pending}
-                confirming={confirmId === o.id}
-                onRename={rename} onDelete={remove}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PaginatedTable
+        head={
+          <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <th style={th}>Org name</th><th style={th}>Members</th><th style={th}>Verifications</th><th style={th} />
+          </tr>
+        }
+        rows={orgs.length === 0
+          ? [<tr key="empty"><td style={{ ...td, color: C.txt3 }} colSpan={4}>No orgs yet.</td></tr>]
+          : orgs.map(o => (
+            <OrgTableRow
+              key={o.id} org={o} pending={pending}
+              confirming={confirmId === o.id}
+              onRename={rename} onDelete={remove}
+            />
+          ))}
+      />
       {msg.error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: '10px 0 0' }}>{msg.error}</p>}
       {msg.ok && <p style={{ fontSize: 13, color: C.success, fontFamily: C.sans, margin: '10px 0 0' }}>{msg.ok}</p>}
     </div>

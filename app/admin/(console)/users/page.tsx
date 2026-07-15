@@ -8,6 +8,7 @@ import InviteUserModal from './InviteUserModal'
 import CreateOrgModal from './CreateOrgModal'
 import OrgsTable from './OrgsTable'
 import SigninLinkButton from './SigninLinkButton'
+import PaginatedTable from '@/components/PaginatedTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,28 +58,24 @@ export default async function UsersPage() {
         </div>
       </div>
 
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              <th style={th()}>User email</th><th style={th()}>Role</th><th style={th()}>Org</th><th style={th()}>Last activity</th><th style={th()} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(p => (
-              <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={td()}>{p.email}</td>
-                {/* Real admin access is the ADMIN_EMAIL allowlist, not profiles.role
-                    (which nothing ever promotes) — display the same truth auth uses. */}
-                <td style={{ ...td(), textTransform: 'capitalize' }}>{isAdminEmail(p.email) ? 'admin' : 'customer'}</td>
-                <td style={{ ...td(), color: p.org_id ? C.txt : C.txt3 }}>{p.orgs?.name ?? 'unassigned'}</td>
-                <td style={{ ...td(), color: C.txt3 }}>{fmt(lastSeen.get(p.id))}</td>
-                <td style={{ ...td(), textAlign: 'right' }}><SigninLinkButton email={p.email} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PaginatedTable
+        head={
+          <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <th style={th()}>User email</th><th style={th()}>Role</th><th style={th()}>Org</th><th style={th()}>Last activity</th><th style={th()} />
+          </tr>
+        }
+        rows={rows.map(p => (
+          <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
+            <td style={td()}>{p.email}</td>
+            {/* Real admin access is the ADMIN_EMAIL allowlist, not profiles.role
+                (which nothing ever promotes) — display the same truth auth uses. */}
+            <td style={{ ...td(), textTransform: 'capitalize' }}>{isAdminEmail(p.email) ? 'admin' : 'customer'}</td>
+            <td style={{ ...td(), color: p.org_id ? C.txt : C.txt3 }}>{p.orgs?.name ?? 'unassigned'}</td>
+            <td style={{ ...td(), color: C.txt3 }}>{fmt(lastSeen.get(p.id))}</td>
+            <td style={{ ...td(), textAlign: 'right' }}><SigninLinkButton email={p.email} /></td>
+          </tr>
+        ))}
+      />
 
       <h2 style={{ fontFamily: C.serif, fontSize: 20, fontWeight: 400, margin: '28px 0 12px' }}>Organizations</h2>
       <OrgsTable orgs={orgRows} />

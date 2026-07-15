@@ -3,8 +3,20 @@ import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth-helpers'
 import { C, statusColor } from '@/lib/theme'
 import { pacificDate } from '@/lib/dates'
+import PaginatedTable from '@/components/PaginatedTable'
 
 export const dynamic = 'force-dynamic'
+
+interface Row {
+  id: string
+  display_id: string
+  carrier_name: string
+  status: string
+  case_status: string | null
+  source: string | null
+  created_at: string
+  published_at: string | null
+}
 
 export default async function PortalDashboard() {
   const profile = await getProfile()
@@ -37,28 +49,57 @@ export default async function PortalDashboard() {
       {!rows?.length ? (
         <FirstRunWelcome />
       ) : (
-        <div style={card(0)}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                <th style={th()}>ID</th><th style={th()}>Carrier</th><th style={th()}>Status</th><th style={th()}>Source</th><th style={th()}>Submitted</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
-                  <td style={td()}>{r.carrier_name}</td>
-                  <td style={td()}><Pill status={r.case_status === 'rejected' ? 'rejected' : r.status} /></td>
-                  <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
-                  <td style={{ ...td(), color: C.txt3 }}>{pacificDate(r.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        (() => {
+          const all = rows as Row[]
+          const rejected = all.filter(r => r.case_status === 'rejected')
+          const completed = all.filter(r => r.case_status !== 'rejected' && r.status === 'completed')
+          const pending = all.filter(r => r.case_status !== 'rejected' && r.status !== 'completed')
+          return (
+            <>
+              <VerificationSection title="Completed" rows={completed} emptyText="No completed reports" first />
+              <VerificationSection title="Pending" rows={pending} emptyText="No pending verifications" />
+              {/* Rejected requests are rare: no title, no table when empty. */}
+              {rejected.length > 0 && <VerificationSection title="Other" rows={rejected} />}
+            </>
+          )
+        })()
       )}
     </div>
+  )
+}
+
+function VerificationSection({ title, rows, emptyText, first }: {
+  title: string
+  rows: Row[]
+  emptyText?: string
+  first?: boolean
+}) {
+  return (
+    <>
+      <h2 style={{ fontFamily: C.serif, fontSize: 20, color: C.txt, margin: first ? '0 0 12px' : '32px 0 12px', fontWeight: 400 }}>
+        {title}
+      </h2>
+      {rows.length === 0 ? (
+        <p style={{ fontFamily: C.sans, fontSize: 13.5, color: C.txt3, margin: 0 }}>{emptyText}</p>
+      ) : (
+        <PaginatedTable
+          head={
+            <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <th style={th()}>ID</th><th style={th()}>Carrier</th><th style={th()}>Status</th><th style={th()}>Source</th><th style={th()}>Submitted</th>
+            </tr>
+          }
+          rows={rows.map(r => (
+            <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
+              <td style={td()}>{r.carrier_name}</td>
+              <td style={td()}><Pill status={r.case_status === 'rejected' ? 'rejected' : r.status} /></td>
+              <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
+              <td style={{ ...td(), color: C.txt3 }}>{pacificDate(r.created_at)}</td>
+            </tr>
+          ))}
+        />
+      )}
+    </>
   )
 }
 

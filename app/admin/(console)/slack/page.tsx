@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { C } from '@/lib/theme'
 import InstallLinkForm from './InstallLinkForm'
 import { revokeInstallation, setAllowedUsers } from './actions'
+import PaginatedTable from '@/components/PaginatedTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,18 +41,15 @@ export default async function SlackPage() {
       <InstallLinkForm orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))} />
 
       <h2 style={{ fontFamily: C.serif, fontSize: 20, fontWeight: 400, margin: '28px 0 12px' }}>Connected workspaces</h2>
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              <th style={th()}>Workspace</th><th style={th()}>Org</th><th style={th()}>Allowed users</th><th style={th()}>Status</th><th style={th()} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr><td style={{ ...td(), color: C.txt3 }} colSpan={5}>No workspaces connected yet.</td></tr>
-            )}
-            {rows.map(i => (
+      <PaginatedTable
+        head={
+          <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <th style={th()}>Workspace</th><th style={th()}>Org</th><th style={th()}>Allowed users</th><th style={th()}>Status</th><th style={th()} />
+          </tr>
+        }
+        rows={rows.length === 0
+          ? [<tr key="empty"><td style={{ ...td(), color: C.txt3 }} colSpan={5}>No workspaces connected yet.</td></tr>]
+          : rows.map(i => (
               <tr key={i.id} style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={td()}>{i.team_name ?? i.team_id}</td>
                 <td style={td()}>{i.orgs?.name ?? i.org_id}</td>
@@ -79,9 +77,7 @@ export default async function SlackPage() {
                 </td>
               </tr>
             ))}
-          </tbody>
-        </table>
-      </div>
+      />
       <p style={{ color: C.txt3, fontSize: 12, marginTop: 10 }}>
         Allowed users: comma-separated Slack user IDs (blank allows the whole workspace). Unauthorized
         users are told their ID in the bot&apos;s reply so you can paste it here.

@@ -5,6 +5,7 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { internalFlagLabel, internalFlagColor } from '@/lib/internal-flag'
 import { normalizeActivity, activityPillText } from '@/lib/admin-activity'
+import PaginatedTable from '@/components/PaginatedTable'
 import { pacificDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
@@ -71,37 +72,33 @@ export default async function AdminQueue() {
 
 function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished?: boolean }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
-            <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-              <td style={td()}>
-                <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
-              </td>
-              <td style={td()}>{r.orgs?.name ?? '—'}</td>
-              <td style={td()}>{r.carrier_name}</td>
-              <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
-              <td style={td()}>
-                <AdminStatusPill row={r} />
-              </td>
-              <td style={td()}>
-                <AdminActivityPill row={r} />
-              </td>
-              <td style={{ ...td(), color: C.txt3 }}>
-                {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <PaginatedTable
+      head={
+        <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
+          <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
+        </tr>
+      }
+      rows={rows.map(r => (
+        <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
+          <td style={td()}>
+            <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
+          </td>
+          <td style={td()}>{r.orgs?.name ?? '—'}</td>
+          <td style={td()}>{r.carrier_name}</td>
+          <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
+          <td style={td()}>
+            <AdminStatusPill row={r} />
+          </td>
+          <td style={td()}>
+            <AdminActivityPill row={r} />
+          </td>
+          <td style={{ ...td(), color: C.txt3 }}>
+            {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
+          </td>
+        </tr>
+      ))}
+    />
   )
 }
 
