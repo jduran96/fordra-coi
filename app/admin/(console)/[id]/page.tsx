@@ -11,11 +11,13 @@ import { pacificDateTime } from '@/lib/dates'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
 import type { AgentContactCheck } from '@/lib/types'
 import PendingButton from '@/components/PendingButton'
+import AdminTabs from '@/components/AdminTabs'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
-import { runExtraction, runContactCheck, saveCallNote, saveAssessment, deleteCallNote, setInternalFlag } from '../actions'
+import { runExtraction, runContactCheck, saveCallNote, saveAssessment, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
+import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
-import InternalFlagPicker from './InternalFlagPicker'
+import ActivityLog from './ActivityLog'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -146,15 +148,22 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>{adminStatus}</span>
         <span style={{ marginLeft: 'auto' }}>
-          <InternalFlagPicker initialValue={(v.internal_flag as string | null) ?? null} action={setInternalFlag.bind(null, id)} />
+          <ActivityLog
+            entries={normalizeActivity(v.admin_activity)}
+            logAction={logAdminActivity.bind(null, id)}
+            deleteAction={deleteAdminActivity.bind(null, id)}
+          />
         </span>
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 22px' }}>
         {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-        {/* 1 — Uploads */}
+      {/* Tabbed layout: panels stay mounted (hidden) so form state survives
+          switching; the assessment form renders below the panels so its
+          Save draft / Reject / Publish footer is visible under every tab. */}
+      <AdminTabs tabs={[
+        { label: 'Submissions', content: (
         <section>
           <SectionTitle>Uploads</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -211,8 +220,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             )}
           </div>
         </section>
+        ) },
 
-        {/* 2 — OCR Analysis */}
+        { label: 'OCR', content: (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <SectionTitle>OCR Analysis</SectionTitle>
@@ -233,15 +243,27 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {!v.coi_extracted && <Muted>Not extracted yet. Run extraction to parse the COI & requirements.</Muted>}
-            {coi && <InsurerCard coi={coi} />}
             <JsonCard title="Requirements (normalized)" data={v.requirements_normalized} />
             <JsonCard title="Coverage gap analysis" data={v.gap_analysis} />
             <JsonCard title="COI extracted" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} />
+          </div>
+        </section>
+        ) },
+
+        { label: 'Calls', content: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        {/* Who to call (from the COI) and what to ask them */}
+        <section>
+          <SectionTitle>Call prep</SectionTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {coi
+              ? <InsurerCard coi={coi} />
+              : <Muted>Run extraction (OCR tab) to pull the insurer contact off the COI.</Muted>}
             <QuestionsCard questions={(Array.isArray(v.agent_questions) ? v.agent_questions : []) as string[]} extracted={!!v.coi_extracted} />
           </div>
         </section>
 
-        {/* 3 — Agent contact check: who the COI says to call vs the web.
+        {/* Agent contact check: who the COI says to call vs the web.
             Its own button, not part of extraction: each run spends web
             searches, so it only happens when the admin asks for it. */}
         <section>
@@ -260,7 +282,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* 4 — Verification call notes */}
+        {/* Verification call notes */}
         <section>
           <SectionTitle>Verification call notes</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -291,27 +313,35 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             )}
           </div>
         </section>
+        </div>
+        ) },
 
-        {/* 5 — Assessment & publish */}
-        <section>
+        { label: 'Analysis', content: (
+        <div>
           <SectionTitle>Assessment</SectionTitle>
-          <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.6, margin: '8px 0 10px' }}>
+          <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>
             Set a verdict and evidence for each requirement, write the summary, then save a draft
             or publish. Publishing releases exactly this assessment to the customer.
           </p>
-          {/* Keyed by the analysis content: when extraction or a saved draft
-              changes the verdict data, the form remounts with fresh rows;
-              unrelated updates (e.g. call notes) leave in-progress edits alone. */}
-          <AssessmentForm
-            key={createHash('md5').update(JSON.stringify([v.final_report, v.gap_analysis])).digest('hex')}
-            action={saveAssessment.bind(null, id)}
-            items={reviewItems}
-            summaryDefault={summaryDefault}
-            published={!!v.published_at}
-            rejected={v.case_status === 'rejected'}
-          />
-        </section>
-      </div>
+        </div>
+        ) },
+      ]}
+      analysisForm={
+        /* Keyed by the analysis content: when extraction or a saved draft
+           changes the verdict data, the form remounts with fresh rows;
+           unrelated updates (e.g. call notes) leave in-progress edits alone.
+           Rendered below the tab panels: the rows + summary show on the
+           Analysis tab, the Save draft / Reject / Publish footer everywhere. */
+        <AssessmentForm
+          key={createHash('md5').update(JSON.stringify([v.final_report, v.gap_analysis])).digest('hex')}
+          action={saveAssessment.bind(null, id)}
+          items={reviewItems}
+          summaryDefault={summaryDefault}
+          published={!!v.published_at}
+          rejected={v.case_status === 'rejected'}
+        />
+      }
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
 import { ConditionChip } from '@/components/RequirementsEditor'
+import { useAnalysisBodyVisible } from '@/components/AdminTabs'
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
 interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string }
@@ -29,6 +30,10 @@ export default function AssessmentForm({
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
   const [error, setError] = useState('')
+  // Inside AdminTabs the body (rows + summary) belongs to the Analysis tab;
+  // the action footer below stays visible under every tab. Hidden, not
+  // unmounted: in-progress edits and the hidden inputs must keep submitting.
+  const bodyVisible = useAnalysisBodyVisible()
   // Published and rejected cases are closed: the form is read-only and the
   // only action is Edit Status, which reopens the case into the review queue.
   const closed = published || rejected
@@ -55,6 +60,7 @@ export default function AssessmentForm({
   return (
     <form action={submit} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <input type="hidden" name="row_count" value={rows.length} />
+      <div style={{ display: bodyVisible ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
       {rows.map((item, i) => (
         <div key={item.key} style={{ paddingBottom: 14, borderBottom: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input type="hidden" name={`req_${i}_requirement`} value={JSON.stringify(item.requirement)} />
@@ -103,6 +109,7 @@ export default function AssessmentForm({
           disabled={closed}
           style={{ ...input(), width: '100%', resize: 'vertical' }}
         />
+      </div>
       </div>
       {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
       {closed ? (

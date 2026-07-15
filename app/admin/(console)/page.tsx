@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { internalFlagLabel, internalFlagColor } from '@/lib/internal-flag'
+import { normalizeActivity, activityPillText } from '@/lib/admin-activity'
 import { pacificDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +24,7 @@ interface Row {
   insurance_contact: unknown
   final_report: unknown
   internal_flag: string | null
+  admin_activity: unknown
   orgs: { name: string } | null
 }
 
@@ -34,7 +36,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, internal_flag, orgs(name)')
+    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, internal_flag, admin_activity, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -90,7 +92,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
                 <AdminStatusPill row={r} />
               </td>
               <td style={td()}>
-                <InternalFlagPill value={r.internal_flag} />
+                <AdminActivityPill row={r} />
               </td>
               <td style={{ ...td(), color: C.txt3 }}>
                 {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
@@ -111,12 +113,24 @@ function AdminStatusPill({ row }: { row: Row }) {
   )
 }
 
-function InternalFlagPill({ value }: { value: string | null }) {
-  const label = internalFlagLabel(value)
+/**
+ * Per-kind activity counts from the admin activity log, e.g. "VM ×3 · Called".
+ * Rows last touched before the log existed fall back to the legacy
+ * single-value internal_flag pill.
+ */
+function AdminActivityPill({ row }: { row: Row }) {
+  const entries = normalizeActivity(row.admin_activity)
+  const text = activityPillText(entries)
+  if (text) {
+    return (
+      <span style={{ fontSize: 12, fontWeight: 600, color: C.txt2, background: `color-mix(in oklch, ${C.txt2} 10%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{text}</span>
+    )
+  }
+  const label = internalFlagLabel(row.internal_flag)
   if (!label) return <span style={{ color: C.txt3 }}>—</span>
-  const color = internalFlagColor(value)
+  const color = internalFlagColor(row.internal_flag)
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20 }}>{label}</span>
+    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{label}</span>
   )
 }
 

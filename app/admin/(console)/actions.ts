@@ -10,6 +10,7 @@ import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline } from '@/lib/extraction'
 import { verifyInsurerContact } from '@/lib/claude'
+import { activityKind, adminInitials } from '@/lib/admin-activity'
 import type { COIExtracted } from '@/lib/types'
 
 /**
@@ -252,22 +253,48 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   revalidatePath(`/admin/${verificationId}`)
 }
 
-const INTERNAL_FLAG_VALUES = ['called_jd', 'called_em', 'voicemail_jd', 'voicemail_em']
-
 /**
- * Set (or clear) the internal admin organization flag on a verification —
- * who called / left a voicemail. Admin-only bookkeeping: plain column, no
- * grants to `authenticated`, not in my_verifications, so it never reaches
- * the customer app or the /v1 API.
+ * Append one entry to the admin activity log: what happened (called /
+ * voicemail / emailed / note), stamped server-side with the time and the
+ * admin's initials from the session. Admin-only bookkeeping (column has no
+ * grants to `authenticated`); the append is an atomic RPC so concurrent
+ * admins can never drop each other's entries.
  */
-export async function setInternalFlag(verificationId: string, flag: string): Promise<{ error?: string } | void> {
-  await requireAdmin()
-  const value = INTERNAL_FLAG_VALUES.includes(flag) ? flag : null
+export async function logAdminActivity(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
+  const admin = await requireAdmin()
+  const kind = activityKind(String(formData.get('kind') || ''))
+  if (!kind) return { error: 'Pick what happened.' }
+  const note = String(formData.get('note') || '').trim().slice(0, 500)
   const supabase = createServiceClient()
-  const { error } = await supabase.from('verifications').update({ internal_flag: value }).eq('id', verificationId)
+  const { error } = await supabase.rpc('admin_append_activity', {
+    vid: verificationId,
+    kind,
+    actor: adminInitials(admin.email ?? ''),
+    note,
+  })
   if (error) {
-    console.error('setInternalFlag failed', error)
+    console.error('logAdminActivity failed', error)
     return { error: 'Could not save. Please retry.' }
+  }
+  // The legacy single-value internal_flag has no clear control anymore (the
+  // old picker's "none" option was it); logging real activity supersedes and
+  // clears it so a stale/wrong legacy pill can't linger in the queue.
+  await supabase.from('verifications').update({ internal_flag: null }).eq('id', verificationId)
+  revalidatePath('/admin')
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/** Remove one activity entry, identified by its timestamp. Admin only. */
+export async function deleteAdminActivity(verificationId: string, entryAt: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const { error } = await supabase.rpc('admin_delete_activity', {
+    vid: verificationId,
+    entry_at: entryAt,
+  })
+  if (error) {
+    console.error('deleteAdminActivity failed', error)
+    return { error: 'Could not delete. Please retry.' }
   }
   revalidatePath('/admin')
   revalidatePath(`/admin/${verificationId}`)
