@@ -3,7 +3,60 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-14 — visual COI report)
+## ⏱️ START HERE (as of 2026-07-15 — Amount semantics, Slack standards flow, admin tabs + activity log, contact check, pagination)
+
+**2026-07-14/15 session (all deployed to prod, commits d3a9f93..6f607c5):**
+
+- **"Limit" requirement type is now shown as "Amount"** (`RequirementsEditor`;
+  the STORED kind stays `'limit'` — renaming it would orphan saved template
+  rows). Gap analysis (`analyzeGaps` prompt) treats a dollar amount as a
+  MINIMUM unless the requirement's notes state otherwise (cap / exact value /
+  range), and the requirements-parsing prompt preserves direction qualifiers
+  ("no more than", "maximum deductible") in notes. No `app_config` prompt
+  overrides exist, so code defaults are live (repeat-bug #7 checked).
+- **Slack standards selection is a state machine** (`Slack/intake.ts`:
+  `standards_mode` = pick/confirm/edit/new + `pending_template_id`): multiple
+  saved standards → numbered menu ("reply with ONE number"); single standard →
+  yes / edit / new bullets; "remind me" works in every mode (formatted
+  standards + bulleted follow-up question) and is offered only once per
+  request (`state.reminded`). Free-text edits are merged INTO the standard's
+  lines at submit by `applyStandardAmendment` (`lib/claude.ts`, deterministic
+  append fallback — appending raw would create contradictory lines under the
+  strict one-per-line parse; amendment recorded in template provenance).
+  Typos/unknown replies re-ask instead of silently becoming the standards.
+  ⚠️ Repeat-bug #14: a reply consumed by the standards step must never also
+  count as a submit word ("yes" double-fired and auto-submitted once —
+  `standardsConsumedReply` guards the final gate).
+- **Agent contact check** (design partner: the agent on a COI isn't always
+  legit): `verifyInsurerContact` (`lib/claude.ts`, server-side `web_search`
+  tool, ≤5 searches ≈ $0.10-0.20/run) compares the COI's producer contact
+  against the public web. Admin-only `contact_check` column (migration 0019,
+  no `authenticated` grant); its own **Run contact check** button on the
+  admin Calls tab — deliberately NOT part of extraction (cost).
+- **Admin detail page is tabbed**: Submissions / OCR / Calls / Analysis
+  (`components/AdminTabs.tsx`). Panels stay MOUNTED (CSS-hidden) so form
+  state survives switching; the assessment form renders BELOW the panels with
+  its body gated to the Analysis tab via context, so its Save draft / Reject /
+  Publish footer is the page-global action bar (browser-verified: save-draft
+  submitted from another tab preserves all rows — hidden inputs still post).
+- **Admin activity log** replaces the fixed internal_flag dropdown:
+  `verifications.admin_activity` append-only [{at, kind, by, note}]
+  (migrations 0020 + 0021 — microsecond `clock_timestamp()` so concurrent
+  appends can't collide; atomic RPCs `admin_append_activity`/
+  `admin_delete_activity`, service-role only). Header pill shows the rollup
+  ("3 voicemails over 3 days · 1 call", `lib/admin-activity.ts`); queue Admin
+  column shows per-kind counts with legacy `internal_flag` fallback (legacy
+  flag is cleared whenever an activity is logged — the old "none" option was
+  its only clear). Initials from session email: JD/EM mapped explicitly.
+- **/app verification list has sections**: Completed (top, empty text "No
+  completed reports") → Pending ("No pending verifications") → Other
+  (rejected; title+table hidden when empty). FirstRunWelcome still owns the
+  zero-verifications case.
+- **`components/PaginatedTable.tsx`**: shared 5-rows/page client pagination
+  (pager bottom-right, hidden at ≤1 page), applied to the /app sections,
+  admin queue, admin users + orgs tables, and Slack workspaces table.
+  Client-side slicing — move it into the query if a table passes a few
+  hundred rows.
 
 **2026-07-14 follow-up (standards → checks guarantee):** a Dakota standard
 ("Vehicle VIN") vanished from VRF-1055's checks because the free-form
@@ -276,9 +329,12 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
   would wipe verdicts). Save draft / Reject / Publish appear only on open cases; draft and
   reject both clear `published_at` (customers only ever see the last published assessment),
   and reject shows the customer a red Rejected pill + "rejected by a Fordra admin" notice
-  (list + detail read `case_status` from the view). Detail page stacks vertically:
-  **Uploads** (signed URLs) → **OCR Analysis** (Run extraction; insurer-contact card + raw
-  JSON) → **Verification call notes** (append/delete via atomic RPCs
+  (list + detail read `case_status` from the view). Detail page is **TABBED since
+  2026-07-15** (see START HERE): Submissions → OCR → Calls → Analysis, global action
+  footer under every tab. Content per tab:
+  **Uploads** (signed URLs) → **OCR Analysis** (Run extraction; raw JSON) →
+  **Calls** (insurer-contact card, insurer questions, agent contact check,
+  call notes — append/delete via atomic RPCs
   `admin_append_call_note`/`admin_delete_call_note`, migration `0016`, service-role only —
   never read-modify-write `call_notes`; per-note two-click Delete button; failed saves keep
   the dialog open with the text) → **Assessment** (per-requirement verdict
@@ -543,10 +599,8 @@ the owner's earlier decision, left as-is.
   (`verifications.created_by` → profiles.email) when their verification is published.
   Blocked on the same SMTP setup as magic-link email (currently owner-only delivery);
   API/Slack submissions have no `created_by`, so decide the fallback (org members? skip?).
-- **Customer dashboard: completed vs pending split** (2026-07-13): the `/app` verification
-  list should clearly delineate completed requests from pending ones (separate sections or
-  grouping, not just a status chip per row). Customer-visible status comes from
-  `my_verifications` / `published_at`, NOT `lib/admin-status.ts` (admin-only derivation).
+- ~~Customer dashboard: completed vs pending split~~ **Built 2026-07-15** (Completed /
+  Pending / Other sections on /app — see START HERE).
 
 ---
 
