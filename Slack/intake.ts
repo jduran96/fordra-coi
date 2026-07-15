@@ -185,6 +185,11 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   // Feedback for the standards re-ask below, set while parsing this message.
   let standardsNote = ''
   let remind = false
+  // True when this message was an answer to the standards question. "yes" is
+  // both the confirm word AND a submit word, so without this flag confirming
+  // a standard fell straight through the final isSubmitWord gate and
+  // submitted the verification, skipping the optional-documents step.
+  let standardsConsumedReply = false
   // File captions are not answers; only plain text messages fill slots. Submit
   // words are ignored as answers EXCEPT at the standards step, where "yes"
   // accepts the pending saved standard (never stored as free text; see below).
@@ -196,6 +201,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     } else if (hasCoi && state.carrier_name && t && missingVars(t).length > 0) {
       state.template_vars = { ...(state.template_vars ?? {}), [missingVars(t)[0].key]: text }
     } else if (awaitingStandards) {
+      standardsConsumedReply = true
       const { mode, pending } = resolveStandardsState(state, templates)
       if (isRemind(lower)) {
         remind = true
@@ -312,7 +318,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
       return
     }
   }
-  if (!isSubmitWord(lower)) {
+  if (!isSubmitWord(lower) || standardsConsumedReply) {
     const t = selectedTemplate()
     const ack = t ? `Using insurance standard: *${t.name}*${state.template_amendment ? ' (with your edits)' : ''}.` : 'Great.'
     await say(`${ack} Final step: attach any other relevant documents (up to 5, optional) OR reply *done* to submit this verification.`)
