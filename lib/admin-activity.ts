@@ -31,7 +31,8 @@ export function activityKind(value: string): AdminActivityKind | null {
 
 /** Session email -> the initials shown on log entries. Extend the map as admins join. */
 const ADMIN_INITIALS: Record<string, string> = {
-  // Add exact emails here for custom initials, e.g. 'brother@example.com': 'EM'
+  'jullianalfonso96@gmail.com': 'JD',
+  'emman0621@gmail.com': 'EM',
 }
 export function adminInitials(email: string): string {
   const e = email.trim().toLowerCase()
