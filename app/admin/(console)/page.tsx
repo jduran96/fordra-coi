@@ -3,8 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
-import { internalFlagLabel, internalFlagColor } from '@/lib/internal-flag'
-import { normalizeActivity, activityPillText } from '@/lib/admin-activity'
+import { normalizeActivity, ACTIVITY_KINDS } from '@/lib/admin-activity'
 import PaginatedTable from '@/components/PaginatedTable'
 import { pacificDateTime } from '@/lib/dates'
 
@@ -24,7 +23,6 @@ interface Row {
   manual_notes: string | null
   insurance_contact: unknown
   final_report: unknown
-  internal_flag: string | null
   admin_activity: unknown
   orgs: { name: string } | null
 }
@@ -37,7 +35,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, internal_flag, admin_activity, orgs(name)')
+    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -110,24 +108,14 @@ function AdminStatusPill({ row }: { row: Row }) {
   )
 }
 
-/**
- * Per-kind activity counts from the admin activity log, e.g. "VM ×3 · Called".
- * Rows last touched before the log existed fall back to the legacy
- * single-value internal_flag pill.
- */
+/** Most recent entry from the admin activity log, e.g. "VM · JD". Blank when nothing is logged. */
 function AdminActivityPill({ row }: { row: Row }) {
   const entries = normalizeActivity(row.admin_activity)
-  const text = activityPillText(entries)
-  if (text) {
-    return (
-      <span style={{ fontSize: 12, fontWeight: 600, color: C.txt2, background: `color-mix(in oklch, ${C.txt2} 10%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{text}</span>
-    )
-  }
-  const label = internalFlagLabel(row.internal_flag)
-  if (!label) return <span style={{ color: C.txt3 }}>—</span>
-  const color = internalFlagColor(row.internal_flag)
+  const last = entries[entries.length - 1]
+  if (!last) return null
+  const pill = ACTIVITY_KINDS.find(k => k.value === last.kind)?.pill ?? last.kind
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{label}</span>
+    <span style={{ fontSize: 12, fontWeight: 600, color: C.txt2, background: `color-mix(in oklch, ${C.txt2} 10%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{`${pill} · ${last.by}`}</span>
   )
 }
 
