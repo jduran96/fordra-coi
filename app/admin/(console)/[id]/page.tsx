@@ -9,12 +9,14 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
-import type { AgentContactCheck } from '@/lib/types'
+import type { AgentContactCheck, ContactNote, OnlineListingStatus } from '@/lib/types'
+import { contactValue } from '@/lib/contact-notes'
 import PendingButton from '@/components/PendingButton'
 import AdminTabs from '@/components/AdminTabs'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
-import { runExtraction, runContactCheck, saveCallNote, saveAssessment, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
+import NoteCheckControls from '@/components/NoteCheckControls'
+import { runExtraction, runContactCheck, runNoteContactCheck, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
 import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import ActivityLog from './ActivityLog'
@@ -27,7 +29,6 @@ export const maxDuration = 300
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
 interface GapItem { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string }
 interface Gap { met?: GapItem[]; not_met?: GapItem[]; uncertain?: GapItem[] }
-interface CallNote { at: string; text: string; contact?: { name?: string; phone?: string; email?: string } }
 interface COI {
   named_insured?: string
   named_insured_address?: string
@@ -115,7 +116,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   // Closed (published or rejected) cases are read-only, call notes included,
   // until reopened via Edit Status. Mirrored server-side in the actions.
   const caseIsClosed = !!v.published_at || v.case_status === 'rejected'
-  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]
+  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
   const coi = (v.coi_extracted ?? null) as COI | null
 
   // The review rows: prefer the admin's saved assessment, then the automated
@@ -282,32 +283,90 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* Verification call notes */}
+        {/* Insurer contact log (calls, emails, texts) */}
         <section>
-          <SectionTitle>Verification call notes</SectionTitle>
+          <SectionTitle>Insurer Contact Log</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-            {notes.length === 0 && <Muted>No calls logged yet.</Muted>}
-            {/* One card per call: who/when header on top, the note spread across
-                the full width beneath — long summaries and transcripts stay
-                readable (and printable) instead of being squeezed into a column. */}
-            {notes.slice().reverse().map((n, i) => (
+            {notes.length === 0 && <Muted>No contact logs yet.</Muted>}
+            {/* One card per contact: who/when/how header on top, the summary
+                and transcript spread across the full width beneath — long
+                write-ups stay readable instead of being squeezed into a column. */}
+            {notes.slice().reverse().map((n, i) => {
+              const phone = contactValue(n.contact?.phone)
+              const email = contactValue(n.contact?.email)
+              return (
               <div key={i} style={card()}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', paddingBottom: 10, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: C.txt }}>{n.contact?.name?.trim() || 'Unnamed contact'}</span>
+                  {n.contact_method?.trim() && (
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt2, background: C.paper, border: `1px solid ${C.border}`, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                      {n.contact_method.trim()}
+                    </span>
+                  )}
                   <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(n.at)}</span>
-                  {n.contact?.phone?.trim() && <span style={{ fontSize: 13, color: C.txt2, whiteSpace: 'nowrap' }}>{n.contact.phone.trim()}</span>}
-                  {n.contact?.email?.trim() && <span style={{ fontSize: 13, color: C.txt2 }}>{n.contact.email.trim()}</span>}
                   {!caseIsClosed && (
                     <span style={{ marginLeft: 'auto' }}>
                       <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 13.5, color: C.txt, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere' }}>{n.text}</div>
+                {/* This log's cited phone/email + their web verification.
+                    Rendered above the summary, same order the customer sees. */}
+                {(phone || email) && (
+                  <div style={{ paddingBottom: 10, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+                    <SectionTitle small>Contact verification</SectionTitle>
+                    <p style={{ fontSize: 13, color: C.txt3, margin: 0 }}>
+                      {phone && (
+                        <span>Phone: <span style={{ color: C.txt }}>{phone}</span><NoteStatusChip status={n.contact_check?.phone_status} /></span>
+                      )}
+                      {phone && email && <span style={{ margin: '0 8px' }}>|</span>}
+                      {email && (
+                        <span>Email: <span style={{ color: C.txt }}>{email}</span><NoteStatusChip status={n.contact_check?.email_status} /></span>
+                      )}
+                    </p>
+                    {n.contact_check?.blurb && (
+                      <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>{n.contact_check.blurb}</p>
+                    )}
+                    {n.contact_check && (
+                      <p style={{ fontSize: 12, color: C.txt3, margin: '6px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                        {n.contact_check.sources.length > 0 && (
+                          <>Sources: {n.contact_check.sources.map(hostOf).join(' · ')} · </>
+                        )}
+                        checked {pacificDateTime(n.contact_check.checked_at)}
+                      </p>
+                    )}
+                    {!caseIsClosed && (
+                      /* Keyed by content: React 19 resets uncontrolled fields
+                         to the STALE render's defaultValue after a form
+                         action; remounting on fresh data shows what saved. */
+                      <NoteCheckControls
+                        key={JSON.stringify(n.contact_check ?? null)}
+                        check={n.contact_check ?? null}
+                        hasContactField={!!(phone || email)}
+                        runAction={runNoteContactCheck.bind(null, id, n.at)}
+                        saveAction={saveNoteCheck.bind(null, id, n.at)}
+                      />
+                    )}
+                  </div>
+                )}
+                {/* Summary: sanitized rich text for new notes, plain text for
+                    legacy { text } entries. */}
+                {n.summary_html ? (
+                  <div style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, overflowWrap: 'anywhere' }}
+                    dangerouslySetInnerHTML={{ __html: n.summary_html }} />
+                ) : (n.summary_text || n.text) ? (
+                  <div style={{ fontSize: 13.5, color: C.txt, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere' }}>{n.summary_text || n.text}</div>
+                ) : null}
+                {n.transcript?.trim() && (
+                  <details style={{ marginTop: (n.summary_html || n.summary_text || n.text) ? 10 : 0 }}>
+                    <summary style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>View transcript</summary>
+                    <div style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere', marginTop: 8, paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>{n.transcript.trim()}</div>
+                  </details>
+                )}
               </div>
-            ))}
+            )})}
             {caseIsClosed ? (
-              <Muted>This case is closed. Click Edit Status below to reopen it before logging calls.</Muted>
+              <Muted>This case is closed. Click Edit Status below to reopen it before adding contact logs.</Muted>
             ) : (
               <CallNoteForm action={saveCallNote.bind(null, id)} />
             )}
@@ -382,8 +441,10 @@ function InsurerCard({ coi }: { coi: COI }) {
 /**
  * Web verification of the agent/producer contact printed on the COI: the
  * details the certificate says to call, side by side with the phone/email a
- * web search could match to that agency. Populated by extraction
- * (verifyInsurerContact); refreshed on every extraction run.
+ * web search could match to that agency. NOT part of extraction — populated
+ * only by the Run contact check button (each run costs web searches).
+ * Admin-only; what customers see is the per-log verification in the
+ * Insurer Contact Log below.
  */
 function ContactCheckCard({ check, extracted }: { check: AgentContactCheck | null; extracted: boolean }) {
   if (!check) {
@@ -461,6 +522,28 @@ function ContactCheckCard({ check, extracted }: { check: AgentContactCheck | nul
 /** Bare hostname for compact source links; falls back to the raw string. */
 function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
+}
+
+/**
+ * Status tag on a contact log's phone/email. No status = the field exists but
+ * no online check has covered it yet ("Not checked online"); blank fields
+ * never reach this component at all.
+ */
+function NoteStatusChip({ status }: { status?: OnlineListingStatus }) {
+  const s = status === 'verified' ? { label: 'Verified online', color: C.ok as string }
+    : status === 'differs' ? { label: 'Differs from online', color: C.warn as string }
+    : status === 'not_found' ? { label: 'Not found online', color: C.txt3 as string }
+    : { label: 'Not checked online', color: C.txt3 as string }
+  return (
+    <span style={{
+      marginLeft: 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+      color: s.color, background: status ? `color-mix(in oklch, ${s.color} 11%, transparent)` : 'transparent',
+      border: status ? 'none' : `1px dashed ${C.border}`,
+      padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' as const, verticalAlign: 'middle',
+    }}>
+      {s.label}
+    </span>
+  )
 }
 
 function FactRow({ label, value }: { label: string; value: string }) {

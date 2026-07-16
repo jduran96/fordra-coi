@@ -252,3 +252,20 @@ the standards step sets `standardsConsumedReply` in `Slack/intake.ts`, and
 the final submit gate treats such a message as never being the submit word.
 When adding new reply keywords to any intake step, check they don't collide
 with isSubmitWord (or any later gate) for the same message.
+
+## 15. Admin form shows stale values right after a successful save
+
+**Symptom:** an admin edit form (uncontrolled inputs/selects with defaultValue
++ a server action) saves correctly — DB has the new value — but the form
+snaps back to the OLD values after submit, so the admin thinks the save
+failed and retries.
+
+**Root cause:** React 19 resets uncontrolled form fields to their
+defaultValue after a form action completes, and that defaultValue comes from
+the STALE render; when the revalidated RSC payload lands, React does not
+re-apply a changed defaultValue to existing DOM inputs.
+
+**Fix:** key the client form component by its data so fresh data remounts it
+with correct defaults, e.g. `<ContactCheckPublicForm key={JSON.stringify(check)} ...>`
+(same pattern AssessmentForm uses on the admin detail page). Alternative:
+controlled inputs.

@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
 import { C, statusColor } from '@/lib/theme'
-import { pacificDateTime } from '@/lib/dates'
+import { pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import CoiSplitReview from '@/components/CoiSplitReview'
 import { parseStandardLine } from '@/lib/templates'
-import type { COIExtracted } from '@/lib/types'
+import { contactValue } from '@/lib/contact-notes'
+import type { COIExtracted, ContactNote, OnlineListingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,6 @@ interface GapItem {
   evidence?: string
 }
 interface Gap { met?: GapItem[]; not_met?: GapItem[]; uncertain?: GapItem[] }
-interface CallNote { at: string; text: string; contact?: { name?: string; phone?: string; email?: string } }
 
 function gapItems(g: Gap | null | undefined): GapItem[] {
   if (!g) return []
@@ -129,7 +129,7 @@ export default async function CustomerVerification({ params }: { params: Promise
               laid over the certificate, then the calls that resolved them,
               then the submitted documents as the record. */}
           <CoiSplitReview coi={coi} items={items} doc={coiDoc} />
-          <CallNotesCard notes={(Array.isArray(v.call_notes) ? v.call_notes : []) as CallNote[]} />
+          <CallNotesCard notes={(Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]} />
           <SubmittedCard docs={docsWithUrls} requirementsText={requirementsText} templateName={templateName} />
         </div>
       )}
@@ -138,30 +138,88 @@ export default async function CustomerVerification({ params }: { params: Promise
 }
 
 /**
- * Calls made to the insurer during review, newest first. Stacked entries, not a
- * table: transcripts can run long, so the text gets the card's full width and
- * nothing is clamped or scrolled — the whole thing prints.
+ * Log of contacts made with the insurer during review (calls, emails, texts),
+ * newest first. Each entry carries its own Contact verification: the phone and
+ * email cited in THAT log, web-checked against the issuing producer. A field
+ * with no check yet reads "Not checked online"; a blank field gets no tag at
+ * all. Stacked entries, not a table: summaries and transcripts can run long,
+ * so the text gets the card's full width.
  */
-function CallNotesCard({ notes }: { notes: CallNote[] }) {
+function CallNotesCard({ notes }: { notes: ContactNote[] }) {
   return (
     <div style={cardC()}>
-      <h2 style={h2C()}>Insurer call notes</h2>
+      <h2 style={h2C()}>Insurer Contact Log</h2>
       {notes.length === 0 ? (
-        <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>No calls made.</p>
+        <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>No contact logs.</p>
       ) : (
         notes.slice().reverse().map((n, i) => {
-          const who = [n.contact?.name, n.contact?.phone, n.contact?.email]
-            .map(s => s?.trim()).filter(Boolean).join(' · ')
+          const method = n.contact_method?.trim()
+          // Legacy notes store the whole write-up in `text`: render it as the summary.
+          const summaryPlain = (n.summary_text || n.text || '').trim()
+          const transcript = n.transcript?.trim()
+          const name = contactValue(n.contact?.name)
+          const phone = contactValue(n.contact?.phone)
+          const email = contactValue(n.contact?.email)
+          const check = n.contact_check
           return (
             <div key={i} style={{
               padding: '14px 0',
               borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
             }}>
-              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
-                <span style={{ fontWeight: 600, color: C.txt }}>{pacificDateTime(n.at)}</span>
-                {who && <span style={{ color: C.txt3 }}> · {who}</span>}
+              <p style={{ fontSize: 13.5, color: C.txt, margin: '0 0 5px' }}>
+                <span style={{ fontWeight: 600 }}>{method ? `Contacted via ${method}` : 'Contacted'}</span>
+                {` on: ${pacificDateAtTime(n.at)}`}
               </p>
-              <p style={{ fontSize: 13.5, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: 0 }}>{n.text}</p>
+              {name && (
+                <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 10px' }}>
+                  Contact Name: <span style={{ fontWeight: 600, color: C.txt }}>{name}</span>
+                </p>
+              )}
+              {/* This log's cited phone/email, web-checked. Sits between the
+                  contact name and the summary (owner spec 2026-07-16). */}
+              {(phone || email) && (
+                <div style={{ margin: '0 0 12px' }}>
+                  <p style={eyebrow()}>Contact verification</p>
+                  <p style={{ fontSize: 12.5, color: C.txt3, margin: check?.blurb ? '0 0 6px' : 0 }}>
+                    {phone && (
+                      <span>Phone: <span style={{ color: C.txt2 }}>{phone}</span><StatusChip status={check?.phone_status} /></span>
+                    )}
+                    {phone && email && <span style={{ margin: '0 7px' }}>|</span>}
+                    {email && (
+                      <span>Email: <span style={{ color: C.txt2 }}>{email}</span><StatusChip status={check?.email_status} /></span>
+                    )}
+                  </p>
+                  {check?.blurb && (
+                    <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '0 0 4px' }}>{check.blurb}</p>
+                  )}
+                  {check && (
+                    <p style={{ fontSize: 12, color: C.txt3, margin: 0, lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                      {check.sources.length > 0 && (
+                        <>Sources: {check.sources.map(hostOf).filter(Boolean).join(' · ')} · </>
+                      )}
+                      checked {pacificDateTime(check.checked_at)}
+                    </p>
+                  )}
+                </div>
+              )}
+              <p style={eyebrow()}>Conversation summary</p>
+              {n.summary_html ? (
+                <div style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '0 0 10px', overflowWrap: 'anywhere' }}
+                  dangerouslySetInnerHTML={{ __html: n.summary_html }} />
+              ) : (
+                <p style={{ fontSize: 13.5, color: summaryPlain ? C.txt2 : C.txt3, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '0 0 10px' }}>
+                  {summaryPlain || 'Not available'}
+                </p>
+              )}
+              <p style={eyebrow()}>Raw transcript</p>
+              {transcript ? (
+                <details>
+                  <summary style={{ fontSize: 13, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>View transcript</summary>
+                  <p style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '8px 0 0', paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>{transcript}</p>
+                </details>
+              ) : (
+                <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>Not available</p>
+              )}
             </div>
           )
         })
@@ -169,6 +227,38 @@ function CallNotesCard({ notes }: { notes: CallNote[] }) {
     </div>
   )
 }
+
+/**
+ * Colored validation chip on a log's phone/email. No status = the field
+ * exists but no online check has covered it yet; blank fields never reach
+ * this component, so nothing wears a tag it did not earn.
+ */
+function StatusChip({ status }: { status?: OnlineListingStatus }) {
+  const s = status === 'verified' ? { label: 'Verified online', color: C.ok }
+    : status === 'differs' ? { label: 'Differs from online', color: C.warn }
+    : status === 'not_found' ? { label: 'Not found online', color: C.txt3 }
+    : { label: 'Not checked online', color: C.txt3 }
+  return (
+    <span style={{
+      marginLeft: 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
+      color: s.color, background: status ? `color-mix(in oklch, ${s.color} 11%, transparent)` : 'transparent',
+      border: status ? 'none' : `1px dashed ${C.border}`,
+      padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', verticalAlign: 'middle',
+    }}>
+      {s.label}
+    </span>
+  )
+}
+
+/** Bare hostname for compact source attribution; falls back to the raw string. */
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
+}
+
+const eyebrow = () => ({
+  fontFamily: C.mono, fontSize: 10.5, fontWeight: 600 as const, letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const, color: C.txt3, margin: '0 0 5px',
+})
 
 /**
  * What the customer originally submitted: links to each uploaded document plus

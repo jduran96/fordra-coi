@@ -9,9 +9,11 @@ import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline } from '@/lib/extraction'
-import { verifyInsurerContact } from '@/lib/claude'
+import { verifyInsurerContact, verifyLoggedContact } from '@/lib/claude'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
-import type { COIExtracted } from '@/lib/types'
+import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
+import { contactValue } from '@/lib/contact-notes'
+import type { COIExtracted, ContactNote, NoteContactCheck, OnlineListingStatus } from '@/lib/types'
 
 /**
  * Run OCR/extraction on a verification's documents and store the parsed analysis.
@@ -68,12 +70,109 @@ export async function runContactCheck(verificationId: string) {
 }
 
 /**
- * Save the insurer contact + append a timestamped call note.
- * call_notes is an append-only jsonb array: [{ at, text, contact }]. The
- * append happens in the admin_append_call_note RPC (migration 0016) as one
- * atomic UPDATE: no read-modify-write, so a bad read or a concurrent save can
- * never wipe or drop notes. Failures return { error } so the dialog keeps the
- * typed note instead of clearing it.
+ * Web-verify ONE contact log's cited phone/email against the issuing
+ * producer's public listings (per-log: numbers and emails can change between
+ * calls, and each new log can be checked on its own). Blank fields are never
+ * searched — no tokens spent on nothing. The result is embedded in the note
+ * itself, so publish gating covers it via call_notes.
+ */
+export async function runNoteContactCheck(verificationId: string, noteAt: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
+  const { data: v, error } = await supabase.from('verifications')
+    .select('coi_extracted, call_notes')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v) {
+    console.error('runNoteContactCheck: read failed', error)
+    return { error: 'Could not load this verification. Please retry.' }
+  }
+  const coi = (v.coi_extracted ?? null) as COIExtracted | null
+  const producer = (coi?.producer ?? '').trim()
+  const insurer = (coi?.insurance_company ?? '').trim()
+  if (!producer && !insurer) {
+    return { error: 'Run extraction first: the check searches the producer named on the COI.' }
+  }
+  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  const note = notes.find(n => n.at === noteAt)
+  if (!note) return { error: 'This log entry no longer exists.' }
+  const phone = contactValue(note.contact?.phone)
+  const email = contactValue(note.contact?.email)
+  if (!phone && !email) {
+    return { error: 'This log has no phone or email to verify.' }
+  }
+  const check = await verifyLoggedContact({ producer, insurer, name: note.contact?.name, phone, email })
+  if (!check) return { error: 'The web check came back empty. Please retry.' }
+  const { error: werr } = await supabase.rpc('admin_set_note_check', {
+    vid: verificationId,
+    note_at: noteAt,
+    check_data: check,
+  })
+  if (werr) {
+    console.error('runNoteContactCheck: write failed', werr)
+    return { error: 'Could not save the check. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Save the admin's edits to one log's contact verification: flip the
+ * phone/email statuses or reword the customer-facing blurb. Only available
+ * once a check has run on that log.
+ */
+export async function saveNoteCheck(verificationId: string, noteAt: string, formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
+  const { data: v, error } = await supabase.from('verifications')
+    .select('call_notes')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v) {
+    console.error('saveNoteCheck: read failed', error)
+    return { error: 'Could not save. Please retry.' }
+  }
+  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  const note = notes.find(n => n.at === noteAt)
+  if (!note?.contact_check) return { error: 'Run the online check first.' }
+
+  const parseStatus = (raw: FormDataEntryValue | null): OnlineListingStatus =>
+    raw === 'verified' || raw === 'differs' ? raw : 'not_found'
+  const next: NoteContactCheck = {
+    ...note.contact_check,
+    // A status is only ever set for a field the check covered: the form
+    // renders a select per checked field only.
+    ...(formData.has('phone_status') ? { phone_status: parseStatus(formData.get('phone_status')) } : {}),
+    ...(formData.has('email_status') ? { email_status: parseStatus(formData.get('email_status')) } : {}),
+    blurb: String(formData.get('blurb') || '').trim(),
+    edited_at: new Date().toISOString(),
+  }
+  const { error: werr } = await supabase.rpc('admin_set_note_check', {
+    vid: verificationId,
+    note_at: noteAt,
+    check_data: next,
+  })
+  if (werr) {
+    console.error('saveNoteCheck: write failed', werr)
+    return { error: 'Could not save. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Save the insurer contact + append a timestamped contact note.
+ * call_notes is an append-only jsonb array of
+ * { at, contact_method?, summary_html?, summary_text?, transcript?, contact }
+ * (legacy entries carry { at, text, contact }). The append happens in the
+ * admin_append_contact_note RPC (migration 0022) as one atomic UPDATE: no
+ * read-modify-write, so a bad read or a concurrent save can never wipe or
+ * drop notes. Failures return { error } so the dialog keeps the typed note
+ * instead of clearing it.
  */
 /**
  * Closed = published or rejected. Closed cases are read-only everywhere (the
@@ -113,20 +212,34 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
     }
   }
 
-  const text = String(formData.get('note') || '').trim()
-  if (text) {
+  const contact_method = String(formData.get('contact_method') || '').trim()
+  // The editor only emits b/i/u paragraphs, but the HTML crosses a form
+  // boundary: re-sanitize before storing, and derive the plain-text copy the
+  // PDF renders.
+  const summary_html = sanitizeSummaryHtml(String(formData.get('summary_html') || ''))
+  const summary_text = summaryPlainText(summary_html)
+  const transcript = String(formData.get('transcript') || '').trim()
+
+  if (summary_text || transcript) {
     // The RPC snapshots the contact into the note (form contact if given,
     // otherwise the saved insurer contact) so each entry records who was
-    // spoken to even if the contact fields change later.
-    const { error } = await supabase.rpc('admin_append_call_note', {
+    // reached even if the contact fields change later.
+    const { error } = await supabase.rpc('admin_append_contact_note', {
       vid: verificationId,
-      note_text: text,
+      contact_method,
+      summary_html,
+      summary_text,
+      transcript,
       contact: hasContact ? insurance_contact : null,
     })
     if (error) {
       console.error('saveCallNote: append failed', error)
       return { error: 'Could not save. Your note is still here. Please retry.' }
     }
+  } else if (!hasContact) {
+    // Nothing to append and no contact to update: tell the admin instead of
+    // silently closing the dialog with nothing saved.
+    return { error: 'Add a summary or a transcript before saving.' }
   }
   revalidatePath(`/admin/${verificationId}`)
 }

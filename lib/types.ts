@@ -115,6 +115,48 @@ export interface AgentContactCheck {
   checked_at: string;
 }
 
+/**
+ * One insurer contact note (verifications.call_notes entry). Notes are
+ * append-only; the shape grew on 2026-07-16 when "call notes" became
+ * "insurer contact notes". Legacy entries carry only { at, text, contact } —
+ * render `text` as a plain-text summary. summary_html is sanitized at write
+ * time (admin-only action, strict tag allowlist); summary_text is its
+ * plain-text derivation for the PDF and fallbacks.
+ */
+export interface ContactNote {
+  at: string;
+  /** Free text: "email", "call", "text"... */
+  contact_method?: string;
+  summary_html?: string;
+  summary_text?: string;
+  transcript?: string;
+  /** Legacy note body (pre contact-notes split). */
+  text?: string;
+  contact?: { name?: string; phone?: string; email?: string };
+  /** Per-log web verification of THIS entry's cited phone/email. */
+  contact_check?: NoteContactCheck;
+}
+
+export type OnlineListingStatus = 'verified' | 'not_found' | 'differs';
+
+/**
+ * Web verification of one contact log's cited phone/email, embedded in the
+ * note itself (phones and emails can change between logs, so each entry gets
+ * its own check). A status key is present ONLY when that field was actually
+ * checked — a blank field is never searched and never gets a tag. Rides
+ * inside call_notes, so publish gating covers it automatically. blurb is
+ * customer-facing; the admin can edit statuses and blurb after a run.
+ */
+export interface NoteContactCheck {
+  phone_status?: OnlineListingStatus;
+  email_status?: OnlineListingStatus;
+  blurb: string;
+  sources: string[];
+  checked_at: string;
+  /** Set when an admin saves an edit over the run's result. */
+  edited_at?: string;
+}
+
 export interface GapItem {
   requirement: Requirement;
   status: 'met' | 'not_met' | 'uncertain';

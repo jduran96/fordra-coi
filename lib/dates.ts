@@ -16,6 +16,14 @@ export function pacificDateTime(iso: string): string {
   })} (Pacific US)`
 }
 
+/** '7/10/2026 at 6:00 PM (Pacific US)' — the contact-note "Contacted on" line. */
+export function pacificDateAtTime(iso: string): string {
+  const d = new Date(iso)
+  const date = d.toLocaleDateString('en-US', { timeZone: PACIFIC })
+  const time = d.toLocaleTimeString('en-US', { timeZone: PACIFIC, hour: 'numeric', minute: '2-digit' })
+  return `${date} at ${time} (Pacific US)`
+}
+
 /** '7/10/2026' — the calendar date in Pacific time, no marker. */
 export function pacificDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { timeZone: PACIFIC })

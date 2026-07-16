@@ -7,6 +7,7 @@ import type {
   GapAnalysis,
   FinalReport,
   AgentContactCheck,
+  NoteContactCheck,
 } from './types';
 
 let _client: Anthropic | null = null;
@@ -485,6 +486,79 @@ phone/email: the best publicly listed values you found ("" if none).`;
     };
   } catch (e) {
     console.error('verifyInsurerContact: check failed; storing nothing', e);
+    return null;
+  }
+}
+
+/**
+ * Verify ONE contact log's cited phone/email against the public web. The
+ * search subject is the ISSUING producer/agency printed on the COI (not the
+ * underlying insurance companies): the question is "does this number/email
+ * the admin was given actually belong to that agency's public listings".
+ * Only the fields actually provided are checked — a blank phone/email spends
+ * nothing and gets no status key. Returns null when there is nothing to
+ * check or the search failed. Never throws.
+ */
+export async function verifyLoggedContact(input: {
+  producer: string; insurer: string; name?: string; phone?: string; email?: string;
+}): Promise<NoteContactCheck | null> {
+  const producer = input.producer.trim();
+  const insurer = input.insurer.trim();
+  const phone = (input.phone ?? '').trim();
+  const email = (input.email ?? '').trim();
+  if (!producer && !insurer) return null;
+  if (!phone && !email) return null;
+
+  const fields = [phone && 'phone_status', email && 'email_status'].filter(Boolean);
+  const system = `You verify insurance agency contact details for a COI verification company.
+An admin contacted the agency that issued a Certificate of Insurance and logged the phone/email they used or were given. Use web search to check whether those details belong to that agency's real, publicly listed contact information (official website, licensing directories, reputable business listings).
+Rules:
+- Search for the producer/agency; fall back to the insurer only if no producer is named.
+- For each provided field return a status: "verified" when the value appears in a credible public listing for that agency (formatting differences are fine); "differs" when public listings show a clearly different value; "not_found" when you cannot find a credible public value to compare.
+- Return ONLY these status keys: ${fields.join(', ')}. Never invent a status for a field you were not given.
+- summary: 1-3 plain sentences shown to the CUSTOMER on the published report, explaining what the search turned up. Professional, plain language, no em dashes.
+- sources: the URLs you actually relied on (up to 5).
+After searching, return ONLY a valid JSON object, no prose, no markdown fences:
+{ ${fields.map(f => `"${f}": "verified"|"differs"|"not_found"`).join(', ')}${fields.length ? ', ' : ''}"summary": string, "sources": string[] }`;
+
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: 'user',
+      content: `Agency that issued the COI (search subject):\nProducer (agency): ${producer || '(not shown)'}\nInsurer(s): ${insurer || '(not shown)'}\n\nContact details logged by the admin:\nContact name: ${(input.name ?? '').trim() || '(not given)'}\nPhone: ${phone || '(not given, do not check)'}\nEmail: ${email || '(not given, do not check)'}\n\nVerify the given details against the web and return the JSON object.`,
+    },
+  ];
+  const tools = [
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
+  ] as unknown as Anthropic.Messages.ToolUnion[];
+
+  try {
+    let res = await getClient().messages.create({
+      model: MODEL, max_tokens: 4096, system, messages, tools,
+    });
+    for (let i = 0; i < 3 && res.stop_reason === 'pause_turn'; i++) {
+      messages.push({ role: 'assistant', content: res.content });
+      res = await getClient().messages.create({
+        model: MODEL, max_tokens: 4096, system, messages, tools,
+      });
+    }
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('\n');
+    const parsed = JSON.parse(extractJSON(text)) as Record<string, unknown>;
+    if (!parsed || typeof parsed.summary !== 'string') throw new Error('unexpected shape');
+    const status = (v: unknown): NoteContactCheck['phone_status'] =>
+      v === 'verified' || v === 'differs' || v === 'not_found' ? v : 'not_found';
+    return {
+      // Status keys only for the fields we were asked to check.
+      ...(phone ? { phone_status: status(parsed.phone_status) } : {}),
+      ...(email ? { email_status: status(parsed.email_status) } : {}),
+      blurb: parsed.summary,
+      sources: Array.isArray(parsed.sources) ? parsed.sources.filter((s): s is string => typeof s === 'string').slice(0, 5) : [],
+      checked_at: new Date().toISOString(),
+    };
+  } catch (e) {
+    console.error('verifyLoggedContact: check failed; storing nothing', e);
     return null;
   }
 }

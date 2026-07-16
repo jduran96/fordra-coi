@@ -1,8 +1,15 @@
 -- Expose call notes to customers through my_verifications, gated on publish like
--- every other analysis field. CREATE OR REPLACE VIEW appends the new column at
--- the end, preserving the existing column order. Idempotent.
+-- every other analysis field.
+--
+-- DROP + CREATE, not CREATE OR REPLACE (2026-07-16): the migration runner
+-- re-applies every file on every run, and OR REPLACE fails with "cannot drop
+-- columns from view" as soon as any later migration has widened the view.
+-- Dropping first keeps this file re-runnable forever. Supabase default
+-- privileges re-grant the view to authenticated/service_role on create; anon
+-- is revoked explicitly below to preserve the pre-existing grant set.
 
-create or replace view my_verifications as
+drop view if exists my_verifications;
+create view my_verifications as
  select id,
     display_id,
     org_id,
@@ -30,3 +37,5 @@ create or replace view my_verifications as
         case when published_at is not null then call_notes            else null::jsonb end as call_notes
    from verifications
   where org_id = current_org();
+
+revoke all on my_verifications from anon;

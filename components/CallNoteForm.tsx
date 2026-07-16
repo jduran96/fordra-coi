@@ -4,14 +4,18 @@ import { useState } from 'react'
 import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
 import EditorModal from '@/components/EditorModal'
+import RichTextInput from '@/components/RichTextInput'
 
 /**
- * "Log a call" button that opens the add-a-call-note dialog. The dialog keeps
- * whatever was typed if it is closed without saving (accidental Escape or
- * backdrop click must not lose a call write-up); fields clear only after a
- * successful save, when the new note appears in the Saved notes table.
- * Leaving the contact fields blank keeps the previously saved insurer contact
- * (the action only updates it when a field is filled).
+ * "Add contact note" button that opens the insurer-contact-note dialog
+ * (certifications happen over email too, so notes are no longer call-only:
+ * a free-text contact method plus an optional rich-text Summary and an
+ * optional plain Transcript). The dialog keeps whatever was typed if it is
+ * closed without saving (accidental Escape or backdrop click must not lose a
+ * write-up); fields clear only after a successful save, when the new note
+ * appears in the saved notes list. Leaving the contact fields blank keeps the
+ * previously saved insurer contact (the action only updates it when a field
+ * is filled).
  */
 export default function CallNoteForm({
   action,
@@ -22,14 +26,16 @@ export default function CallNoteForm({
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
-  const [note, setNote] = useState('')
+  const [method, setMethod] = useState('')
+  const [summary, setSummary] = useState('')
+  const [transcript, setTranscript] = useState('')
   const [error, setError] = useState('')
 
   async function submit(formData: FormData) {
     setError('')
     const res = await action(formData)
-    // On failure the dialog stays open with everything typed: a call write-up
-    // is only cleared once it is actually saved.
+    // On failure the dialog stays open with everything typed: a write-up is
+    // only cleared once it is actually saved.
     if (res?.error) {
       setError(res.error)
       return
@@ -37,7 +43,9 @@ export default function CallNoteForm({
     setName('')
     setPhone('')
     setEmail('')
-    setNote('')
+    setMethod('')
+    setSummary('')
+    setTranscript('')
     setOpen(false)
   }
 
@@ -48,15 +56,19 @@ export default function CallNoteForm({
         fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7,
         border: `1px solid ${C.border}`, cursor: 'pointer',
       }}>
-        Log a call
+        Add contact note
       </button>
       {open && (
-        <EditorModal title="Log a call" onClose={() => setOpen(false)} maxWidth={520}>
+        <EditorModal title="Add contact note" onClose={() => setOpen(false)} maxWidth={640}>
           <form action={submit} style={{ display: 'flex', flexDirection: 'column', gap: 8, fontFamily: C.sans }}>
             <input name="contact_name" value={name} onChange={e => setName(e.target.value)} placeholder="Insurer contact name" style={input()} />
             <input name="contact_phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={input()} />
             <input name="contact_email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={input()} />
-            <textarea name="note" value={note} onChange={e => setNote(e.target.value)} rows={5} placeholder="What the insurer confirmed on this call…" style={{ ...input(), resize: 'vertical' }} />
+            <input name="contact_method" value={method} onChange={e => setMethod(e.target.value)} placeholder="Contact method (email, text, call)" style={input()} />
+            <label style={label()}>Summary</label>
+            <RichTextInput name="summary_html" value={summary} onChange={setSummary} />
+            <label style={label()}>Transcript</label>
+            <textarea name="transcript" value={transcript} onChange={e => setTranscript(e.target.value)} rows={5} placeholder="Paste the raw transcript (optional)" style={{ ...input(), resize: 'vertical' }} />
             {error && <p style={{ fontSize: 13, color: C.error, margin: 0 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
               <PendingButton pendingLabel="Saving…" style={{
@@ -80,3 +92,4 @@ export default function CallNoteForm({
 }
 
 const input = () => ({ padding: '9px 11px', fontSize: 14, fontFamily: C.sans, border: `1px solid ${C.border}`, borderRadius: 7, outline: 'none', background: C.surface, color: C.txt, boxSizing: 'border-box' as const })
+const label = () => ({ fontSize: 12, fontWeight: 600 as const, color: C.txt3, textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginTop: 4 })

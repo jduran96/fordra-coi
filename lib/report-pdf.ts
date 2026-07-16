@@ -1,14 +1,18 @@
 import PDFDocument from 'pdfkit'
-import { pacificDate, pacificDateTime } from '@/lib/dates'
+import { pacificDate, pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import { parseStandardLine } from '@/lib/templates'
+import { contactValue } from '@/lib/contact-notes'
+import type { ContactNote, OnlineListingStatus } from '@/lib/types'
 
 /**
  * Renders a published verification report as a downloadable PDF. Mirrors the
  * customer results page's content set (owner decision 2026-07-14): summary,
- * requirement verdicts (not met, uncertain, met, same ordering), call notes,
- * and the "what you submitted" record (file names only plus the written
- * insurance standards; documents are not re-rendered). Built with pdfkit
- * standard fonts (Helvetica), ink on white, no remote assets.
+ * requirement verdicts (not met, uncertain, met, same ordering), insurer
+ * contact notes, and the "what you submitted" record (file names only plus
+ * the written insurance standards; documents are not re-rendered). Every
+ * note field renders in full here — the transcript expander is a webapp-only
+ * UI element (owner decision 2026-07-16). Built with pdfkit standard fonts
+ * (Helvetica), ink on white, no remote assets.
  */
 
 interface ReportItem {
@@ -17,7 +21,6 @@ interface ReportItem {
   evidence?: string
 }
 interface Report { met?: ReportItem[]; not_met?: ReportItem[]; uncertain?: ReportItem[]; narrative_summary?: string }
-interface CallNote { at?: string; text?: string; contact?: { name?: string; phone?: string; email?: string } }
 
 export interface ReportPdfInput {
   display_id: string
@@ -26,7 +29,7 @@ export interface ReportPdfInput {
   published_at: string
   final_report: Report | null
   gap_analysis: Report | null
-  call_notes: CallNote[] | null
+  call_notes: ContactNote[] | null
   documents: { kind: string; file_name: string }[]
   requirements_text: string
   template_name: string
@@ -114,20 +117,80 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       }
     }
 
-    // Same reading order as the web report: gap analysis, then the calls that
-    // resolved it, then the extracted COI.
-    const notes = (v.call_notes ?? []).filter(n => (n.text ?? '').trim())
+    // Same reading order as the web report: gap analysis, then the insurer
+    // contacts that resolved it, then the submitted record. A note renders if
+    // it has ANY body (summary, legacy text, or transcript) — keying on the
+    // legacy `text` alone would drop every new-shape note from the PDF.
+    const notes = (v.call_notes ?? []).filter(n =>
+      (n.summary_text ?? '').trim() || (n.text ?? '').trim() || (n.transcript ?? '').trim())
+    const chipLabel = (s?: OnlineListingStatus) =>
+      s === 'verified' ? 'Verified online'
+      : s === 'differs' ? 'Differs from online'
+      : s === 'not_found' ? 'Not found online'
+      : 'Not checked online'
+    const chipColor = (s?: OnlineListingStatus) =>
+      s === 'verified' ? '#3f7d47' : s === 'differs' ? '#9a6b1f' : GREY
     if (notes.length > 0) {
       rule()
-      heading('Insurer call notes')
+      heading('Insurer Contact Log')
       for (const n of notes.slice().reverse()) {
-        const who = [n.contact?.name, n.contact?.phone, n.contact?.email].map(s => s?.trim()).filter(Boolean).join('  ·  ')
+        const method = n.contact_method?.trim()
+        // Bold "Contacted via email", regular " on: <timestamp>" (owner spec).
         doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
-          .text(`${n.at ? pacificDateTime(n.at) : ''}${who ? `   ·   ${who}` : ''}`)
-        doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text((n.text ?? '').trim(), { width, lineGap: 2 })
-        doc.moveDown(0.45)
+          .text(method ? `Contacted via ${method}` : 'Contacted', { continued: true })
+        doc.font('Helvetica').text(` on: ${n.at ? pacificDateAtTime(n.at) : ''}`)
+        const name = contactValue(n.contact?.name)
+        if (name) {
+          doc.font('Helvetica').fontSize(9).fillColor(GREY).text('Contact Name: ', { continued: true })
+          doc.font('Helvetica-Bold').fillColor(INK).text(name)
+        }
+        doc.moveDown(0.2)
+        // Contact verification: THIS log's cited phone/email web-checked
+        // against the issuing producer. A field with no check yet reads
+        // "Not checked online"; a blank field gets no row at all.
+        const check = n.contact_check
+        const verifiedBits: [string, string, OnlineListingStatus | undefined][] = []
+        const phone = contactValue(n.contact?.phone)
+        const email = contactValue(n.contact?.email)
+        if (phone) verifiedBits.push(['Phone', phone, check?.phone_status])
+        if (email) verifiedBits.push(['Email', email, check?.email_status])
+        if (verifiedBits.length) {
+          doc.font('Helvetica-Bold').fontSize(8).fillColor(GREY).text('CONTACT VERIFICATION', { characterSpacing: 0.8 })
+          // A pdfkit continued chain must END on a segment with
+          // continued: false — an empty text('') does not flush the line and
+          // the next heading overprints it.
+          verifiedBits.forEach(([label, val, status], i) => {
+            const last = i === verifiedBits.length - 1
+            doc.font('Helvetica').fontSize(9).fillColor(GREY)
+              .text(`${i > 0 ? '   |   ' : ''}${label}: ${val}`, { continued: true })
+            doc.font('Helvetica-Bold').fillColor(chipColor(status)).text(`  (${chipLabel(status)})`, { continued: !last })
+          })
+          if (check) {
+            if (check.blurb.trim()) {
+              doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(check.blurb.trim(), { width, lineGap: 2 })
+            }
+            const hosts = check.sources.map(hostOf).filter(Boolean).join(', ')
+            doc.font('Helvetica').fontSize(8.5).fillColor(GREY).text(
+              `${hosts ? `Sources: ${hosts}   ·   ` : ''}Checked ${pacificDateTime(check.checked_at)}`,
+            )
+          }
+          doc.moveDown(0.25)
+        }
+        // Strip carriage returns: form textareas submit \r\n and Helvetica
+        // renders the bare \r as a visible glyph.
+        const summary = ((n.summary_text ?? '').trim() || (n.text ?? '').trim()).replace(/\r/g, '')
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(GREY).text('CONVERSATION SUMMARY', { characterSpacing: 0.8 })
+        doc.font('Helvetica').fontSize(9.5).fillColor(summary ? INK : GREY)
+          .text(summary || 'Not available', { width, lineGap: 2 })
+        doc.moveDown(0.25)
+        const transcript = (n.transcript ?? '').trim().replace(/\r/g, '')
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(GREY).text('RAW TRANSCRIPT', { characterSpacing: 0.8 })
+        doc.font('Helvetica').fontSize(9.5).fillColor(transcript ? INK : GREY)
+          .text(transcript || 'Not available', { width, lineGap: 2 })
+        doc.moveDown(0.55)
       }
     }
+
 
     // What the customer submitted: file names only (documents are not
     // re-rendered here), plus the written insurance standards.
@@ -170,4 +233,9 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
 
     doc.end()
   })
+}
+
+/** Bare hostname for compact source attribution; falls back to the raw string. */
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
