@@ -8,6 +8,7 @@ import { pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import CoiSplitReview from '@/components/CoiSplitReview'
 import { parseStandardLine } from '@/lib/templates'
 import { contactValue } from '@/lib/contact-notes'
+import type { ReactNode } from 'react'
 import type { COIExtracted, ContactNote, OnlineListingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -84,7 +85,15 @@ export default async function CustomerVerification({ params }: { params: Promise
       <style>{`@media print {
         header, .no-print { display: none !important; }
         body { background: #fff !important; }
-      }`}</style>
+      }
+      details.expando > summary { list-style: none; }
+      details.expando > summary::-webkit-details-marker { display: none; }
+      details.expando .expando-less { display: none; }
+      details.expando[open] .expando-more { display: none; }
+      details.expando[open] .expando-less { display: inline; }
+      details.expando .expando-caret { display: inline-block; margin-right: 6px; transition: transform 0.15s ease; }
+      details.expando[open] .expando-caret { transform: rotate(90deg); }
+      details.expando .expando-more, details.expando .expando-less { text-decoration: underline; text-underline-offset: 3px; }`}</style>
       <Link href="/app" className="no-print" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Verifications</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
@@ -175,20 +184,21 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
               padding: '14px 0',
               borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
             }}>
-              <p style={{ fontSize: 13.5, color: C.txt, margin: '0 0 5px' }}>
-                <span style={{ fontWeight: 600 }}>{method ? `Contacted via ${method}` : 'Contacted'}</span>
-                {` on: ${pacificDateAtTime(n.at)}`}
+              <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 5px' }}>
+                Contacted on: <span style={{ color: C.txt }}>{pacificDateAtTime(n.at)}</span>
               </p>
-              {name && (
+              {(name || method) && (
                 <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 10px' }}>
-                  Contact Name: <span style={{ fontWeight: 600, color: C.txt }}>{name}</span>
+                  {name && <>Contact name: <span style={{ color: C.txt }}>{name}</span></>}
+                  {name && method && <span style={{ margin: '0 7px' }}>|</span>}
+                  {method && <>Contact method: <span style={{ color: C.txt }}>{method}</span></>}
                 </p>
               )}
               {/* This log's cited phone/email, web-checked. Sits between the
                   contact name and the summary (owner spec 2026-07-16). */}
               {(phone || email) && (
                 <div style={{ margin: '0 0 12px' }}>
-                  <p style={eyebrow()}>Contact verification</p>
+                  <p style={eyebrow()}>Contact Details</p>
                   <p style={{ fontSize: 12.5, color: C.txt3, margin: check?.blurb ? '0 0 6px' : 0 }}>
                     {phone && (
                       <span>Phone: <span style={{ color: C.txt2 }}>{phone}</span><StatusChip status={check?.phone_status} /></span>
@@ -212,20 +222,27 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
                 </div>
               )}
               <p style={eyebrow()}>Conversation summary</p>
-              {n.summary_html ? (
-                <div style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '0 0 10px', overflowWrap: 'anywhere' }}
-                  dangerouslySetInnerHTML={{ __html: n.summary_html }} />
+              {(n.summary_html || summaryPlain) ? (
+                <div style={{ margin: '0 0 10px' }}>
+                  <Expando>
+                    {n.summary_html ? (
+                      <div style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '8px 0 0', overflowWrap: 'anywhere' }}
+                        dangerouslySetInnerHTML={{ __html: n.summary_html }} />
+                    ) : (
+                      <p style={{ fontSize: 13.5, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '8px 0 0' }}>
+                        {summaryPlain}
+                      </p>
+                    )}
+                  </Expando>
+                </div>
               ) : (
-                <p style={{ fontSize: 13.5, color: summaryPlain ? C.txt2 : C.txt3, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '0 0 10px' }}>
-                  {summaryPlain || 'Not available'}
-                </p>
+                <p style={{ fontSize: 13.5, color: C.txt3, margin: '0 0 10px' }}>Not available</p>
               )}
               <p style={eyebrow()}>Raw transcript</p>
               {transcript ? (
-                <details>
-                  <summary style={{ fontSize: 13, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>View transcript</summary>
+                <Expando>
                   <p style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '8px 0 0', paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>{transcript}</p>
-                </details>
+                </Expando>
               ) : (
                 <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>Not available</p>
               )}
@@ -234,6 +251,24 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
         })
       )}
     </div>
+  )
+}
+
+/**
+ * Collapsed-by-default section body. Native <details> so the page stays a
+ * server component; the See more / See less copy swap is pure CSS (the
+ * .expando rules in this page's <style> block).
+ */
+function Expando({ children }: { children: ReactNode }) {
+  return (
+    <details className="expando">
+      <summary style={{ fontSize: 13, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>
+        <span className="expando-caret" aria-hidden>▸</span>
+        <span className="expando-more">See more</span>
+        <span className="expando-less">See less</span>
+      </summary>
+      {children}
+    </details>
   )
 }
 
