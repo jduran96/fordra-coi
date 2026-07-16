@@ -53,7 +53,7 @@ export function statusColor(status: string): string {
   switch (status) {
     case 'completed': return C.ok
     case 'error':     return C.error
-    case 'rejected':  return C.error
+    case 'failed':    return C.error
     case 'in_review': return C.warn
     default:          return C.neutral // pending / processing / analyzing
   }

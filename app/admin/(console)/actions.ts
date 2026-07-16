@@ -175,7 +175,7 @@ export async function saveNoteCheck(verificationId: string, noteAt: string, form
  * instead of clearing it.
  */
 /**
- * Closed = published or rejected. Closed cases are read-only everywhere (the
+ * Closed = published or failed. Closed cases are read-only everywhere (the
  * assessment form AND call notes) until the admin explicitly reopens via
  * Edit Status; the UI hides the controls, this is the server-side guard.
  */
@@ -184,7 +184,7 @@ async function caseClosed(supabase: ReturnType<typeof createServiceClient>, veri
     .select('published_at, case_status')
     .eq('id', verificationId)
     .maybeSingle()
-  return !!data && (!!data.published_at || data.case_status === 'rejected')
+  return !!data && (!!data.published_at || data.case_status === 'failed')
 }
 
 export async function saveCallNote(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
@@ -278,20 +278,22 @@ interface AssessmentItem {
  *  - draft:   working copy; clears published_at, so editing a published report
  *             takes it out of the customer's view until it is republished
  *  - publish: releases exactly this assessment (sets published_at + completed)
- *  - reject:  closes the request without a report; clears published_at and the
- *             customer sees the rejected notice
+ *  - fail:    closes the request without a report (e.g. the insurer could not
+ *             be reached); clears published_at and the customer sees the
+ *             Failed status with the admin's reason
  */
 export async function saveAssessment(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
 
-  // Edit Status on a closed (published or rejected) case: reopen it into the
+  // Edit Status on a closed (published or failed) case: reopen it into the
   // review queue WITHOUT touching final_report. The closed form's fields are
   // disabled and absent from the submission, so parsing them here would wipe
-  // the saved verdicts.
+  // the saved verdicts. Reopening clears the failure reason so a stale one
+  // can never resurface on a later fail.
   if (String(formData.get('intent') || '') === 'reopen') {
     const { error } = await supabase.from('verifications')
-      .update({ case_status: 'report_ready', status: 'pending', published_at: null })
+      .update({ case_status: 'report_ready', status: 'pending', published_at: null, failure_reason: null })
       .eq('id', verificationId)
     if (error) {
       console.error('saveAssessment: reopen failed', error)
@@ -320,19 +322,26 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   const narrative_summary = String(formData.get('narrative_summary') || '').trim()
   const intent = String(formData.get('intent') || '')
   const publish = intent === 'publish'
-  // Reject: the request is closed without a customer-facing report. The draft
-  // still saves, and a later Save draft or Publish un-rejects it.
-  const reject = intent === 'reject'
+  // Fail: the request is closed without a customer-facing report; the reason
+  // is required and shown to the customer. The draft still saves, and a later
+  // Save draft or Publish un-fails it.
+  const fail = intent === 'fail'
+  const failureReason = String(formData.get('failure_reason') || '').trim()
+  if (fail && !failureReason) {
+    return { error: 'Write the reason before marking this verification failed.' }
+  }
 
   const update: Record<string, unknown> = {
     final_report: { ...report, narrative_summary },
-    case_status: reject ? 'rejected' : 'report_ready',
+    case_status: fail ? 'failed' : 'report_ready',
+    // Save/publish clear any reason so it can never outlive the failed state.
+    failure_reason: fail ? failureReason : null,
   }
   if (publish) {
     update.status = 'completed'
     update.published_at = new Date().toISOString()
   } else {
-    // Draft and reject both take the report out of the customer's view: what
+    // Draft and fail both take the report out of the customer's view: what
     // customers see must always be exactly the last published assessment.
     update.status = 'pending'
     update.published_at = null
@@ -359,7 +368,7 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     revalidatePath('/admin')
     redirect('/admin')
   }
-  if (reject) {
+  if (fail) {
     revalidatePath('/admin')
     redirect('/admin')
   }

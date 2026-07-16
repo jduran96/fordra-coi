@@ -4,7 +4,8 @@ export type CaseStatus =
   | 'ready_for_call'
   | 'call_in_progress'
   | 'call_complete'
-  | 'report_ready';
+  | 'report_ready'
+  | 'failed';
 
 export interface Requirement {
   coverage_type: string;

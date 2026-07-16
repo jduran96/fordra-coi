@@ -51,15 +51,15 @@ export default async function PortalDashboard() {
       ) : (
         (() => {
           const all = rows as Row[]
-          const rejected = all.filter(r => r.case_status === 'rejected')
-          const completed = all.filter(r => r.case_status !== 'rejected' && r.status === 'completed')
-          const pending = all.filter(r => r.case_status !== 'rejected' && r.status !== 'completed')
+          const failed = all.filter(r => r.case_status === 'failed')
+          const completed = all.filter(r => r.case_status !== 'failed' && r.status === 'completed')
+          const pending = all.filter(r => r.case_status !== 'failed' && r.status !== 'completed')
           return (
             <>
               <VerificationSection title="Completed" rows={completed} emptyText="No completed reports" first />
               <VerificationSection title="Pending" rows={pending} emptyText="No pending verifications" />
-              {/* Rejected requests are rare: no title, no table when empty. */}
-              {rejected.length > 0 && <VerificationSection title="Other" rows={rejected} />}
+              {/* Failed requests are rare: no title, no table when empty. */}
+              {failed.length > 0 && <VerificationSection title="Failed" rows={failed} />}
             </>
           )
         })()
@@ -92,7 +92,7 @@ function VerificationSection({ title, rows, emptyText, first }: {
             <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
               <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
               <td style={td()}>{r.carrier_name}</td>
-              <td style={td()}><Pill status={r.case_status === 'rejected' ? 'rejected' : r.status} /></td>
+              <td style={td()}><Pill status={r.case_status === 'failed' ? 'failed' : r.status} /></td>
               <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
               <td style={{ ...td(), color: C.txt3 }}>{pacificDate(r.created_at)}</td>
             </tr>

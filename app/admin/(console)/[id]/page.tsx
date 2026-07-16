@@ -113,9 +113,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
-  // Closed (published or rejected) cases are read-only, call notes included,
+  // Closed (published or failed) cases are read-only, call notes included,
   // until reopened via Edit Status. Mirrored server-side in the actions.
-  const caseIsClosed = !!v.published_at || v.case_status === 'rejected'
+  const caseIsClosed = !!v.published_at || v.case_status === 'failed'
   const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
   const coi = (v.coi_extracted ?? null) as COI | null
 
@@ -397,7 +397,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           items={reviewItems}
           summaryDefault={summaryDefault}
           published={!!v.published_at}
-          rejected={v.case_status === 'rejected'}
+          failed={v.case_status === 'failed'}
         />
       }
       />

@@ -40,9 +40,9 @@ export default async function AdminQueue() {
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
   const all = (data ?? []) as unknown as Row[]
-  // Rejected requests are done from the admin's perspective even though
+  // Failed requests are done from the admin's perspective even though
   // nothing was published — they live in Completed, not the review queue.
-  const done = (r: Row) => !!r.published_at || r.case_status === 'rejected'
+  const done = (r: Row) => !!r.published_at || r.case_status === 'failed'
   const open = all.filter(r => !done(r))
   const completed = all.filter(done)
 

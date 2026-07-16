@@ -62,10 +62,10 @@ export default async function CustomerVerification({ params }: { params: Promise
   const templateName = (!Array.isArray(req) && req?.template_name) ? String(req.template_name).trim() : ''
 
   const published = !!v.published_at
-  // Rejection wins over any leftover published state: the admin closed this
+  // Failed wins over any leftover published state: the admin closed this
   // request, so no report renders. The view exposes case_status; the analysis
-  // columns are already nulled because reject clears published_at.
-  const rejected = v.case_status === 'rejected'
+  // columns are already nulled because failing clears published_at.
+  const failed = v.case_status === 'failed'
   const report = v.final_report as ({ narrative_summary?: string } & Gap) | null
   const coi = (v.coi_extracted ?? null) as COIExtracted | null
   // The customer always sees one format, whichever produced the verdicts:
@@ -73,12 +73,12 @@ export default async function CustomerVerification({ params }: { params: Promise
   const finalItems = gapItems(report)
   const items: GapItem[] = finalItems.length ? finalItems : gapItems((v.gap_analysis ?? null) as Gap | null)
 
-  const displayStatus = rejected ? 'rejected' : v.status
+  const displayStatus = failed ? 'failed' : v.status
 
   // The published split-review layout (certificate + checks side by side)
-  // needs the full 980px the /app shell allows; the waiting/rejected notices
+  // needs the full 980px the /app shell allows; the waiting/failed notices
   // keep the narrow reading column.
-  const showReport = published && !rejected
+  const showReport = published && !failed
   return (
     <div style={{ maxWidth: showReport ? undefined : 760, fontFamily: C.sans, color: C.txt }}>
       <style>{`@media print {
@@ -89,7 +89,7 @@ export default async function CustomerVerification({ params }: { params: Promise
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize' }}>{displayStatus}</span>
-        {published && !rejected && (
+        {published && !failed && (
           <a href={`/app/${id}/pdf`} className="no-print" style={{
             marginLeft: 'auto', padding: '8px 18px', fontSize: 13, fontWeight: 600,
             fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
@@ -101,10 +101,19 @@ export default async function CustomerVerification({ params }: { params: Promise
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {pacificDateTime(v.created_at)}</p>
 
-      {rejected ? (
+      {failed ? (
         <div style={cardC()}>
           <p style={{ color: C.txt2, fontSize: 14.5, lineHeight: 1.6, margin: 0 }}>
-            This verification request was rejected by a Fordra admin. Contact us to learn more.
+            This verification could not be completed.
+          </p>
+          {/* Rows failed before the reason field existed have none to show. */}
+          {!!v.failure_reason && (
+            <p style={{ color: C.txt, fontSize: 14.5, lineHeight: 1.6, margin: '10px 0 0' }}>
+              <strong>Reason:</strong> {v.failure_reason}
+            </p>
+          )}
+          <p style={{ color: C.txt2, fontSize: 14.5, lineHeight: 1.6, margin: '10px 0 0' }}>
+            Contact a Fordra admin to learn more.
           </p>
         </div>
       ) : !published ? (

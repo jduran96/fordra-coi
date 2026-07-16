@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
  * Downloads the published report as a PDF file. Same access path as the
  * results page: the session client reads through my_verifications, so RLS
  * scopes it to the caller's org and unpublished analysis fields are null.
- * Only published, non-rejected verifications have a report to download.
+ * Only published, non-failed verifications have a report to download.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .select('display_id, carrier_name, created_at, published_at, case_status, final_report, gap_analysis, call_notes, requirements')
     .eq('id', id)
     .maybeSingle()
-  if (!v || !v.published_at || v.case_status === 'rejected') {
+  if (!v || !v.published_at || v.case_status === 'failed') {
     return new Response('Not found', { status: 404 })
   }
 

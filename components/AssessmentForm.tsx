@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
+import EditorModal from '@/components/EditorModal'
 import { ConditionChip } from '@/components/RequirementsEditor'
 import { useAnalysisBodyVisible } from '@/components/AdminTabs'
 
@@ -19,26 +20,30 @@ export default function AssessmentForm({
   items,
   summaryDefault,
   published,
-  rejected,
+  failed,
 }: {
   action: (formData: FormData) => Promise<{ error?: string } | void>
   items: Item[]
   summaryDefault: string
   published: boolean
-  rejected: boolean
+  failed: boolean
 }) {
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
   const [error, setError] = useState('')
+  // The Failed flow needs a reason: the button opens this dialog instead of
+  // submitting directly. The dialog lives INSIDE the <form> so its textarea
+  // submits with the assessment fields.
+  const [failOpen, setFailOpen] = useState(false)
   // Inside AdminTabs the body (rows + summary) belongs to the Analysis tab;
   // the action footer below stays visible under every tab. Hidden, not
   // unmounted: in-progress edits and the hidden inputs must keep submitting.
   const bodyVisible = useAnalysisBodyVisible()
-  // Published and rejected cases are closed: the form is read-only and the
+  // Published and failed cases are closed: the form is read-only and the
   // only action is Edit Status, which reopens the case into the review queue.
-  const closed = published || rejected
+  const closed = published || failed
 
-  // Publish/reject redirect on success; a returned error means nothing was
+  // Publish/fail redirect on success; a returned error means nothing was
   // written and must be shown, never silently swallowed.
   async function submit(formData: FormData) {
     setError('')
@@ -113,7 +118,7 @@ export default function AssessmentForm({
       </div>
       {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
       {closed ? (
-        // A published or rejected case is closed: read-only, and the only
+        // A published or failed case is closed: read-only, and the only
         // action is reopening it. The reopen intent never writes final_report
         // (the disabled fields above are not submitted), so the saved report
         // is untouched until the admin edits and saves after reopening.
@@ -124,22 +129,47 @@ export default function AssessmentForm({
             </PendingButton>
           </div>
           <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
-            {rejected
-              ? 'This request is rejected. The customer sees the rejected notice. Edit Status returns it to the review queue.'
+            {failed
+              ? 'This verification is failed. The customer sees the Failed status and your reason. Edit Status returns it to the review queue.'
               : 'This report is live for the customer. Edit Status takes it down and returns it to the review queue.'}
           </p>
         </>
       ) : (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
-          <PendingButton name="intent" value="reject" pendingLabel="Rejecting…"
+          <button type="button" onClick={() => setFailOpen(true)}
             style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
-            Reject
-          </PendingButton>
+            Failed
+          </button>
           <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
             Publish to customer
           </PendingButton>
         </div>
+      )}
+      {failOpen && (
+        <EditorModal title="Mark as Failed" onClose={() => setFailOpen(false)} maxWidth={520}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: 0 }}>
+              Closes this verification without a report. The customer sees the status
+              Failed and the reason you write below.
+            </p>
+            <textarea
+              name="failure_reason"
+              required
+              rows={4}
+              placeholder="Reason shown to the customer"
+              style={{ ...input(), width: '100%', resize: 'vertical' }}
+            />
+            {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setFailOpen(false)} style={smallBtn()}>Cancel</button>
+              <PendingButton name="intent" value="fail" pendingLabel="Saving…"
+                style={{ ...primaryBtn(), background: C.error }}>
+                Mark as Failed
+              </PendingButton>
+            </div>
+          </div>
+        </EditorModal>
       )}
     </form>
   )
