@@ -4,7 +4,6 @@ import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { normalizeActivity, ACTIVITY_KINDS } from '@/lib/admin-activity'
-import PaginatedTable from '@/components/PaginatedTable'
 import { pacificDateTimeParts } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
@@ -70,35 +69,41 @@ export default async function AdminQueue() {
 
 function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished?: boolean }) {
   return (
-    <PaginatedTable
-      head={
-        <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
-          <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
-        </tr>
-      }
-      rows={rows.map(r => (
-        <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-          <td style={td()}>
-            <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
-          </td>
-          {/* Long org/carrier names truncate so Status/Admin never get squeezed
-              off; the full value is on hover. */}
-          <td style={{ ...td(), ...clip() }} title={r.orgs?.name ?? undefined}>{r.orgs?.name ?? '—'}</td>
-          <td style={{ ...td(), ...clip() }} title={r.carrier_name}>{r.carrier_name}</td>
-          <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
-          <td style={td()}>
-            <AdminStatusPill row={r} />
-          </td>
-          <td style={td()}>
-            <AdminActivityPill row={r} />
-          </td>
-          <td style={{ ...td(), color: C.txt3 }}>
-            <Timestamp iso={showPublished && r.published_at ? r.published_at : r.created_at} />
-          </td>
-        </tr>
-      ))}
-    />
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ maxHeight: 440, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
+              <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                <td style={td()}>
+                  <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
+                </td>
+                {/* Long org/carrier names truncate so Status/Admin never get squeezed
+                    off; the full value is on hover. */}
+                <td style={{ ...td(), ...clip() }} title={r.orgs?.name ?? undefined}>{r.orgs?.name ?? '—'}</td>
+                <td style={{ ...td(), ...clip() }} title={r.carrier_name}>{r.carrier_name}</td>
+                <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
+                <td style={td()}>
+                  <AdminStatusPill row={r} />
+                </td>
+                <td style={td()}>
+                  <AdminActivityPill row={r} />
+                </td>
+                <td style={{ ...td(), color: C.txt3 }}>
+                  <Timestamp iso={showPublished && r.published_at ? r.published_at : r.created_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
 
@@ -132,7 +137,10 @@ function Timestamp({ iso }: { iso: string }) {
   )
 }
 
-const th = () => ({ padding: '12px 16px', fontWeight: 600 as const, whiteSpace: 'nowrap' as const })
+const th = () => ({
+  padding: '12px 16px', fontWeight: 600 as const, whiteSpace: 'nowrap' as const,
+  position: 'sticky' as const, top: 0, background: C.surface, zIndex: 1,
+})
 const td = () => ({ padding: '13px 16px', color: C.txt })
 const clip = () => ({
   maxWidth: 160, whiteSpace: 'nowrap' as const,
