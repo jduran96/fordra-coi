@@ -199,7 +199,7 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
               {(phone || email) && (
                 <div style={{ margin: '0 0 12px' }}>
                   <p style={eyebrow()}>Contact Details</p>
-                  <p style={{ fontSize: 12.5, color: C.txt3, margin: check?.blurb ? '0 0 6px' : 0 }}>
+                  <p style={{ fontSize: 12.5, color: C.txt3, margin: check ? '0 0 6px' : 0 }}>
                     {phone && (
                       <span>Phone: <span style={{ color: C.txt2 }}>{phone}</span><StatusChip status={check?.phone_status} /></span>
                     )}
@@ -208,16 +208,22 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
                       <span>Email: <span style={{ color: C.txt2 }}>{email}</span><StatusChip status={check?.email_status} /></span>
                     )}
                   </p>
-                  {check?.blurb && (
-                    <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '0 0 4px' }}>{check.blurb}</p>
-                  )}
+                  {/* The explanatory blurb + source attribution collapse
+                      behind See more (owner spec 2026-07-16); the chips above
+                      stay always-visible. The PDF is unaffected: it renders
+                      from lib/report-pdf.ts, which prints these in full. */}
                   {check && (
-                    <p style={{ fontSize: 12, color: C.txt3, margin: 0, lineHeight: 1.7, overflowWrap: 'anywhere' }}>
-                      {check.sources.length > 0 && (
-                        <>Sources: {check.sources.map(hostOf).filter(Boolean).join(' · ')} · </>
+                    <Expando>
+                      {check.blurb && (
+                        <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '8px 0 4px' }}>{check.blurb}</p>
                       )}
-                      checked {pacificDateTime(check.checked_at)}
-                    </p>
+                      <p style={{ fontSize: 12, color: C.txt3, margin: check.blurb ? 0 : '8px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                        {check.sources.length > 0 && (
+                          <>Sources: {check.sources.map(hostOf).filter(Boolean).join(' · ')} · </>
+                        )}
+                        checked {pacificDateTime(check.checked_at)}
+                      </p>
+                    </Expando>
                   )}
                 </div>
               )}

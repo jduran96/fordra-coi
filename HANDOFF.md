@@ -732,6 +732,14 @@ the owner's earlier decision, left as-is.
   `###` headings / `**bold**` / checklists that currently render as plain pre-wrap text.
   Needs a markdown dependency (none in the app today) — decide lib + sanitization then render
   in the note cards on `/admin/[id]`.
+- **Result notifications for Slack submissions** (action item 2026-07-16): when an
+  admin publishes/fails a verification that came in via Slack, the submitter gets
+  nothing today — `created_by` is null on Slack rows, so the "Notify app user"
+  checkbox is ignored (`app/admin/(console)/actions.ts`). Enable a result
+  notification for the Slack path (likely a Slack DM back through the intake
+  channel via `slack_installations`, since there is no portal user to email).
+  The admin new-submission alert already fires for Slack. API path explicitly
+  out of scope — notifications there should stay off.
 - **Collapse/expand for long call notes** (2026-07-13): an expander for transcript-length
   notes on `/admin/[id]`. Parked because collapsed content doesn't print and printability
   was required; needs a print-expands-all treatment (e.g. `@media print`) if built.
@@ -739,7 +747,9 @@ the owner's earlier decision, left as-is.
   user" checkbox in the publish/fail confirm dialogs; see START HERE). The old
   "blocked on SMTP" note was stale — lib/notify.ts sends via the Resend REST
   API, which was never owner-only. API/Slack rows (`created_by` null) resolved
-  as: no checkbox, nobody is notified.
+  as: no checkbox, nobody is notified. Slack is now slated to get its own result
+  notification — see the "Result notifications for Slack submissions" backlog
+  item above (API stays off).
 - ~~Customer dashboard: completed vs pending split~~ **Built 2026-07-15** (Completed /
   Pending / Other sections on /app — see START HERE).
 

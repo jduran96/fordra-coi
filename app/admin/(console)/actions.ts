@@ -14,7 +14,7 @@ import { runExtractionPipeline } from '@/lib/extraction'
 import { verifyLoggedContact } from '@/lib/claude'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
-import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
+import { contactValue, noteCheckFromRegistry, normalizePhone, normalizeEmail } from '@/lib/contact-notes'
 import type { COIExtracted, ContactCheckEntry, ContactNote, NoteContactCheck, OnlineListingStatus } from '@/lib/types'
 
 /**
@@ -332,6 +332,86 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
     // Nothing to append and no contact to update: tell the admin instead of
     // silently closing the dialog with nothing saved.
     return { error: 'Add a summary or a transcript before saving.' }
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Edit one saved contact note in place, identified by its `at` timestamp
+ * (which never changes: it is the note's identity and its displayed date).
+ * Contact fields are editable; a changed phone/email re-derives the log's
+ * verification tags from the check registry by value match, while an
+ * unchanged contact keeps the existing snapshot untouched (it may carry
+ * manual status/blurb edits made via saveNoteCheck). Deliberately does NOT
+ * touch the verification-level insurance_contact: editing history must never
+ * silently change the current insurer contact.
+ */
+export async function updateCallNote(verificationId: string, noteAt: string, formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
+  const { data: row, error } = await supabase.from('verifications')
+    .select('call_notes, contact_checks')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !row) {
+    console.error('updateCallNote: read failed', error)
+    return { error: 'Could not save. Your edits are still here. Please retry.' }
+  }
+  const notes = (Array.isArray(row.call_notes) ? row.call_notes : []) as ContactNote[]
+  const note = notes.find(n => n.at === noteAt)
+  if (!note) return { error: 'This note no longer exists. Close the dialog and refresh the page.' }
+
+  const contact = {
+    name: String(formData.get('contact_name') || '').trim(),
+    phone: String(formData.get('contact_phone') || '').trim(),
+    email: String(formData.get('contact_email') || '').trim(),
+  }
+  // Same contract as saveCallNote: all-blank contact means "keep what was
+  // saved", never "erase who was reached".
+  const hasContact = Object.values(contact).some(Boolean)
+  const nextContact = hasContact ? contact : (note.contact ?? {})
+
+  const contact_method = String(formData.get('contact_method') || '').trim()
+  const summary_html = sanitizeSummaryHtml(String(formData.get('summary_html') || ''))
+  const summary_text = summaryPlainText(summary_html)
+  const transcript = String(formData.get('transcript') || '').trim()
+  if (!summary_text && !transcript) {
+    return { error: 'Add a summary or a transcript before saving.' }
+  }
+
+  const phoneChanged = normalizePhone(nextContact.phone) !== normalizePhone(note.contact?.phone)
+  const emailChanged = normalizeEmail(nextContact.email) !== normalizeEmail(note.contact?.email)
+  const check = (phoneChanged || emailChanged)
+    ? noteCheckFromRegistry(
+        (Array.isArray(row.contact_checks) ? row.contact_checks : []) as ContactCheckEntry[],
+        contactValue(nextContact.phone),
+        contactValue(nextContact.email),
+      )
+    : note.contact_check ?? null
+
+  // Whole-object replacement. Legacy `text` is deliberately dropped: the edit
+  // dialog prefills the summary editor from it, so its content survives as
+  // summary_html/summary_text.
+  const next: ContactNote = {
+    at: note.at,
+    ...(contact_method ? { contact_method } : {}),
+    ...(summary_html ? { summary_html, summary_text } : {}),
+    ...(transcript ? { transcript } : {}),
+    contact: nextContact,
+    ...(check ? { contact_check: check } : {}),
+    edited_at: new Date().toISOString(),
+  }
+  const { error: werr } = await supabase.rpc('admin_update_call_note', {
+    vid: verificationId,
+    note_at: noteAt,
+    note_data: next,
+  })
+  if (werr) {
+    console.error('updateCallNote: write failed', werr)
+    return { error: 'Could not save. Your edits are still here. Please retry.' }
   }
   revalidatePath(`/admin/${verificationId}`)
 }

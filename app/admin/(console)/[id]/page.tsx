@@ -17,9 +17,10 @@ import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
 import NoteCheckControls from '@/components/NoteCheckControls'
 import ContactCheckTask from '@/components/ContactCheckTask'
-import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
+import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
 import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
+import EditNoteButton from './EditNoteButton'
 import ActivityLog from './ActivityLog'
 
 export const dynamic = 'force-dynamic'
@@ -352,7 +353,10 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                   )}
                   <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(n.at)}</span>
                   {!caseIsClosed && (
-                    <span style={{ marginLeft: 'auto' }}>
+                    <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                      {/* Keyed by content: the dialog's prefill state must
+                          remount on fresh data after a save (repeat-bugs #15). */}
+                      <EditNoteButton key={JSON.stringify(n)} note={n} action={updateCallNote.bind(null, id, n.at)} />
                       <DeleteNoteButton action={deleteCallNote.bind(null, id, n.at)} />
                     </span>
                   )}

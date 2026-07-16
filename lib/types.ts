@@ -117,6 +117,8 @@ export interface ContactNote {
   contact?: { name?: string; phone?: string; email?: string };
   /** Per-log web verification of THIS entry's cited phone/email. */
   contact_check?: NoteContactCheck;
+  /** Set when the note was edited after the fact; `at` never changes. */
+  edited_at?: string;
 }
 
 export type OnlineListingStatus = 'verified' | 'not_found' | 'differs';
