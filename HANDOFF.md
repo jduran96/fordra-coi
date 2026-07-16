@@ -3,7 +3,50 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-15 — Amount semantics, Slack standards flow, admin tabs + activity log, contact check, pagination)
+## ⏱️ START HERE (as of 2026-07-16 — Insurer Contact Log: method + rich summary + transcript, per-log contact verification)
+
+**2026-07-16 session (deployed to prod, commit e6d5764):**
+
+- **"Call notes" are now the "Insurer Contact Log"** (certifications happen
+  over email too — design partner). Each entry: free-text `contact_method`
+  ("email"/"call"/"text"), optional rich-text `summary_html` (Tiptap, b/i/u
+  only, sanitized server-side by `lib/sanitize-note.ts` with a strict tag
+  allowlist; `summary_text` derived for the PDF), optional plain `transcript`.
+  Legacy `{at, text, contact}` entries render `text` as the summary — every
+  renderer must keep the `summary_html → summary_text → text` fallback chain.
+  Append RPC is `admin_append_contact_note` (migration 0022); the 0016
+  `admin_append_call_note` is dropped by 0025 (write-committed, apply after
+  confirming prod runs e6d5764). Delete RPC unchanged (keys on `at`).
+- **Per-log contact verification** (owner respec, same day): each log's cited
+  phone/email is web-checked against the ISSUING producer from
+  `coi_extracted` (`verifyLoggedContact`, `lib/claude.ts`) via a per-note
+  **Run online check** button + editable statuses/customer blurb
+  (`components/NoteCheckControls.tsx`, actions `runNoteContactCheck` /
+  `saveNoteCheck`, atomic RPC `admin_set_note_check`, migration 0023). The
+  result lives INSIDE the note (`contact_check` key), so `call_notes` publish
+  gating covers it — no view change. Blank fields are never searched (no
+  tokens) and never tagged; values like "n/a" count as blank
+  (`lib/contact-notes.ts` `contactValue`). Tags: Verified online / Differs
+  from online / Not found online / dashed "Not checked online" (exists but
+  never checked). The COI-level Agent contact check card stays admin-only.
+- **Customer report + PDF per log**: bold "Contacted via {method}" +
+  unbolded " on: {date} at {time} (Pacific US)" (`pacificDateAtTime`,
+  `lib/dates.ts`), "Contact Name: {name}" (name bold), mono-eyebrow CONTACT
+  VERIFICATION (values + tags + blurb + sources + checked stamp), then
+  CONVERSATION SUMMARY and RAW TRANSCRIPT (web: native `<details>` expander;
+  PDF prints every field IN FULL — expanders are webapp-only UI, owner rule).
+- **Migration runner discipline**: `scripts/migrate.mjs` re-applies EVERY
+  file on every run, so files must stay re-runnable forever. 0008 now
+  drop+creates `my_verifications` (CREATE OR REPLACE fails with "cannot drop
+  columns" once any later migration widened the view); Supabase default
+  privileges re-grant on create, `anon` re-revoked explicitly. The
+  short-lived `contact_check_public` column (0022 v1) was dropped in 0024.
+- **PDF gotchas fixed**: a pdfkit continued-text chain must END on a segment
+  with `continued: false` (an empty `text('')` doesn't flush and the next
+  heading overprints); strip `\r` before rendering (Helvetica shows it as a
+  visible glyph; textareas submit `\r\n`).
+
+## Previous (as of 2026-07-15 — Amount semantics, Slack standards flow, admin tabs + activity log, contact check, pagination)
 
 **2026-07-14/15 session (all deployed to prod, commits d3a9f93..6f607c5):**
 
