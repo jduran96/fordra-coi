@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { withRetry } from '@/lib/db'
 import { signedUrl } from '@/lib/storage'
-import { C, statusColor } from '@/lib/theme'
+import { C, statusColor, statusLabel } from '@/lib/theme'
 import { pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import CoiSplitReview from '@/components/CoiSplitReview'
 import { parseStandardLine } from '@/lib/templates'
@@ -97,7 +97,7 @@ export default async function CustomerVerification({ params }: { params: Promise
       <Link href="/app" className="no-print" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Verifications</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
-        <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize' }}>{displayStatus}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{statusLabel(displayStatus)}</span>
         {published && !failed && (
           <a href={`/app/${id}/pdf`} className="no-print" style={{
             marginLeft: 'auto', padding: '8px 18px', fontSize: 13, fontWeight: 600,

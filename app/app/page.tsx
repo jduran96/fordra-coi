@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth-helpers'
-import { C, statusColor } from '@/lib/theme'
+import { C, statusColor, statusLabel } from '@/lib/theme'
 import { pacificDate } from '@/lib/dates'
 import PaginatedTable from '@/components/PaginatedTable'
 
@@ -59,7 +59,7 @@ export default async function PortalDashboard() {
               <VerificationSection title="Completed" rows={completed} emptyText="No completed reports" first />
               <VerificationSection title="Pending" rows={pending} emptyText="No pending verifications" />
               {/* Failed requests are rare: no title, no table when empty. */}
-              {failed.length > 0 && <VerificationSection title="Failed" rows={failed} />}
+              {failed.length > 0 && <VerificationSection title="Could not complete" rows={failed} />}
             </>
           )
         })()
@@ -196,8 +196,8 @@ function Pill({ status }: { status: string }) {
   return (
     <span style={{
       fontSize: 12, fontWeight: 600, color: statusColor(status), background: `${statusColor(status)}1a`,
-      padding: '3px 9px', borderRadius: 20, textTransform: 'capitalize',
-    }}>{status}</span>
+      padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap',
+    }}>{statusLabel(status)}</span>
   )
 }
 

@@ -5,7 +5,7 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { normalizeActivity, ACTIVITY_KINDS } from '@/lib/admin-activity'
 import PaginatedTable from '@/components/PaginatedTable'
-import { pacificDateTime } from '@/lib/dates'
+import { pacificDateTimeParts } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,8 +82,10 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
           <td style={td()}>
             <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
           </td>
-          <td style={td()}>{r.orgs?.name ?? '—'}</td>
-          <td style={td()}>{r.carrier_name}</td>
+          {/* Long org/carrier names truncate so Status/Admin never get squeezed
+              off; the full value is on hover. */}
+          <td style={{ ...td(), ...clip() }} title={r.orgs?.name ?? undefined}>{r.orgs?.name ?? '—'}</td>
+          <td style={{ ...td(), ...clip() }} title={r.carrier_name}>{r.carrier_name}</td>
           <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
           <td style={td()}>
             <AdminStatusPill row={r} />
@@ -92,7 +94,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             <AdminActivityPill row={r} />
           </td>
           <td style={{ ...td(), color: C.txt3 }}>
-            {pacificDateTime(showPublished && r.published_at ? r.published_at : r.created_at)}
+            <Timestamp iso={showPublished && r.published_at ? r.published_at : r.created_at} />
           </td>
         </tr>
       ))}
@@ -119,5 +121,20 @@ function AdminActivityPill({ row }: { row: Row }) {
   )
 }
 
-const th = () => ({ padding: '12px 16px', fontWeight: 600 as const })
+/** Date + time on one line, timezone underneath. */
+function Timestamp({ iso }: { iso: string }) {
+  const { dateTime, tz } = pacificDateTimeParts(iso)
+  return (
+    <>
+      <div style={{ whiteSpace: 'nowrap' }}>{dateTime}</div>
+      <div style={{ fontSize: 12, color: C.txt3 }}>{tz}</div>
+    </>
+  )
+}
+
+const th = () => ({ padding: '12px 16px', fontWeight: 600 as const, whiteSpace: 'nowrap' as const })
 const td = () => ({ padding: '13px 16px', color: C.txt })
+const clip = () => ({
+  maxWidth: 160, whiteSpace: 'nowrap' as const,
+  overflow: 'hidden' as const, textOverflow: 'ellipsis' as const,
+})

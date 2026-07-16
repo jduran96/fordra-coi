@@ -58,3 +58,14 @@ export function statusColor(status: string): string {
     default:          return C.neutral // pending / processing / analyzing
   }
 }
+
+/**
+ * Customer-facing status pill text. 'failed' means the verification could not
+ * be completed (e.g. the insurer was unreachable), NOT that it found
+ * discrepancies — so it never renders as the word "Failed". Other statuses
+ * are the raw value with the first letter capitalized.
+ */
+export function statusLabel(status: string): string {
+  if (status === 'failed') return 'Could not complete'
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}

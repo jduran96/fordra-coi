@@ -136,7 +136,7 @@ export default function AssessmentForm({
           </div>
           <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
             {failed
-              ? 'This verification is failed. The customer sees the Failed status and your reason. Edit Status returns it to the review queue.'
+              ? 'This verification could not be completed. The customer sees the Could not complete status and your reason. Edit Status returns it to the review queue.'
               : 'This report is live for the customer. Edit Status takes it down and returns it to the review queue.'}
           </p>
         </>
@@ -145,7 +145,7 @@ export default function AssessmentForm({
           <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
           <button type="button" onClick={() => setFailOpen(true)}
             style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
-            Failed
+            Could not complete
           </button>
           <button type="button" onClick={() => setPublishOpen(true)} style={primaryBtn()}>
             Publish to customer
@@ -170,11 +170,11 @@ export default function AssessmentForm({
         </EditorModal>
       )}
       {failOpen && (
-        <EditorModal title="Mark as Failed" onClose={() => setFailOpen(false)} maxWidth={520}>
+        <EditorModal title="Could not complete" onClose={() => setFailOpen(false)} maxWidth={520}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: 0 }}>
               Closes this verification without a report. The customer sees the status
-              Failed and the reason you write below.
+              Could not complete and the reason you write below.
             </p>
             <textarea
               name="failure_reason"
@@ -189,7 +189,7 @@ export default function AssessmentForm({
               <button type="button" onClick={() => setFailOpen(false)} style={smallBtn()}>Cancel</button>
               <PendingButton name="intent" value="fail" pendingLabel="Saving…"
                 style={{ ...primaryBtn(), background: C.error }}>
-                Mark as Failed
+                Confirm
               </PendingButton>
             </div>
           </div>

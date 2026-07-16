@@ -16,6 +16,18 @@ export function pacificDateTime(iso: string): string {
   })} (Pacific US)`
 }
 
+/** { dateTime: '7/10/2026, 6:00 PM', tz: 'Pacific US' } — for two-line table cells. */
+export function pacificDateTimeParts(iso: string): { dateTime: string; tz: string } {
+  return {
+    dateTime: new Date(iso).toLocaleString('en-US', {
+      timeZone: PACIFIC,
+      month: 'numeric', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    }),
+    tz: 'Pacific US',
+  }
+}
+
 /** '7/10/2026 at 6:00 PM (Pacific US)' — the contact-note "Contacted on" line. */
 export function pacificDateAtTime(iso: string): string {
   const d = new Date(iso)

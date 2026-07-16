@@ -7,7 +7,7 @@ const CONFIG: Record<CaseStatus, { label: string; color: string }> = {
   call_in_progress: { label: 'Calling…',       color: '#ea580c' },
   call_complete:    { label: 'Call complete',  color: '#7c3aed' },
   report_ready:     { label: 'Report ready',   color: '#16a34a' },
-  failed:           { label: 'Failed',         color: '#dc2626' },
+  failed:           { label: 'Could not complete', color: '#dc2626' },
 };
 
 export default function StatusBadge({ status }: { status: CaseStatus }) {
