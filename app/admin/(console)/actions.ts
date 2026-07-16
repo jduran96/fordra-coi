@@ -3,6 +3,8 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
+import { after } from 'next/server'
+import { notifyVerificationResult } from '@/lib/notify'
 import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { DOCUMENTS_BUCKET } from '@/lib/storage'
@@ -373,7 +375,7 @@ interface AssessmentItem {
  *             Failed status with the admin's reason
  */
 export async function saveAssessment(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const supabase = createServiceClient()
 
   // Edit Status on a closed (published or failed) case: reopen it into the
@@ -445,6 +447,34 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   if (error || !v) {
     console.error('saveAssessment: update failed', error)
     return { error: 'Could not save. Nothing was changed. Please retry.' }
+  }
+
+  // "Notify app user" checkbox in the publish/fail confirm dialogs: the email
+  // to the submitter fires ONLY on this explicit per-case opt-in (human in the
+  // loop, so test publishes on other orgs never spam anyone). created_by is
+  // null for API/Slack rows — no portal user to notify, flag ignored.
+  if ((publish || fail) && formData.get('notify_user') === 'on' && v.created_by) {
+    const { data: uploader } = await supabase.from('profiles')
+      .select('email').eq('id', v.created_by).maybeSingle()
+    const toEmail = uploader?.email
+    if (toEmail) {
+      after(() => notifyVerificationResult({
+        verificationId,
+        displayId: (v as { display_id?: string }).display_id,
+        carrierName: String(v.carrier_name ?? 'your carrier'),
+        outcome: publish ? 'completed' : 'failed',
+        toEmail,
+      }))
+      // Every send goes on the activity log so there's a record of who
+      // notified whom. Log failure must not block the publish itself.
+      const { error: logErr } = await supabase.rpc('admin_append_activity', {
+        vid: verificationId,
+        kind: 'note',
+        actor: adminInitials(admin.email ?? ''),
+        note: `Notified ${toEmail}: ${publish ? 'report published' : 'could not be completed'}`,
+      })
+      if (logErr) console.error('saveAssessment: notify audit log failed', logErr)
+    }
   }
 
   if (publish) {

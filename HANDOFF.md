@@ -7,6 +7,19 @@
 
 **2026-07-16 evening session (owner respec of the same-day per-log checks):**
 
+- **Opt-in customer result notifications (design-partner ask, scope deliberately
+  tight):** publishing or failing a case now goes through a confirm dialog
+  (AssessmentForm.tsx; Publish got a new dialog, Mark as Failed reuses its
+  modal) with an unchecked "Notify app user" checkbox. Only when checked does
+  `saveAssessment` email the submitter (`created_by` → profiles.email) via
+  `notifyVerificationResult` (lib/notify.ts, Resend REST, fired through
+  `after()`, never throws) — status + portal link only, no verdict details or
+  failure reason in the email. Human in the loop on EVERY send: nothing fires
+  automatically, so test publishes on other orgs never email anyone. API/Slack
+  rows (`created_by` null) show "no app user to notify" instead of the
+  checkbox and the server ignores the flag. Each send is recorded in the admin
+  activity log as a note ("Notified <email>: …"). No new schema/config/deps.
+
 - **ONE Agent contact check replaces per-log web checks** (owner decision: stop
   burning a search per log). The admin Calls tab card (above the Insurer
   Contact Log) prefills phone/email from the COI's extracted producer contact,
@@ -676,10 +689,11 @@ the owner's earlier decision, left as-is.
 - **Collapse/expand for long call notes** (2026-07-13): an expander for transcript-length
   notes on `/admin/[id]`. Parked because collapsed content doesn't print and printability
   was required; needs a print-expands-all treatment (e.g. `@media print`) if built.
-- **Email on verification completion** (2026-07-13): notify the submitting user
-  (`verifications.created_by` → profiles.email) when their verification is published.
-  Blocked on the same SMTP setup as magic-link email (currently owner-only delivery);
-  API/Slack submissions have no `created_by`, so decide the fallback (org members? skip?).
+- ~~Email on verification completion~~ **Built 2026-07-16** (opt-in "Notify app
+  user" checkbox in the publish/fail confirm dialogs; see START HERE). The old
+  "blocked on SMTP" note was stale — lib/notify.ts sends via the Resend REST
+  API, which was never owner-only. API/Slack rows (`created_by` null) resolved
+  as: no checkbox, nobody is notified.
 - ~~Customer dashboard: completed vs pending split~~ **Built 2026-07-15** (Completed /
   Pending / Other sections on /app — see START HERE).
 

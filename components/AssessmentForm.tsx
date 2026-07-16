@@ -21,12 +21,15 @@ export default function AssessmentForm({
   summaryDefault,
   published,
   failed,
+  submitterEmail,
 }: {
   action: (formData: FormData) => Promise<{ error?: string } | void>
   items: Item[]
   summaryDefault: string
   published: boolean
   failed: boolean
+  /** Portal user who submitted the case; null for API/Slack rows (nobody to notify). */
+  submitterEmail: string | null
 }) {
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
@@ -35,6 +38,9 @@ export default function AssessmentForm({
   // submitting directly. The dialog lives INSIDE the <form> so its textarea
   // submits with the assessment fields.
   const [failOpen, setFailOpen] = useState(false)
+  // Publish also confirms in a dialog: the admin signs off (and explicitly
+  // opts in to notifying the app user) before anything reaches the customer.
+  const [publishOpen, setPublishOpen] = useState(false)
   // Inside AdminTabs the body (rows + summary) belongs to the Analysis tab;
   // the action footer below stays visible under every tab. Hidden, not
   // unmounted: in-progress edits and the hidden inputs must keep submitting.
@@ -141,10 +147,27 @@ export default function AssessmentForm({
             style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
             Failed
           </button>
-          <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
+          <button type="button" onClick={() => setPublishOpen(true)} style={primaryBtn()}>
             Publish to customer
-          </PendingButton>
+          </button>
         </div>
+      )}
+      {publishOpen && (
+        <EditorModal title="Publish to customer" onClose={() => setPublishOpen(false)} maxWidth={520}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: 0 }}>
+              Releases exactly this assessment to the customer.
+            </p>
+            <NotifyUserChoice submitterEmail={submitterEmail} />
+            {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setPublishOpen(false)} style={smallBtn()}>Cancel</button>
+              <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
+                Publish to customer
+              </PendingButton>
+            </div>
+          </div>
+        </EditorModal>
       )}
       {failOpen && (
         <EditorModal title="Mark as Failed" onClose={() => setFailOpen(false)} maxWidth={520}>
@@ -160,6 +183,7 @@ export default function AssessmentForm({
               placeholder="Reason shown to the customer"
               style={{ ...input(), width: '100%', resize: 'vertical' }}
             />
+            <NotifyUserChoice submitterEmail={submitterEmail} />
             {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setFailOpen(false)} style={smallBtn()}>Cancel</button>
@@ -172,6 +196,28 @@ export default function AssessmentForm({
         </EditorModal>
       )}
     </form>
+  )
+}
+
+/**
+ * The opt-in "Notify app user" checkbox inside the publish/fail confirm
+ * dialogs. Unchecked by default: no email ever fires without the admin
+ * deliberately checking it. Only one dialog is mounted at a time, so exactly
+ * one notify_user field can submit. API/Slack rows have no portal user.
+ */
+function NotifyUserChoice({ submitterEmail }: { submitterEmail: string | null }) {
+  if (!submitterEmail) {
+    return (
+      <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
+        Submitted via API or Slack, no app user to notify.
+      </p>
+    )
+  }
+  return (
+    <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, color: C.txt, fontFamily: C.sans, cursor: 'pointer' }}>
+      <input type="checkbox" name="notify_user" style={{ margin: 0 }} />
+      Notify app user ({submitterEmail}) by email
+    </label>
   )
 }
 

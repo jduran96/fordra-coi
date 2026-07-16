@@ -445,6 +445,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           summaryDefault={summaryDefault}
           published={!!v.published_at}
           failed={v.case_status === 'failed'}
+          submitterEmail={uploader?.email ?? null}
         />
       }
       />

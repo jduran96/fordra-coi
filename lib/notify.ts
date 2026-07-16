@@ -85,3 +85,60 @@ export async function notifyNewVerification(n: NewVerificationNotice): Promise<v
     console.error('notifyNewVerification failed', e)
   }
 }
+
+export interface VerificationResultNotice {
+  verificationId: string
+  displayId?: string
+  carrierName: string
+  outcome: 'completed' | 'failed'
+  toEmail: string
+}
+
+/**
+ * Opt-in email to the portal user who submitted a verification, sent only
+ * when the admin checks "Notify app user" while publishing or failing the
+ * case. Status + portal link only: verdict details and failure reasons stay
+ * behind login. NEVER throws, same contract as notifyNewVerification.
+ */
+export async function notifyVerificationResult(n: VerificationResultNotice): Promise<void> {
+  try {
+    const key = process.env.RESEND_API_KEY
+    if (!key) {
+      console.error('notifyVerificationResult: RESEND_API_KEY not set, skipping email')
+      return
+    }
+    const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://app.fordra.com'
+    const link = `${base}/app/${n.verificationId}`
+    const label = n.displayId ? ` (${n.displayId})` : ''
+    // Subjects stay scannable: a long carrier name is cut, the body keeps it full.
+    const carrier = n.carrierName.length > 60 ? `${n.carrierName.slice(0, 60)}...` : n.carrierName
+
+    const subject = n.outcome === 'completed'
+      ? `Verification for ${carrier} complete`
+      : `Verification for ${carrier} could not be completed`
+    const text = n.outcome === 'completed'
+      ? `Your verification for ${n.carrierName}${label} is complete. The report is ready in your Fordra portal.\n\nView the report: ${link}\n`
+      : `Your verification for ${n.carrierName}${label} could not be completed. The reason is in your Fordra portal.\n\nView the details: ${link}\n`
+    const html = n.outcome === 'completed'
+      ? `<p>Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} is complete. The report is ready in your Fordra portal.</p>`
+        + `<p><a href="${esc(link)}">View the report</a></p>`
+      : `<p>Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} could not be completed. The reason is in your Fordra portal.</p>`
+        + `<p><a href="${esc(link)}">View the details</a></p>`
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: process.env.NOTIFY_EMAIL_FROM || 'Fordra <notifications@fordra.com>',
+        to: [n.toEmail],
+        subject,
+        text,
+        html,
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) console.error(`notifyVerificationResult: Resend responded ${res.status}: ${await res.text().catch(() => '')}`)
+  } catch (e) {
+    console.error('notifyVerificationResult failed', e)
+  }
+}
