@@ -3,7 +3,43 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-16 evening — contact check registry: one web check task, logs inherit tags)
+## ⏱️ START HERE (as of 2026-07-16 late — "Failed" renamed to "Could not complete", admin queue layout)
+
+**2026-07-16 late session (deployed to prod, commit 938d5a7, owner-verified on localhost):**
+
+- **User-facing "Failed" label is now "Could not complete"** (owner: "Failed"
+  read as "the insurer check found discrepancies"; the state actually means
+  the verification could not be completed, e.g. insurer unreachable). The
+  machine value `case_status = 'failed'` is UNCHANGED everywhere (DB, filters,
+  enums, API) — this was label-only. Touched:
+  - `lib/theme.ts`: new `statusLabel(status)` helper next to `statusColor`
+    ('failed' → "Could not complete", others capitalized). The /app dashboard
+    Pill and the /app/[id] header tag now render `statusLabel(...)` instead of
+    the raw status with CSS `textTransform: 'capitalize'` — use this helper
+    for any new customer-facing status text.
+  - `lib/admin-status.ts`: `AdminStatus` union member `'Failed'` renamed to
+    `'Could not complete'` (queue + detail pills pick it up automatically).
+  - `components/AssessmentForm.tsx`: trigger button "Could not complete",
+    modal title "Could not complete", confirm button "Confirm" (owner chose
+    the minimal wording), closed-case note reworded. Intent value stays
+    `fail`.
+  - /app dashboard section header for failed rows: "Could not complete".
+  - `components/StatusBadge.tsx` label updated too (component currently
+    unused).
+  - No change needed to `lib/notify.ts` result email (already said "could not
+    be completed") or the /app/[id] failed notice card.
+- **Admin queue table layout** (`app/admin/(console)/page.tsx`): Org and
+  Carrier cells truncate at `maxWidth: 160` with ellipsis + full value in
+  `title` hover (long names were squeezing Status/Admin headers off);
+  `th()` got `whiteSpace: nowrap`; timestamp cell is now a two-line
+  `<Timestamp>` (date + time, then "Pacific US" underneath) via new
+  `pacificDateTimeParts()` in `lib/dates.ts` — `pacificDateTime()` is
+  unchanged for all other call sites.
+- Cleanup done: this session deleted its test row AND three leftover
+  "UI TEST - DELETE ME" rows from 2026-07-14 (VRF-TEST-1055 / VRF-TEST-UI /
+  VRF-TEST-PDF) plus their one storage object.
+
+## Previous (as of 2026-07-16 evening — contact check registry: one web check task, logs inherit tags)
 
 **2026-07-16 evening session (owner respec of the same-day per-log checks):**
 
