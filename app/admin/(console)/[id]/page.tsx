@@ -9,14 +9,15 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
-import type { AgentContactCheck, ContactNote, OnlineListingStatus } from '@/lib/types'
+import type { ContactCheckEntry, ContactNote, OnlineListingStatus } from '@/lib/types'
 import { contactValue } from '@/lib/contact-notes'
 import PendingButton from '@/components/PendingButton'
 import AdminTabs from '@/components/AdminTabs'
 import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
 import NoteCheckControls from '@/components/NoteCheckControls'
-import { runExtraction, runContactCheck, runNoteContactCheck, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
+import ContactCheckTask from '@/components/ContactCheckTask'
+import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
 import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import ActivityLog from './ActivityLog'
@@ -117,6 +118,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   // until reopened via Edit Status. Mirrored server-side in the actions.
   const caseIsClosed = !!v.published_at || v.case_status === 'failed'
   const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  // Online-check history, append-only: stored oldest-first, newest run last.
+  const checks = (Array.isArray(v.contact_checks) ? v.contact_checks : []) as ContactCheckEntry[]
   const coi = (v.coi_extracted ?? null) as COI | null
 
   // The review rows: prefer the admin's saved assessment, then the automated
@@ -264,22 +267,66 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {/* Agent contact check: who the COI says to call vs the web.
-            Its own button, not part of extraction: each run spends web
-            searches, so it only happens when the admin asks for it. */}
+        {/* Agent contact check: the ONE place a contact web search runs
+            (manually triggered, never part of extraction — each run spends
+            web searches). Prefilled from the COI, values editable. Every run
+            is kept as history; contact logs below inherit their tags by
+            citing a checked value. */}
         <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <SectionTitle>Agent contact check</SectionTitle>
-            {v.coi_extracted && (
-              <form action={runContactCheck.bind(null, id)} style={{ marginLeft: 'auto' }}>
-                <PendingButton pendingLabel="Checking the web… (can take a minute)" style={smallBtn()}>
-                  {v.contact_check ? 'Re-run contact check' : 'Run contact check'}
-                </PendingButton>
-              </form>
+          <SectionTitle>Agent contact check</SectionTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {!v.coi_extracted ? (
+              <div style={card()}>
+                <Muted>Run extraction first; the check searches the producer named on the COI.</Muted>
+              </div>
+            ) : (
+              <>
+                {!caseIsClosed && (
+                  <div style={card()}>
+                    <ContactCheckTask
+                      defaultPhone={contactValue(coi?.insurance_company_phone)}
+                      defaultEmail={contactValue(coi?.insurance_company_email)}
+                      runAction={runOnlineContactCheck.bind(null, id)}
+                    />
+                  </div>
+                )}
+                {checks.length === 0 ? (
+                  <Muted>No online checks yet. A checked phone/email tags every contact log that cites it.</Muted>
+                ) : (
+                  <>
+                    <CheckEntryCard entry={checks[checks.length - 1]}
+                      controls={!caseIsClosed && (
+                        /* Keyed by content: remount on fresh data after a save
+                           (React 19 stale-defaultValue workaround). */
+                        <NoteCheckControls
+                          key={JSON.stringify(checks[checks.length - 1])}
+                          check={checks[checks.length - 1]}
+                          saveAction={saveContactCheckEdit.bind(null, id, checks[checks.length - 1].checked_at)}
+                        />
+                      )} />
+                    {checks.length > 1 && (
+                      <details>
+                        <summary style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>
+                          Previous checks ({checks.length - 1})
+                        </summary>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                          {checks.slice(0, -1).reverse().map(e => (
+                            <CheckEntryCard key={e.checked_at} entry={e}
+                              controls={!caseIsClosed && (
+                                <NoteCheckControls
+                                  key={JSON.stringify(e)}
+                                  check={e}
+                                  saveAction={saveContactCheckEdit.bind(null, id, e.checked_at)}
+                                />
+                              )} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </>
+                )}
+              </>
             )}
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <ContactCheckCard check={(v.contact_check ?? null) as AgentContactCheck | null} extracted={!!v.coi_extracted} />
           </div>
         </section>
 
@@ -336,14 +383,14 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                       </p>
                     )}
                     {!caseIsClosed && (
-                      /* Keyed by content: React 19 resets uncontrolled fields
-                         to the STALE render's defaultValue after a form
-                         action; remounting on fresh data shows what saved. */
+                      /* Edit-only: tags come from the online check above by
+                         value match; no per-log web search. Keyed by content:
+                         React 19 resets uncontrolled fields to the STALE
+                         render's defaultValue after a form action; remounting
+                         on fresh data shows what saved. */
                       <NoteCheckControls
                         key={JSON.stringify(n.contact_check ?? null)}
                         check={n.contact_check ?? null}
-                        hasContactField={!!(phone || email)}
-                        runAction={runNoteContactCheck.bind(null, id, n.at)}
                         saveAction={saveNoteCheck.bind(null, id, n.at)}
                       />
                     )}
@@ -439,82 +486,44 @@ function InsurerCard({ coi }: { coi: COI }) {
 }
 
 /**
- * Web verification of the agent/producer contact printed on the COI: the
- * details the certificate says to call, side by side with the phone/email a
- * web search could match to that agency. NOT part of extraction — populated
- * only by the Run contact check button (each run costs web searches).
- * Admin-only; what customers see is the per-log verification in the
- * Insurer Contact Log below.
+ * One run from the online-check history: the values that were checked, their
+ * web verdicts, the customer-facing blurb, and sources. The values render as
+ * plain selectable text so the admin can copy-paste them straight into the
+ * contact log dialog — a pasted value inherits this run's tag automatically.
  */
-function ContactCheckCard({ check, extracted }: { check: AgentContactCheck | null; extracted: boolean }) {
-  if (!check) {
-    return (
-      <div style={card()}>
-        <Muted>{extracted
-          ? 'Not checked yet. Run contact check to verify the agent contact on the COI against the web. A blank result after a run means the COI names no agency or nothing credible was found.'
-          : 'Run extraction first; the contact check reads the agent details from the extracted COI.'}</Muted>
-      </div>
-    )
-  }
-  const verdict = (m: 'match' | 'mismatch' | 'not_found') =>
-    m === 'match' ? { label: 'Matches web', color: '#2e7d32' }
-    : m === 'mismatch' ? { label: 'Differs from web', color: '#c62828' }
-    : { label: 'Not found online', color: C.txt3 }
-  const chip = (m: 'match' | 'mismatch' | 'not_found') => {
-    const vd = verdict(m)
-    return (
-      <span style={{
-        marginLeft: 8, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
-        color: vd.color, background: `color-mix(in oklch, ${vd.color} 10%, transparent)`,
-        padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' as const, verticalAlign: 'middle',
-      }}>
-        {vd.label}
-      </span>
-    )
-  }
+function CheckEntryCard({ entry, controls }: { entry: ContactCheckEntry; controls?: React.ReactNode }) {
+  const phone = contactValue(entry.phone)
+  const email = contactValue(entry.email)
   return (
     <div style={card()}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <div>
-          <SectionTitle small>On the COI</SectionTitle>
-          <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 14, rowGap: 7 }}>
-            <FactRow label="Agency (producer)" value={check.coi.producer || check.coi.insurer || '—'} />
-            <FactRow label="Contact name" value={check.coi.contact || '—'} />
-            <FactRow label="Phone" value={check.coi.phone || '—'} />
-            <FactRow label="Email" value={check.coi.email || '—'} />
-          </dl>
-        </div>
-        <div>
-          <SectionTitle small>Found by web search</SectionTitle>
-          <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 14, rowGap: 7 }}>
-            <dt style={{ fontSize: 13, color: C.txt3 }}>Phone</dt>
-            <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500 }}>
-              {check.web.phone || '—'}{chip(check.web.phone_match)}
-            </dd>
-            <dt style={{ fontSize: 13, color: C.txt3 }}>Email</dt>
-            <dd style={{ fontSize: 13.5, color: C.txt, margin: 0, fontWeight: 500, overflowWrap: 'anywhere' }}>
-              {check.web.email || '—'}{chip(check.web.email_match)}
-            </dd>
-          </dl>
-        </div>
-      </div>
-      {check.web.summary && (
-        <p style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, margin: '14px 0 0', paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          {check.web.summary}
-        </p>
+      <p style={{ fontSize: 13, color: C.txt3, margin: 0 }}>
+        {phone && (
+          <span>Phone: <span style={{ color: C.txt, userSelect: 'all' as const }}>{phone}</span><NoteStatusChip status={entry.phone_status} /></span>
+        )}
+        {phone && email && <span style={{ margin: '0 8px' }}>|</span>}
+        {email && (
+          <span>Email: <span style={{ color: C.txt, userSelect: 'all' as const, overflowWrap: 'anywhere' }}>{email}</span><NoteStatusChip status={entry.email_status} /></span>
+        )}
+      </p>
+      {entry.blurb && (
+        <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>{entry.blurb}</p>
       )}
-      {check.web.sources.length > 0 && (
-        <p style={{ fontSize: 12, color: C.txt3, margin: '10px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
-          Sources:{' '}
-          {check.web.sources.map((s, i) => (
-            <span key={i}>
-              {i > 0 && ' · '}
-              <a href={s} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(s)}</a>
-            </span>
-          ))}
-          {' · '}checked {pacificDateTime(check.checked_at)}
-        </p>
-      )}
+      <p style={{ fontSize: 12, color: C.txt3, margin: '6px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+        {entry.sources.length > 0 && (
+          <>Sources:{' '}
+            {entry.sources.map((s, i) => (
+              <span key={i}>
+                {i > 0 && ' · '}
+                <a href={s} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(s)}</a>
+              </span>
+            ))}
+            {' · '}
+          </>
+        )}
+        checked {pacificDateTime(entry.checked_at)}
+        {entry.edited_at && <> · edited {pacificDateTime(entry.edited_at)}</>}
+      </p>
+      {controls}
     </div>
   )
 }

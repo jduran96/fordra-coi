@@ -6,7 +6,6 @@ import type {
   COIExtracted,
   GapAnalysis,
   FinalReport,
-  AgentContactCheck,
   NoteContactCheck,
 } from './types';
 
@@ -414,81 +413,6 @@ function dedupeGapAnalysis(gap: GapAnalysis): GapAnalysis {
 }
 
 // ─── 4b. Verify the insurance agent contact via web search ───────────────────
-
-/**
- * Check the producer/agent contact printed on the COI against the public web
- * (design partner: the agent listed on a COI isn't always legit). Uses the
- * server-side web_search tool; the model reports the phone/email it can match
- * to that agency online plus per-field verdicts. Returns null when the COI
- * names no agency/insurer to search for. Never throws — the extraction
- * pipeline must not fail because a web search did.
- */
-export async function verifyInsurerContact(extracted: COIExtracted): Promise<AgentContactCheck | null> {
-  const coi = {
-    producer: (extracted.producer ?? '').trim(),
-    insurer: (extracted.insurance_company ?? '').trim(),
-    contact: (extracted.insurance_company_contact ?? '').trim(),
-    phone: (extracted.insurance_company_phone ?? '').trim(),
-    email: (extracted.insurance_company_email ?? '').trim(),
-  };
-  if (!coi.producer && !coi.insurer) return null;
-
-  const system = `You verify insurance agent contact details for a COI verification company.
-You are given the producer (agency), insurer, and contact details printed on a Certificate of Insurance. Use web search to find the agency's real, publicly listed phone number and email (official website, licensing directories, reputable business listings). Then compare what the COI says against what the web shows.
-Rules:
-- Search for the producer/agency first; fall back to the insurer if no producer is named.
-- phone_match / email_match: "match" when the COI's value appears in a credible public listing for that agency (formatting differences are fine); "mismatch" when the public listing shows a clearly different value; "not_found" when you cannot find a credible public value to compare (or the COI omits that field).
-- summary: 1-3 plain sentences an admin can act on, e.g. whether the printed contact looks legitimate and what could not be confirmed. No em dashes.
-- sources: the URLs you actually relied on (up to 5).
-After searching, return ONLY a valid JSON object, no prose, no markdown fences:
-{ "phone": string, "email": string, "phone_match": "match"|"mismatch"|"not_found", "email_match": "match"|"mismatch"|"not_found", "summary": string, "sources": string[] }
-phone/email: the best publicly listed values you found ("" if none).`;
-
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Contact details printed on the COI:\nProducer (agency): ${coi.producer || '(not shown)'}\nInsurer(s): ${coi.insurer || '(not shown)'}\nContact name: ${coi.contact || '(not shown)'}\nPhone: ${coi.phone || '(not shown)'}\nEmail: ${coi.email || '(not shown)'}\n\nVerify these against the web and return the JSON object.`,
-    },
-  ];
-  const tools = [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
-  ] as unknown as Anthropic.Messages.ToolUnion[];
-
-  try {
-    let res = await getClient().messages.create({
-      model: MODEL, max_tokens: 4096, system, messages, tools,
-    });
-    // Server-side tool loops can pause; resume by re-sending with the
-    // assistant turn appended (bounded so we can never loop forever).
-    for (let i = 0; i < 3 && res.stop_reason === 'pause_turn'; i++) {
-      messages.push({ role: 'assistant', content: res.content });
-      res = await getClient().messages.create({
-        model: MODEL, max_tokens: 4096, system, messages, tools,
-      });
-    }
-    const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('\n');
-    const web = JSON.parse(extractJSON(text)) as AgentContactCheck['web'];
-    if (!web || typeof web.summary !== 'string') throw new Error('unexpected shape');
-    return {
-      coi,
-      web: {
-        phone: typeof web.phone === 'string' ? web.phone : '',
-        email: typeof web.email === 'string' ? web.email : '',
-        phone_match: ['match', 'mismatch', 'not_found'].includes(web.phone_match) ? web.phone_match : 'not_found',
-        email_match: ['match', 'mismatch', 'not_found'].includes(web.email_match) ? web.email_match : 'not_found',
-        summary: web.summary,
-        sources: Array.isArray(web.sources) ? web.sources.filter(s => typeof s === 'string').slice(0, 5) : [],
-      },
-      checked_at: new Date().toISOString(),
-    };
-  } catch (e) {
-    console.error('verifyInsurerContact: check failed; storing nothing', e);
-    return null;
-  }
-}
 
 /**
  * Verify ONE contact log's cited phone/email against the public web. The

@@ -9,11 +9,11 @@ import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline } from '@/lib/extraction'
-import { verifyInsurerContact, verifyLoggedContact } from '@/lib/claude'
+import { verifyLoggedContact } from '@/lib/claude'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
-import { contactValue } from '@/lib/contact-notes'
-import type { COIExtracted, ContactNote, NoteContactCheck, OnlineListingStatus } from '@/lib/types'
+import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
+import type { COIExtracted, ContactCheckEntry, ContactNote, NoteContactCheck, OnlineListingStatus } from '@/lib/types'
 
 /**
  * Run OCR/extraction on a verification's documents and store the parsed analysis.
@@ -43,51 +43,26 @@ export async function runExtraction(verificationId: string, formData?: FormData)
 }
 
 /**
- * Web-search verification of the agent/producer contact printed on the COI.
- * Deliberately its own button, NOT part of runExtraction: the check costs
- * real money per run (up to 5 web searches + their result tokens, roughly
- * $0.10-0.20), so the admin spends it only when they actually want it.
- * Requires a completed extraction (it reads coi_extracted).
+ * Web-verify a phone/email against the issuing producer's public listings
+ * and APPEND the result to the verification-level check history
+ * (contact_checks). This is the ONLY place a contact web search runs —
+ * deliberately its own button, never automatic: each run costs real money
+ * (up to 5 web searches, roughly $0.10-0.20). Contact logs inherit their
+ * tags by value-matching against this history, spending nothing.
+ * Blank fields are never searched.
  */
-export async function runContactCheck(verificationId: string) {
-  await requireAdmin()
-  const supabase = createServiceClient()
-  const { data: v, error } = await supabase.from('verifications')
-    .select('coi_extracted')
-    .eq('id', verificationId)
-    .maybeSingle()
-  if (error || !v?.coi_extracted) {
-    throw new Error('Run extraction first: the contact check reads the extracted COI.')
-  }
-  // verifyInsurerContact never throws; null means the COI names no agency or
-  // the search failed — store it so the card shows the honest empty state.
-  const check = await verifyInsurerContact(v.coi_extracted as COIExtracted)
-  const { error: werr } = await supabase.from('verifications')
-    .update({ contact_check: check })
-    .eq('id', verificationId)
-  if (werr) throw new Error(`Could not save the contact check: ${werr.message}`)
-  revalidatePath(`/admin/${verificationId}`)
-}
-
-/**
- * Web-verify ONE contact log's cited phone/email against the issuing
- * producer's public listings (per-log: numbers and emails can change between
- * calls, and each new log can be checked on its own). Blank fields are never
- * searched — no tokens spent on nothing. The result is embedded in the note
- * itself, so publish gating covers it via call_notes.
- */
-export async function runNoteContactCheck(verificationId: string, noteAt: string): Promise<{ error?: string } | void> {
+export async function runOnlineContactCheck(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
   if (await caseClosed(supabase, verificationId)) {
     return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
   }
   const { data: v, error } = await supabase.from('verifications')
-    .select('coi_extracted, call_notes')
+    .select('coi_extracted')
     .eq('id', verificationId)
     .maybeSingle()
   if (error || !v) {
-    console.error('runNoteContactCheck: read failed', error)
+    console.error('runOnlineContactCheck: read failed', error)
     return { error: 'Could not load this verification. Please retry.' }
   }
   const coi = (v.coi_extracted ?? null) as COIExtracted | null
@@ -96,26 +71,123 @@ export async function runNoteContactCheck(verificationId: string, noteAt: string
   if (!producer && !insurer) {
     return { error: 'Run extraction first: the check searches the producer named on the COI.' }
   }
-  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
-  const note = notes.find(n => n.at === noteAt)
-  if (!note) return { error: 'This log entry no longer exists.' }
-  const phone = contactValue(note.contact?.phone)
-  const email = contactValue(note.contact?.email)
+  const phone = contactValue(String(formData.get('phone') || ''))
+  const email = contactValue(String(formData.get('email') || ''))
   if (!phone && !email) {
-    return { error: 'This log has no phone or email to verify.' }
+    return { error: 'Enter a phone or email to verify.' }
   }
-  const check = await verifyLoggedContact({ producer, insurer, name: note.contact?.name, phone, email })
+  const check = await verifyLoggedContact({ producer, insurer, phone, email })
   if (!check) return { error: 'The web check came back empty. Please retry.' }
-  const { error: werr } = await supabase.rpc('admin_set_note_check', {
+  const entry: ContactCheckEntry = {
+    ...check,
+    ...(phone ? { phone } : {}),
+    ...(email ? { email } : {}),
+  }
+  const { error: werr } = await supabase.rpc('admin_append_contact_check', {
     vid: verificationId,
-    note_at: noteAt,
-    check_data: check,
+    entry,
   })
   if (werr) {
-    console.error('runNoteContactCheck: write failed', werr)
+    console.error('runOnlineContactCheck: write failed', werr)
     return { error: 'Could not save the check. Please retry.' }
   }
+  await retroTagNotes(supabase, verificationId)
   revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Save the admin's edits to one check-history entry: flip the phone/email
+ * statuses or reword the customer-facing blurb. The edit then propagates to
+ * every matching contact log (except logs whose own check was hand-edited).
+ */
+export async function saveContactCheckEdit(verificationId: string, entryAt: string, formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
+  const { data: v, error } = await supabase.from('verifications')
+    .select('contact_checks')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v) {
+    console.error('saveContactCheckEdit: read failed', error)
+    return { error: 'Could not save. Please retry.' }
+  }
+  const entries = (Array.isArray(v.contact_checks) ? v.contact_checks : []) as ContactCheckEntry[]
+  const entry = entries.find(e => e.checked_at === entryAt)
+  if (!entry) return { error: 'This check no longer exists.' }
+
+  const parseStatus = (raw: FormDataEntryValue | null): OnlineListingStatus =>
+    raw === 'verified' || raw === 'differs' ? raw : 'not_found'
+  const next: ContactCheckEntry = {
+    ...entry,
+    // A status is only ever set for a field the check covered: the form
+    // renders a select per checked field only.
+    ...(formData.has('phone_status') ? { phone_status: parseStatus(formData.get('phone_status')) } : {}),
+    ...(formData.has('email_status') ? { email_status: parseStatus(formData.get('email_status')) } : {}),
+    blurb: String(formData.get('blurb') || '').trim(),
+    edited_at: new Date().toISOString(),
+  }
+  const { error: werr } = await supabase.rpc('admin_set_contact_check', {
+    vid: verificationId,
+    entry_at: entryAt,
+    entry_data: next,
+  })
+  if (werr) {
+    console.error('saveContactCheckEdit: write failed', werr)
+    return { error: 'Could not save. Please retry.' }
+  }
+  await retroTagNotes(supabase, verificationId)
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Re-derive every contact log's check snapshot from the current check
+ * history (after a run or an edit), so logs written BEFORE a check still get
+ * their tags. Rules:
+ *  - a note whose own check was hand-edited (contact_check.edited_at) is
+ *    never touched: edited_at marks human-curated customer copy;
+ *  - a field the history does not match keeps the note's existing status
+ *    (legacy per-log check results survive);
+ *  - no match at all leaves the note alone (never destroys old data).
+ * Writes go per-note through the atomic admin_set_note_check RPC — never
+ * read-modify-write the whole call_notes array. Failures log and continue:
+ * each note is independently correct.
+ */
+async function retroTagNotes(supabase: ReturnType<typeof createServiceClient>, verificationId: string): Promise<void> {
+  const { data: v, error } = await supabase.from('verifications')
+    .select('call_notes, contact_checks')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v) {
+    console.error('retroTagNotes: read failed', error)
+    return
+  }
+  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  const entries = (Array.isArray(v.contact_checks) ? v.contact_checks : []) as ContactCheckEntry[]
+  for (const note of notes) {
+    if (note.contact_check?.edited_at) continue
+    const phone = contactValue(note.contact?.phone)
+    const email = contactValue(note.contact?.email)
+    if (!phone && !email) continue
+    const candidate = noteCheckFromRegistry(entries, phone, email)
+    if (!candidate) continue
+    const existing = note.contact_check
+    const merged: NoteContactCheck = {
+      ...candidate,
+      // Carry a status the history did not cover from the note's old check.
+      ...(!candidate.phone_status && existing?.phone_status ? { phone_status: existing.phone_status } : {}),
+      ...(!candidate.email_status && existing?.email_status ? { email_status: existing.email_status } : {}),
+    }
+    if (existing && JSON.stringify(existing) === JSON.stringify(merged)) continue
+    const { error: werr } = await supabase.rpc('admin_set_note_check', {
+      vid: verificationId,
+      note_at: note.at,
+      check_data: merged,
+    })
+    if (werr) console.error('retroTagNotes: write failed for note', note.at, werr)
+  }
 }
 
 /**
@@ -221,6 +293,23 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
   const transcript = String(formData.get('transcript') || '').trim()
 
   if (summary_text || transcript) {
+    // The note inherits its verification tags from the online check history
+    // by value match (normalized, so copy-pasted formatting differences
+    // still hit) — no web search at log time. The snapshot must be derived
+    // from the SAME contact the RPC will store: the form contact when given,
+    // otherwise the saved insurer contact it falls back to.
+    const { data: row } = await supabase.from('verifications')
+      .select('insurance_contact, contact_checks')
+      .eq('id', verificationId)
+      .maybeSingle()
+    const effective = hasContact
+      ? insurance_contact
+      : ((row?.insurance_contact ?? {}) as typeof insurance_contact)
+    const check_data = noteCheckFromRegistry(
+      (Array.isArray(row?.contact_checks) ? row.contact_checks : []) as ContactCheckEntry[],
+      contactValue(effective.phone),
+      contactValue(effective.email),
+    )
     // The RPC snapshots the contact into the note (form contact if given,
     // otherwise the saved insurer contact) so each entry records who was
     // reached even if the contact fields change later.
@@ -231,6 +320,7 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
       summary_text,
       transcript,
       contact: hasContact ? insurance_contact : null,
+      check_data,
     })
     if (error) {
       console.error('saveCallNote: append failed', error)

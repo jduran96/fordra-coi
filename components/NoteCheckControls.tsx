@@ -12,32 +12,22 @@ const STATUS_OPTIONS: { value: OnlineListingStatus; label: string }[] = [
 ]
 
 /**
- * Admin controls for ONE contact log's web verification: run (or re-run) the
- * online check for the phone/email cited in that log, and once a result
- * exists, edit the per-field statuses and the customer-facing blurb. Selects
- * render only for fields the check actually covered — a blank field is never
- * checked and never gets a status.
+ * Admin edit controls for one stored contact verification result: flip the
+ * per-field statuses and reword the customer-facing blurb. Used on contact
+ * log snapshots AND on online-check history entries (only the bound save
+ * action differs). Selects render only for fields the check actually covered
+ * — a blank field is never checked and never gets a status. Web checks run
+ * elsewhere (the single online-check task); this component never searches.
  */
 export default function NoteCheckControls({
   check,
-  hasContactField,
-  runAction,
   saveAction,
 }: {
   check: NoteContactCheck | null
-  /** The log cites at least one of phone/email (otherwise nothing to check). */
-  hasContactField: boolean
-  runAction: () => Promise<{ error?: string } | void>
   saveAction: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
-
-  async function run() {
-    setError('')
-    const res = await runAction()
-    if (res?.error) setError(res.error)
-  }
 
   async function save(formData: FormData) {
     setError('')
@@ -49,22 +39,17 @@ export default function NoteCheckControls({
     setEditing(false)
   }
 
-  if (!hasContactField) return null
+  if (!check) return null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <form action={run} style={{ margin: 0 }}>
-          <PendingButton pendingLabel="Checking the web… (can take a minute)" style={btn()}>
-            {check ? 'Re-run online check' : 'Run online check'}
-          </PendingButton>
-        </form>
-        {check && !editing && (
-          <button type="button" onClick={() => setEditing(true)} style={{ ...btn(), border: 'none', background: 'transparent', color: C.txt2 }}>
+      {!editing && (
+        <div>
+          <button type="button" onClick={() => setEditing(true)} style={{ ...btn(), border: 'none', background: 'transparent', color: C.txt2, padding: '2px 0' }}>
             Edit
           </button>
-        )}
-      </div>
-      {check && editing && (
+        </div>
+      )}
+      {editing && (
         <form action={save} style={{ display: 'flex', flexDirection: 'column', gap: 8, fontFamily: C.sans }}>
           <div style={{ display: 'flex', gap: 10 }}>
             {check.phone_status && (

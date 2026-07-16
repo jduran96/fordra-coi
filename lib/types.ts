@@ -98,25 +98,6 @@ export interface COIExtracted {
 }
 
 /**
- * Web-search verification of the insurance agent/producer contact printed on
- * the COI (admin-only; stored in verifications.contact_check). "coi" is what
- * the certificate says to call; "web" is what an independent web search found
- * for that agency, with per-field match verdicts.
- */
-export interface AgentContactCheck {
-  coi: { producer: string; insurer: string; contact: string; phone: string; email: string };
-  web: {
-    phone: string;
-    email: string;
-    phone_match: 'match' | 'mismatch' | 'not_found';
-    email_match: 'match' | 'mismatch' | 'not_found';
-    summary: string;
-    sources: string[];
-  };
-  checked_at: string;
-}
-
-/**
  * One insurer contact note (verifications.call_notes entry). Notes are
  * append-only; the shape grew on 2026-07-16 when "call notes" became
  * "insurer contact notes". Legacy entries carry only { at, text, contact } —
@@ -156,6 +137,18 @@ export interface NoteContactCheck {
   checked_at: string;
   /** Set when an admin saves an edit over the run's result. */
   edited_at?: string;
+}
+
+/**
+ * One run of the verification-level online contact check
+ * (verifications.contact_checks, admin-only jsonb array, append-only history).
+ * Same shape as a note's check plus the values that were actually checked.
+ * Contact logs inherit tags by matching their cited phone/email against these
+ * entries (newest run wins) — no web search runs at log time.
+ */
+export interface ContactCheckEntry extends NoteContactCheck {
+  phone?: string;
+  email?: string;
 }
 
 export interface GapItem {

@@ -3,7 +3,45 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-16 — Insurer Contact Log: method + rich summary + transcript, per-log contact verification)
+## ⏱️ START HERE (as of 2026-07-16 evening — contact check registry: one web check task, logs inherit tags)
+
+**2026-07-16 evening session (owner respec of the same-day per-log checks):**
+
+- **ONE Agent contact check replaces per-log web checks** (owner decision: stop
+  burning a search per log). The admin Calls tab card (above the Insurer
+  Contact Log) prefills phone/email from the COI's extracted producer contact,
+  values editable; **manually triggered like OCR, never automatic**. Each run
+  APPENDS to `verifications.contact_checks` (admin-only jsonb history column,
+  migration 0028, no `authenticated` grant; `ContactCheckEntry` in
+  lib/types.ts). Latest run is the prominent card; older runs collapse under
+  "Previous checks". Old COI-level check removed: `verifyInsurerContact`,
+  `AgentContactCheck`, `runContactCheck` deleted; the orphaned
+  `verifications.contact_check` column (0019) still exists — drop in a later
+  cleanup migration after prod verify (0024/0025 pattern).
+- **Logs inherit tags by VALUE MATCH, no web call at log time**: `saveCallNote`
+  derives the note's `contact_check` snapshot from the history via
+  `noteCheckFromRegistry` (lib/contact-notes.ts; phone compared digits-only
+  minus leading US 1, email case-insensitive — copy-paste formatting
+  differences still match; newest run wins per value) and passes it as the new
+  optional 7th param of `admin_append_contact_note` (0028 replaced the 6-arg
+  RPC; the default keeps old callers resolving). Unmatched-but-present field =
+  no status key = dashed "Not checked online" tag (unchanged contract).
+  Customer page + PDF unchanged: they read the note-embedded snapshot.
+- **Retro-tagging**: after every run or entry edit, `retroTagNotes`
+  (actions.ts) re-derives all matching notes' snapshots via per-note
+  `admin_set_note_check` calls (never read-modify-write the array). Notes
+  whose check carries `edited_at` are NEVER touched (human-curated copy);
+  a field the history doesn't match keeps the note's existing status.
+- Actions: new `runOnlineContactCheck` + `saveContactCheckEdit` (entry edits
+  key on `checked_at`, RPC `admin_set_contact_check`); `runNoteContactCheck`
+  deleted; `saveNoteCheck` (per-log edit) kept. `NoteCheckControls` is now
+  edit-only (no run form) and is reused for both note and history-entry edits;
+  the run form is `components/ContactCheckTask.tsx` (controlled inputs).
+- Verified live on localhost end-to-end (real web searches, tag inheritance
+  with formatting variants, retro-tag, edited-note protection, customer page +
+  PDF, migration idempotence, tsc + full build). Test row deleted.
+
+## Previous (as of 2026-07-16 — Insurer Contact Log: method + rich summary + transcript, per-log contact verification)
 
 **2026-07-16 session (deployed to prod, commit e6d5764):**
 
