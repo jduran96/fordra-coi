@@ -19,6 +19,16 @@
   rows (`created_by` null) show "no app user to notify" instead of the
   checkbox and the server ignores the flag. Each send is recorded in the admin
   activity log as a note ("Notified <email>: …"). No new schema/config/deps.
+  **Deployed (commit c4f7868) + owner-verified live on prod 2026-07-16.**
+  Subject copy (owner-approved): "Verification for <carrier> complete" /
+  "... could not be completed", carrier cut at 60 chars with "..." in the
+  subject only. **Airtight audit passed**: `notifyVerificationResult` has one
+  call site, gated by requireAdmin + publish/fail intent + the default-off
+  `notify_user` checkbox that only mounts inside the confirm dialogs; no
+  automatic trigger, no retry loop, one recipient per confirmed action. This
+  is now INVARIANT #16 in the fordra-repeat-bugs skill — check it before
+  touching any email or publish/fail code (admin emails are recoverable
+  mistakes, customer emails are not).
 
 - **ONE Agent contact check replaces per-log web checks** (owner decision: stop
   burning a search per log). The admin Calls tab card (above the Insurer

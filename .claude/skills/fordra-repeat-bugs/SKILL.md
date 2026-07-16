@@ -269,3 +269,33 @@ re-apply a changed defaultValue to existing DOM inputs.
 with correct defaults, e.g. `<ContactCheckPublicForm key={JSON.stringify(check)} ...>`
 (same pattern AssessmentForm uses on the admin detail page). Alternative:
 controlled inputs.
+
+## 16. Customer-facing notification emails must stay airtight opt-in (INVARIANT)
+
+**Not a bug — a contract to check BEFORE touching any email or publish/fail
+code.** Owner rule (2026-07-16): emails to admins are recoverable mistakes;
+emails to customers/app users are not — one accidental blast can kill a pilot.
+Every send to an app user must be explicitly human-confirmed, per action.
+
+**The one customer send path (audited 2026-07-16, keep it this shape):**
+`notifyVerificationResult` (`lib/notify.ts`) has exactly ONE call site —
+`saveAssessment` in `app/admin/(console)/actions.ts` — gated by ALL of:
+`requireAdmin()`, intent `publish`/`fail` (save/reopen/unknown never notify),
+`notify_user === 'on'` from the form, `created_by` set, profile email found.
+The `notify_user` checkbox exists ONLY inside the publish/fail confirm dialogs
+(`NotifyUserChoice` in `components/AssessmentForm.tsx`), default UNCHECKED,
+unmounted on cancel so a checked box can't leak into a later submit. One send
+per confirmed action, single recipient, `after()`-deferred, no retry loop, and
+every send is recorded in the admin activity log ("Notified <email>: …").
+
+**When adding ANY new email to app users, verify before shipping:**
+- No automatic trigger: not from submission, extraction, webhooks, cron,
+  Slack, or /v1 — only from an explicit admin confirm with a default-off
+  checkbox scoped to that single action.
+- Sends must be un-loopable: no retries on failure (log and give up, like
+  both senders in `lib/notify.ts`), disabled submit while pending
+  (`PendingButton`), one recipient per call.
+- Grep for every call site of the sender and every reader of the form flag;
+  each must sit behind `requireAdmin()` and the per-action opt-in.
+- Leave an audit trail per send (activity log), so "how many emails went out
+  and who authorized them" is always answerable.
