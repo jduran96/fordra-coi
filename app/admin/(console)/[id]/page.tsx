@@ -9,6 +9,7 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
+import { orderBySubmitted, orderFromRequirements } from '@/lib/gap-order'
 import type { ContactCheckEntry, ContactNote, OnlineListingStatus } from '@/lib/types'
 import { contactValue } from '@/lib/contact-notes'
 import PendingButton from '@/components/PendingButton'
@@ -142,7 +143,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     const haveLabels = new Set(base.map(i => label(i.requirement)))
     const haveNotes = new Set(base.map(i => note(i.requirement)).filter(Boolean))
     const missing = parsed.filter(r => !haveLabels.has(label(r)) && !(note(r) && haveNotes.has(note(r))))
-    return [...base, ...missing.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))]
+    const rows = [...base, ...missing.map(r => ({ requirement: r, status: 'uncertain' as const, evidence: '' }))]
+    // Rows display in submitted order, not grouped by verdict.
+    return orderBySubmitted(rows, orderFromRequirements(parsed))
   })()
   const summaryDefault = (v.final_report as { narrative_summary?: string } | null)?.narrative_summary ?? ''
 

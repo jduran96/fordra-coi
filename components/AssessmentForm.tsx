@@ -97,14 +97,15 @@ export default function AssessmentForm({
             <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={{ ...input(), width: 160, flexShrink: 0 }}>
               <option value="met">Passed</option>
               <option value="not_met">Discrepancy</option>
-              <option value="uncertain">Unconfirmed</option>
+              <option value="uncertain">Needs attention</option>
             </select>
-            <input
+            <textarea
               name={`req_${i}_evidence`}
               defaultValue={item.evidence ?? ''}
+              rows={3}
               placeholder="Reason / evidence shown to the customer"
               disabled={closed}
-              style={{ ...input(), flex: 1 }}
+              style={{ ...input(), flex: 1, resize: 'vertical', lineHeight: 1.5 }}
             />
           </div>
         </div>

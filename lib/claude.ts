@@ -159,6 +159,10 @@ export async function parseRequirements(docText: string, promptOverride?: string
  * lines, or invent extras. When the model breaks the contract anyway, falls
  * back to a deterministic per-line parse — so a submitted standard can never
  * silently vanish from the requirement checks.
+ *
+ * coverage_type is ALWAYS the submitter's own title, taken deterministically
+ * from the line (seen live: "Insured at purchase amount" relabeled to a vague
+ * "Physical Damage", VRF-1056). The model only fills minimum_limit and notes.
  */
 export async function parseRequirementLines(lines: string[], promptOverride?: string): Promise<Requirement[]> {
   if (!lines.length) return [];
@@ -178,7 +182,9 @@ STRICT LINE CONTRACT — the input is the customer's own list of insurance stand
   ];
   try {
     const parsed = await claudeJSON<Requirement[]>(system, messages, 4096);
-    if (Array.isArray(parsed) && parsed.length === lines.length) return parsed;
+    if (Array.isArray(parsed) && parsed.length === lines.length) {
+      return parsed.map((r, i) => ({ ...r, coverage_type: parseStandardLine(lines[i]).title }));
+    }
     console.error(`parseRequirementLines: contract violated (${lines.length} lines -> ${Array.isArray(parsed) ? parsed.length : 'non-array'}); using deterministic per-line fallback`);
   } catch (e) {
     console.error('parseRequirementLines: model call failed; using deterministic per-line fallback', e);
@@ -354,6 +360,7 @@ CRITICAL — the evidence MUST be consistent with the status; never contradict i
 - status "uncertain": state exactly what could not be confirmed and why — and only then.
 Judge each requirement on the coverage type and its stated amount. Do not introduce a separate concern (e.g. effective dates) that conflicts with the status you chose.
 Dollar amounts (minimum_limit) are thresholds whose direction comes from the requirement's own wording and notes. In insurance a stated amount is a MINIMUM unless stated otherwise: "auto liability $1,000,000" means at least $1M, so a COI showing MORE than the amount still satisfies it — never fail a requirement because coverage exceeds a minimum. But the notes may define a different rule: a maximum/cap (e.g. "deductible no more than $5,000" is not_met when the COI shows a larger deductible), an exact value, or a range/average — judge against the direction the requirement actually states.
+Physical damage insured amount: COIs often state no explicit limit on the physical damage coverage line. When a physical damage coverage is present AND a vehicle value is listed in the Description of Operations/remarks (e.g. "2022 INTERNATIONAL LT625, VIN ..., ($47,100)"), that value IS the amount the physical damage policy covers for that vehicle — judge insured-amount requirements against it. (Industry convention, confirmed with an insurer 2026-07-17.) Without a physical damage coverage, or without a listed vehicle value, the insured amount is uncertain, not met.
 Some requirements are qualitative conditions (no minimum_limit) whose pass criteria are spelled out in their "notes" field — judge those strictly by the notes.
 Each requirement must appear EXACTLY ONCE across the three arrays. If the evidence is mixed (e.g. one coverage is active and another is expired), choose the single most severe status (not_met over uncertain over met) and explain the split in the evidence sentence. Never place the same requirement in two arrays.`;
 

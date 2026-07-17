@@ -11,12 +11,14 @@ import { C } from '@/lib/theme'
  * data; if a table ever grows past a few hundred rows, move the slicing into
  * the database query instead of loading everything here.
  */
-export default function PaginatedTable({ head, rows, pageSize = 5 }: {
+export default function PaginatedTable({ head, rows, pageSize = 5, maxHeight }: {
   /** The fully-styled header <tr>. */
   head: React.ReactNode
   /** One fully-styled <tr> per record (keyed), in display order. */
   rows: React.ReactNode[]
   pageSize?: number
+  /** Caps the table body's height; the current page scrolls inside it. */
+  maxHeight?: number
 }) {
   const [page, setPage] = useState(0)
   const pages = Math.max(1, Math.ceil(rows.length / pageSize))
@@ -25,7 +27,7 @@ export default function PaginatedTable({ head, rows, pageSize = 5 }: {
   const cur = Math.min(page, pages - 1)
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', ...(maxHeight ? { maxHeight, overflowY: 'auto' as const } : {}) }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
           <thead>{head}</thead>
           <tbody>{rows.slice(cur * pageSize, (cur + 1) * pageSize)}</tbody>

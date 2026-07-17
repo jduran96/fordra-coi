@@ -7,6 +7,7 @@ import { C, statusColor, statusLabel } from '@/lib/theme'
 import { pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import CoiSplitReview from '@/components/CoiSplitReview'
 import { parseStandardLine } from '@/lib/templates'
+import { orderBySubmitted, orderFromText } from '@/lib/gap-order'
 import { contactValue } from '@/lib/contact-notes'
 import type { ReactNode } from 'react'
 import type { COIExtracted, ContactNote, OnlineListingStatus } from '@/lib/types'
@@ -70,9 +71,13 @@ export default async function CustomerVerification({ params }: { params: Promise
   const report = v.final_report as ({ narrative_summary?: string } & Gap) | null
   const coi = (v.coi_extracted ?? null) as COIExtracted | null
   // The customer always sees one format, whichever produced the verdicts:
-  // the admin's reviewed final_report wins; the automated gap analysis is the fallback.
+  // the admin's reviewed final_report wins; the automated gap analysis is the
+  // fallback. Rows display in the order the standards were submitted (derived
+  // from the submitted text: my_verifications does not expose the parsed
+  // requirements). Doc-derived requirements have no text line and sort last.
   const finalItems = gapItems(report)
-  const items: GapItem[] = finalItems.length ? finalItems : gapItems((v.gap_analysis ?? null) as Gap | null)
+  const flat: GapItem[] = finalItems.length ? finalItems : gapItems((v.gap_analysis ?? null) as Gap | null)
+  const items = orderBySubmitted(flat, orderFromText(requirementsText))
 
   const displayStatus = failed ? 'failed' : v.status
 
@@ -399,7 +404,7 @@ function SubmittedRow({
 
 /**
  * One-line verdict counts above the split review. Same numbers the old stat
- * tiles showed (checks / discrepancies / unconfirmed), plus satisfied.
+ * tiles showed (checks / discrepancies / needs attention), plus passed.
  */
 function VerdictStrip({ items }: { items: GapItem[] }) {
   const met = items.filter(i => i.status === 'met').length
@@ -407,9 +412,9 @@ function VerdictStrip({ items }: { items: GapItem[] }) {
   const miss = items.filter(i => i.status === 'uncertain').length
   const parts = [
     { n: items.length, label: items.length === 1 ? 'check' : 'checks', color: C.txt },
-    { n: met, label: 'satisfied', color: C.ok },
+    { n: met, label: 'passed', color: C.ok },
     { n: disc, label: disc === 1 ? 'discrepancy' : 'discrepancies', color: disc === 0 ? C.ok : C.error },
-    { n: miss, label: 'unconfirmed', color: miss === 0 ? C.ok : C.warn },
+    { n: miss, label: miss === 1 ? 'needs attention' : 'need attention', color: miss === 0 ? C.ok : C.warn },
   ]
   return (
     <div style={{

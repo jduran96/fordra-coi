@@ -41,9 +41,9 @@ export interface CoiDocFile {
 }
 
 const TAG = {
-  met:       { label: 'Satisfied',   color: C.ok },
-  not_met:   { label: 'Discrepancy', color: C.error },
-  uncertain: { label: 'Unconfirmed', color: C.warn },
+  met:       { label: 'Passed',          color: C.ok },
+  not_met:   { label: 'Discrepancy',     color: C.error },
+  uncertain: { label: 'Needs attention', color: C.warn },
 } as const
 
 // ─── Check → rule classification ─────────────────────────────────────────────

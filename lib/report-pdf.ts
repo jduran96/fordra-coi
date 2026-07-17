@@ -1,13 +1,14 @@
 import PDFDocument from 'pdfkit'
 import { pacificDate, pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import { parseStandardLine } from '@/lib/templates'
+import { orderBySubmitted, orderFromText } from '@/lib/gap-order'
 import { contactValue } from '@/lib/contact-notes'
 import type { ContactNote, OnlineListingStatus } from '@/lib/types'
 
 /**
  * Renders a published verification report as a downloadable PDF. Mirrors the
  * customer results page's content set (owner decision 2026-07-14): summary,
- * requirement verdicts (not met, uncertain, met, same ordering), insurer
+ * requirement verdicts (submitted order, matching the results page), insurer
  * contact notes, and the "what you submitted" record (file names only plus
  * the written insurance standards; documents are not re-rendered). Every
  * note field renders in full here — the transcript expander is a webapp-only
@@ -38,7 +39,7 @@ export interface ReportPdfInput {
 const INK = '#141413'
 const GREY = '#6f6e69'
 const LINE = '#dedcd3'
-const STATUS_LABEL: Record<string, string> = { met: 'Satisfied', not_met: 'Discrepancy', uncertain: 'Unconfirmed' }
+const STATUS_LABEL: Record<string, string> = { met: 'Passed', not_met: 'Discrepancy', uncertain: 'Needs attention' }
 const STATUS_COLOR: Record<string, string> = { met: '#3f7d47', not_met: '#b3403a', uncertain: '#9a6b1f' }
 
 function items(r: Report | null | undefined): ReportItem[] {
@@ -82,7 +83,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     // gap analysis; the PDF must match it exactly.
     const report = (v.final_report && items(v.final_report).length ? v.final_report : v.gap_analysis) ?? null
     const summary = (v.final_report?.narrative_summary ?? '').trim()
-    const rows = items(report)
+    const rows = orderBySubmitted(items(report), orderFromText(v.requirements_text))
 
     if (summary) {
       heading('Summary')
@@ -95,7 +96,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       const unc = rows.filter(i => i.status === 'uncertain').length
       heading('Result')
       doc.font('Helvetica').fontSize(10.5).fillColor(INK).text(
-        `${rows.length} checks   ·   ${disc} ${disc === 1 ? 'discrepancy' : 'discrepancies'}   ·   ${unc} unconfirmed`,
+        `${rows.length} checks   ·   ${disc} ${disc === 1 ? 'discrepancy' : 'discrepancies'}   ·   ${unc} ${unc === 1 ? 'needs' : 'need'} attention`,
       )
       doc.moveDown(0.4)
 

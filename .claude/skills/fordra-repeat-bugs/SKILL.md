@@ -226,7 +226,10 @@ unrecoverable.
 - The submitter's own standards parse via `parseRequirementLines`
   (`lib/claude.ts`): STRICT one-requirement-per-numbered-line, with a
   deterministic `parseStandardLine` fallback when the model breaks the
-  contract. Only uploaded standards DOCUMENTS (free-form prose) go through
+  contract. Row TITLES are also deterministic — `coverage_type` is always
+  `parseStandardLine(line).title`, never a model-chosen label (seen live:
+  "Insured at purchase amount" relabeled to a vague "Physical Damage",
+  VRF-1056); the model only fills minimum_limit/notes. Only uploaded standards DOCUMENTS (free-form prose) go through
   the open `parseRequirements`.
 - `ensureAllRequirementsJudged` (`lib/extraction.ts`) appends any requirement
   the gap model failed to judge to `uncertain` — never silently dropped.
