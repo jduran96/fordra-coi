@@ -213,8 +213,8 @@ verdict copy and directed the prod push):**
   Legacy `{at, text, contact}` entries render `text` as the summary — every
   renderer must keep the `summary_html → summary_text → text` fallback chain.
   Append RPC is `admin_append_contact_note` (migration 0022); the 0016
-  `admin_append_call_note` is dropped by 0025 (write-committed, apply after
-  confirming prod runs e6d5764). Delete RPC unchanged (keys on `at`).
+  `admin_append_call_note` was dropped by 0025 (verified applied 2026-07-22:
+  the function is gone from the live DB). Delete RPC unchanged (keys on `at`).
 - **Per-log contact verification** (owner respec, same day): each log's cited
   phone/email is web-checked against the ISSUING producer from
   `coi_extracted` (`verifyLoggedContact`, `lib/claude.ts`) via a per-note
@@ -394,15 +394,11 @@ Fordra Testing AND Dakota Financial orgs were wiped clean of verification data
 (rows + storage) for fresh pilot starts.
 
 **Open items for the next session (none are blockers, but decide deliberately):**
-1. **`undici` is imported directly in `lib/remote-docs.ts` but is NOT in
-   `package.json`** — it resolves transitively via Next 16 (prod build is green),
-   but a Next upgrade could remove it. Fix: `npm install undici` to pin it as a
-   direct dep (no code change), then build-verify. Low urgency, real footgun.
+1. ~~`undici` not in `package.json`~~ **Done 2026-07-22:** pinned as a direct
+   dep (`npm install undici`), build-verified.
 2. Standing up the **e2e test suite** (owner request — see the 2026-07-12 queue
    below). Two manual security reviews this cycle each caught regressions the
    other introduced; automated coverage is the fix.
-3. Optionally, a third multi-agent review over commit 73ba56f's diff to confirm
-   the second-pass fixes introduced nothing new.
 
 **Design/process notes:** all new user-facing copy needs owner approval before
 push (he often supplies exact wording). No em dashes, no phone numbers in
@@ -839,14 +835,13 @@ the owner's earlier decision, left as-is.
   `###` headings / `**bold**` / checklists that currently render as plain pre-wrap text.
   Needs a markdown dependency (none in the app today) — decide lib + sanitization then render
   in the note cards on `/admin/[id]`.
-- **Result notifications for Slack submissions** (action item 2026-07-16): when an
-  admin publishes/fails a verification that came in via Slack, the submitter gets
-  nothing today — `created_by` is null on Slack rows, so the "Notify app user"
-  checkbox is ignored (`app/admin/(console)/actions.ts`). Enable a result
-  notification for the Slack path (likely a Slack DM back through the intake
-  channel via `slack_installations`, since there is no portal user to email).
-  The admin new-submission alert already fires for Slack. API path explicitly
-  out of scope — notifications there should stay off.
+- ~~Result notifications for Slack submissions~~ **Built 2026-07-22** (spec 04,
+  commit 99c8359): intake stores `slack_context` on the verification (migration
+  0030), the publish/fail notify checkbox now covers Slack rows, and
+  `Slack/notify.ts` DMs the submitter via `slack_installations`. Legacy Slack
+  rows without `slack_context` still can't be notified (linkage unrecoverable).
+  Real-DM delivery still unverified — confirm on the next genuine Slack
+  submission. API path explicitly out of scope — notifications there stay off.
 - **Collapse/expand for long call notes** (2026-07-13): an expander for transcript-length
   notes on `/admin/[id]`. Parked because collapsed content doesn't print and printability
   was required; needs a print-expands-all treatment (e.g. `@media print`) if built.
