@@ -123,6 +123,19 @@ export interface ContactNote {
 
 export type OnlineListingStatus = 'verified' | 'not_found' | 'differs';
 
+/** Did the agency's own website's contact info align with what was logged? */
+export type WebsiteStatus = 'aligns' | 'differs' | 'not_found';
+
+/** Did a source OTHER than the agency's own site confirm name + contact + website? */
+export type ExternalConfirmation = 'confirmed' | 'not_confirmed';
+
+/**
+ * Overall verdict, always derived in code (deriveLegitimacy), never set by
+ * the model or edited directly: legit = website aligns AND an external source
+ * confirms; mismatch = anything clearly contradicts; unverified = the rest.
+ */
+export type Legitimacy = 'legit' | 'unverified' | 'mismatch';
+
 /**
  * Web verification of one contact log's cited phone/email, embedded in the
  * note itself (phones and emails can change between logs, so each entry gets
@@ -130,10 +143,17 @@ export type OnlineListingStatus = 'verified' | 'not_found' | 'differs';
  * checked — a blank field is never searched and never gets a tag. Rides
  * inside call_notes, so publish gating covers it automatically. blurb is
  * customer-facing; the admin can edit statuses and blurb after a run.
+ * The website/external/legitimacy fields arrived with the two-pronged check
+ * (2026-07-22) — entries from earlier runs simply lack them.
  */
 export interface NoteContactCheck {
   phone_status?: OnlineListingStatus;
   email_status?: OnlineListingStatus;
+  website_status?: WebsiteStatus;
+  external_confirmation?: ExternalConfirmation;
+  legitimacy?: Legitimacy;
+  /** The agency's official website when the check found one. */
+  website_url?: string;
   blurb: string;
   sources: string[];
   checked_at: string;
@@ -151,6 +171,8 @@ export interface NoteContactCheck {
 export interface ContactCheckEntry extends NoteContactCheck {
   phone?: string;
   email?: string;
+  /** Admin-only run telemetry; never copied into note snapshots. */
+  usage?: { input_tokens: number; output_tokens: number; searches: number; iterations: number; cost_usd?: number };
 }
 
 export interface GapItem {

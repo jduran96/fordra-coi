@@ -1,12 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { curlFetch } from './anthropic-fetch';
 import { parseStandardLine } from './templates';
+import { corporateEmailDomain, deriveLegitimacy } from './contact-notes';
 import type {
   Requirement,
   COIExtracted,
   GapAnalysis,
   FinalReport,
   NoteContactCheck,
+  ContactCheckEntry,
+  WebsiteStatus,
+  ExternalConfirmation,
 } from './types';
 
 let _client: Anthropic | null = null;
@@ -24,6 +28,12 @@ function getClient(): Anthropic {
   return _client;
 }
 const MODEL = 'claude-sonnet-4-6';
+// The contact web check runs on Haiku (owner cost cap 2026-07-22: <=$0.20 a
+// run, ~$0.10 average — Sonnet's server-tool loop billed ~$0.36). The task is
+// mechanical (fetch site, compare values, one directory search) and the
+// verdict is derived in code, so the cheaper model holds up.
+const CONTACT_CHECK_MODEL = 'claude-haiku-4-5';
+const CONTACT_CHECK_RATES = { inputPerM: 1, outputPerM: 5, perSearch: 0.01 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -424,15 +434,19 @@ function dedupeGapAnalysis(gap: GapAnalysis): GapAnalysis {
 /**
  * Verify ONE contact log's cited phone/email against the public web. The
  * search subject is the ISSUING producer/agency printed on the COI (not the
- * underlying insurance companies): the question is "does this number/email
- * the admin was given actually belong to that agency's public listings".
- * Only the fields actually provided are checked — a blank phone/email spends
- * nothing and gets no status key. Returns null when there is nothing to
- * check or the search failed. Never throws.
+ * underlying insurance companies). Two-pronged check (2026-07-22):
+ *  1. the agency's OWN website must list contact info matching the logged
+ *     values (a corporate email domain is fetched directly, zero searches);
+ *  2. an EXTERNAL source (social / insurance directory / business listing)
+ *     must confirm the agency name + contact/website.
+ * The overall `legitimacy` verdict is derived in code (deriveLegitimacy),
+ * never by the model. Only the fields actually provided are checked — a
+ * blank phone/email spends nothing and gets no status key. Returns null when
+ * there is nothing to check or the search failed. Never throws.
  */
 export async function verifyLoggedContact(input: {
   producer: string; insurer: string; name?: string; phone?: string; email?: string;
-}): Promise<NoteContactCheck | null> {
+}): Promise<(NoteContactCheck & { usage: NonNullable<ContactCheckEntry['usage']> }) | null> {
   const producer = input.producer.trim();
   const insurer = input.insurer.trim();
   const phone = (input.phone ?? '').trim();
@@ -440,54 +454,139 @@ export async function verifyLoggedContact(input: {
   if (!producer && !insurer) return null;
   if (!phone && !email) return null;
 
-  const fields = [phone && 'phone_status', email && 'email_status'].filter(Boolean);
+  const fields = [phone && 'phone_status', email && 'email_status'].filter((f): f is string => !!f);
   const system = `You verify insurance agency contact details for a COI verification company.
-An admin contacted the agency that issued a Certificate of Insurance and logged the phone/email they used or were given. Use web search to check whether those details belong to that agency's real, publicly listed contact information (official website, licensing directories, reputable business listings).
-Rules:
-- Search for the producer/agency; fall back to the insurer only if no producer is named.
-- For each provided field return a status: "verified" when the value appears in a credible public listing for that agency (formatting differences are fine); "differs" when public listings show a clearly different value; "not_found" when you cannot find a credible public value to compare.
-- Return ONLY these status keys: ${fields.join(', ')}. Never invent a status for a field you were not given.
-- summary: 1-3 plain sentences shown to the CUSTOMER on the published report, explaining what the search turned up. Professional, plain language, no em dashes.
-- sources: the URLs you actually relied on (up to 5).
-After searching, return ONLY a valid JSON object, no prose, no markdown fences:
-{ ${fields.map(f => `"${f}": "verified"|"differs"|"not_found"`).join(', ')}${fields.length ? ', ' : ''}"summary": string, "sources": string[] }`;
+An admin contacted the agency that issued a Certificate of Insurance and logged the phone/email they used or were given. Your check has TWO parts:
+1. WEBSITE: does the agency's own official website list contact info matching the logged details?
+2. EXTERNAL: does at least one source that is NOT the agency's own website confirm the agency name together with its contact info and/or website?
 
+Search subject: the producer/agency; fall back to the insurer only if no producer is named.
+
+Plan, in order:
+- Part 1. If the message lists candidate website URLs (derived from the email domain), fetch that site FIRST instead of searching for it; also fetch its contact page when the first page links one. Otherwise run ONE search to find the agency's official website, then fetch it. Confirm the site actually belongs to the named agency and check the logged values against it. website_status is about the SITE, not the individual fields: "aligns" = the site is the named agency's and nothing on it contradicts the logged contact info; "differs" = the site is the agency's but shows clearly different contact info; "not_found" = no official site could be found at all. Agencies rarely publish individual staff emails: when the logged email's domain IS the agency's own confirmed domain and the site shows nothing contradictory, that counts as aligning.
+- Part 2. Find ONE external confirmation. You MUST run at least one search here — never return external_confirmation without having searched for an outside source. Try in this order and stop at the FIRST source that confirms the agency name plus its contact info and/or website domain:
+  a. Social media: LinkedIn company page, Facebook, Instagram.
+  b. Insurance directories: the state Department of Insurance license lookup, NIPR, NAIC, trustedchoice.com (independent agents), ambest.com (carriers).
+  c. General business listings: bbb.org, yelp.com, yellowpages.com, dnb.com.
+  external_confirmation: "confirmed" or "not_confirmed". The agency's own website NEVER counts as external confirmation.
+
+Hard limits:
+- Stop searching the moment BOTH parts are resolved.
+- Never repeat a search with reworded terms.
+- Budget: at most 6 searches and 3 page fetches total.
+- If the website shows different contact info than what was logged, run at most ONE extra directory search to judge which value is current, then stop.
+
+Output rules:
+- Field statuses, ONLY for these keys: ${fields.join(', ')}. "verified" when the value appears in a credible public listing for that agency (formatting differences are fine; an email also counts as verified when its domain is the agency's confirmed official domain and no listing shows a contradictory address); "differs" when public listings show a clearly different value; "not_found" when you cannot find a credible public value to compare. Never invent a status for a field you were not given.
+- website_url: the agency's official website URL, or "" when none was found.
+- summary: 1-3 plain sentences shown to the CUSTOMER on the published report, covering both parts: what the agency's own website showed and which outside source (if any) confirmed it. Professional, plain language, no em dashes.
+- sources: the URLs you actually relied on (up to 5), official website first, then the external confirmer.`;
+
+  const domain = corporateEmailDomain(email);
+  const siteHint = domain
+    ? `\n\nCandidate official website, derived from the email domain (fetch this first, do not search for it):\nhttps://${domain}\nhttps://www.${domain}`
+    : '';
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Agency that issued the COI (search subject):\nProducer (agency): ${producer || '(not shown)'}\nInsurer(s): ${insurer || '(not shown)'}\n\nContact details logged by the admin:\nContact name: ${(input.name ?? '').trim() || '(not given)'}\nPhone: ${phone || '(not given, do not check)'}\nEmail: ${email || '(not given, do not check)'}\n\nVerify the given details against the web and return the JSON object.`,
+      content: `Agency that issued the COI (search subject):\nProducer (agency): ${producer || '(not shown)'}\nInsurer(s): ${insurer || '(not shown)'}\n\nContact details logged by the admin:\nContact name: ${(input.name ?? '').trim() || '(not given)'}\nPhone: ${phone || '(not given, do not check)'}\nEmail: ${email || '(not given, do not check)'}${siteHint}\n\nRun the two-part check and return the JSON object.`,
     },
   ];
-  const tools = [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
-  ] as unknown as Anthropic.Messages.ToolUnion[];
+  // Basic (non-dynamic-filtering) tool variants: the server-side tool loop
+  // re-reads the whole conversation on every internal round, so cost scales
+  // with rounds x conversation size. Tight budgets + Haiku (below) keep a
+  // run ~$0.05-0.08 typical, ~$0.20 worst case (owner cap 2026-07-22).
+  const tools: Anthropic.Messages.ToolUnion[] = [
+    { type: 'web_search_20250305', name: 'web_search', max_uses: 4 },
+    { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 2, max_content_tokens: 3000 },
+  ];
+  const statusEnum = { type: 'string', enum: ['verified', 'differs', 'not_found'] };
+  const output_config: Anthropic.Messages.OutputConfig = {
+    format: {
+      type: 'json_schema',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: [...fields, 'website_status', 'external_confirmation', 'website_url', 'summary', 'sources'],
+        properties: {
+          ...(phone ? { phone_status: statusEnum } : {}),
+          ...(email ? { email_status: statusEnum } : {}),
+          website_status: { type: 'string', enum: ['aligns', 'differs', 'not_found'] },
+          external_confirmation: { type: 'string', enum: ['confirmed', 'not_confirmed'] },
+          website_url: { type: 'string' },
+          summary: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  };
+
+  // Billed-equivalent input tokens: cache writes cost 1.25x, cache reads
+  // 0.1x, so the stored $ figure stays honest across the pause_turn
+  // continuations (which re-read the cached conversation).
+  const usage: NonNullable<ContactCheckEntry['usage']> = { input_tokens: 0, output_tokens: 0, searches: 0, iterations: 0 };
+  const addUsage = (u: Anthropic.Usage) => {
+    usage.input_tokens += Math.round(u.input_tokens + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0));
+    usage.output_tokens += u.output_tokens;
+    usage.searches += u.server_tool_use?.web_search_requests ?? 0;
+    usage.iterations += 1;
+  };
 
   try {
     let res = await getClient().messages.create({
-      model: MODEL, max_tokens: 4096, system, messages, tools,
+      model: CONTACT_CHECK_MODEL, max_tokens: 4096, system, messages, tools, output_config,
     });
-    for (let i = 0; i < 3 && res.stop_reason === 'pause_turn'; i++) {
-      messages.push({ role: 'assistant', content: res.content });
+    addUsage(res.usage);
+    for (let i = 0; i < 4 && res.stop_reason === 'pause_turn'; i++) {
+      // Cache the conversation so far: continuations re-read the accumulated
+      // search/fetch results at ~0.1x instead of re-billing them in full.
+      const content = res.content.map((b, idx, arr) =>
+        idx === arr.length - 1 ? { ...b, cache_control: { type: 'ephemeral' as const } } : b,
+      ) as unknown as Anthropic.ContentBlockParam[];
+      messages.push({ role: 'assistant', content });
       res = await getClient().messages.create({
-        model: MODEL, max_tokens: 4096, system, messages, tools,
+        model: CONTACT_CHECK_MODEL, max_tokens: 4096, system, messages, tools, output_config,
       });
+      addUsage(res.usage);
     }
-    const text = res.content
+    // The model may narrate between tool calls, leaving several text blocks;
+    // structured output guarantees the JSON is the LAST one. Walk backwards
+    // so intermediate prose can never corrupt the parse.
+    const texts = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('\n');
-    const parsed = JSON.parse(extractJSON(text)) as Record<string, unknown>;
+      .map(b => b.text);
+    let parsed: Record<string, unknown> | null = null;
+    for (let i = texts.length - 1; i >= 0 && !parsed; i--) {
+      try { parsed = JSON.parse(extractJSON(texts[i])) as Record<string, unknown>; } catch { /* try earlier block */ }
+    }
     if (!parsed || typeof parsed.summary !== 'string') throw new Error('unexpected shape');
     const status = (v: unknown): NoteContactCheck['phone_status'] =>
       v === 'verified' || v === 'differs' || v === 'not_found' ? v : 'not_found';
-    return {
+    const website = (v: unknown): WebsiteStatus =>
+      v === 'aligns' || v === 'differs' ? v : 'not_found';
+    const external = (v: unknown): ExternalConfirmation =>
+      v === 'confirmed' ? v : 'not_confirmed';
+    const websiteUrl = typeof parsed.website_url === 'string' ? parsed.website_url.trim() : '';
+    const check: NoteContactCheck = {
       // Status keys only for the fields we were asked to check.
       ...(phone ? { phone_status: status(parsed.phone_status) } : {}),
       ...(email ? { email_status: status(parsed.email_status) } : {}),
+      website_status: website(parsed.website_status),
+      external_confirmation: external(parsed.external_confirmation),
+      ...(websiteUrl ? { website_url: websiteUrl } : {}),
       blurb: parsed.summary,
       sources: Array.isArray(parsed.sources) ? parsed.sources.filter((s): s is string => typeof s === 'string').slice(0, 5) : [],
       checked_at: new Date().toISOString(),
     };
+    const legitimacy = deriveLegitimacy(check);
+    // Store the real dollar cost at the model's own rates so the admin card
+    // never has to guess which model a historical run used.
+    usage.cost_usd = Math.round((
+      usage.input_tokens * CONTACT_CHECK_RATES.inputPerM / 1_000_000 +
+      usage.output_tokens * CONTACT_CHECK_RATES.outputPerM / 1_000_000 +
+      usage.searches * CONTACT_CHECK_RATES.perSearch
+    ) * 1000) / 1000;
+    return { ...check, ...(legitimacy ? { legitimacy } : {}), usage };
   } catch (e) {
     console.error('verifyLoggedContact: check failed; storing nothing', e);
     return null;

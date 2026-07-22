@@ -3,7 +3,80 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-16 late — "Failed" renamed to "Could not complete", admin queue layout)
+## ⏱️ START HERE (as of 2026-07-22 — two-pronged contact check: website + external source, legitimacy verdict)
+
+**2026-07-22 session (localhost-verified end-to-end, owner approved the
+verdict copy and directed the prod push):**
+
+- **Contact-check web search reworked** (owner ask after VRF-1072: the old
+  check found one LinkedIn page and stopped). `verifyLoggedContact`
+  (lib/claude.ts) now runs a TWO-PART check with a prescriptive phased prompt:
+  1. WEBSITE — the agency's own site must list contact info matching the
+     logged values. A corporate email domain (free providers filtered by
+     `corporateEmailDomain` in lib/contact-notes.ts) is placed as literal URLs
+     in the user message so `web_fetch` grabs it with ZERO searches; otherwise
+     one search finds the site first.
+  2. EXTERNAL — one source that is NOT the agency's own site must confirm
+     name + contact/website, tried in order: socials (LinkedIn/Facebook/
+     Instagram) → insurance directories (state DOI, NIPR, NAIC,
+     trustedchoice.com, ambest.com) → business listings (bbb.org, yelp,
+     yellowpages, dnb.com). LinkedIn alone can satisfy part 2 but never
+     part 1 — exactly the VRF-1072 failure fixed.
+  - Tools (final config): basic variants `web_search_20250305` max_uses 4 +
+    `web_fetch_20250910` max_uses 2 with `max_content_tokens: 3000` (see the
+    cost bullet for why not the `_20260209` dynamic-filtering variants). Hard
+    stop rules in the prompt (stop when both parts resolved, no reworded
+    repeats). Structured output via `output_config.format` json_schema
+    (probe-verified compatible with server tools). `cache_control` on
+    pause_turn continuations.
+  - **Verdict derived in CODE, never by the model**: `deriveLegitimacy()` in
+    lib/contact-notes.ts — `legit` = website aligns AND external confirmed;
+    `mismatch` = website differs OR any field differs; else `unverified`.
+    Re-derived server-side on every admin edit (saveContactCheckEdit /
+    saveNoteCheck parse the two new selects in NoteCheckControls).
+  - **New NoteContactCheck fields** (lib/types.ts, all optional so pre-rework
+    JSONB entries render unchanged; no migration): `website_status`
+    ('aligns'|'differs'|'not_found'), `external_confirmation`
+    ('confirmed'|'not_confirmed'), `legitimacy`
+    ('legit'|'unverified'|'mismatch'), `website_url`. ContactCheckEntry adds
+    admin-only `usage` {input_tokens (billed-equivalent: raw + 1.25x cache
+    writes + 0.1x reads), output_tokens, searches, iterations} — whitelisted
+    OUT of note snapshots by `noteCheckFromRegistry`, which now also copies
+    the agency-level fields from the newer matched entry.
+  - **UI:** admin check card (app/admin/(console)/[id]/page.tsx) shows a
+    legitimacy chip (legit=C.ok / mismatch=C.warn / unverified=C.txt3),
+    "Their website / Outside source" rows, and a usage line
+    ("2 searches · 33.5k in / 0.4k out · $0.06"). Customer page + PDF show
+    one verdict line (owner-approved exact wording 2026-07-22, no em
+    dashes): legit → "Insurer verified online"; unverified → "Not able to
+    find online"; mismatch → "Discrepancies found in online search".
+  - **Cost (owner cap: <=$0.20/run, ~$0.10 average).** First Sonnet run
+    billed ~$0.36: the server-side tool loop re-reads the whole conversation
+    on every internal round, which no client-side caching can touch. Fix
+    (owner-directed): the check runs on **claude-haiku-4-5**
+    (`CONTACT_CHECK_MODEL` in lib/claude.ts) with the BASIC tool variants
+    (`web_search_20250305` max 4, `web_fetch_20250910` max 2 +
+    `max_content_tokens: 3000`). Haiku needed two prompt tightenings: part 2
+    MUST run at least one search (it skipped external confirmation
+    entirely), and website_status is about the SITE not the fields (an email
+    domain matching the agency's own confirmed domain counts as aligning,
+    since agencies rarely publish staff addresses). Each run stores
+    `usage.cost_usd` computed at the model's own rates so the admin card
+    never guesses. Observed: happy path (corporate email) $0.055; full-budget
+    adversarial run (no email, fake phone, 4 searches) $0.166.
+  - **Parse hardening:** the model can narrate between tool calls, leaving
+    several text blocks; the JSON is parsed from the LAST parseable block
+    (walking backwards), never from a join of all blocks (a joined
+    "prose\n{json}" broke JSON.parse in testing).
+  - Verified on localhost end-to-end: real check on a test row (Marsh
+    McLennan, corporate-domain email) → legit verdict, note inheritance with
+    case-insensitive email match, edit re-derivation (aligns→differs flipped
+    the verdict to mismatch and propagated), customer page + PDF rendering,
+    backward compat on VRF-1071's pre-rework GEICO entry; then two direct
+    Haiku runs of `verifyLoggedContact` (happy path + fake phone) after the
+    model swap. Test row VRF-1074 and its downloaded PDF deleted.
+
+## Previous (as of 2026-07-16 late — "Failed" renamed to "Could not complete", admin queue layout)
 
 **2026-07-16 late session (deployed to prod, commit 938d5a7, owner-verified on localhost):**
 
@@ -721,6 +794,12 @@ the owner's earlier decision, left as-is.
 
 ## Deferred (not built yet)
 
+- **Batch API for OCR** (evaluated 2026-07-22): routing extraction through Anthropic's
+  Message Batches API halves Claude token costs (50% off, vision included) but is async —
+  most batches finish under 1 hour with 24h as the hard expiration, and there is no
+  guaranteed turnaround even for small batches. Best fit is auto-submitting extraction on
+  customer upload so results are pre-baked by the time the admin opens the verification
+  (no queue page needed, just a "processing" state); revisit when volume grows.
 - **Google OAuth** (magic-link-only for now).
 - **Phase B**: rate-con inference extractor (stated + inferred requirements with explanations),
   Middesk-shaped `review_tasks`/`requirements_normalized` in the real pipeline (the pilot reuses

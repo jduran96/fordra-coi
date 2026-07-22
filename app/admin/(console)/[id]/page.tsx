@@ -504,7 +504,8 @@ function CheckEntryCard({ entry, controls }: { entry: ContactCheckEntry; control
   const email = contactValue(entry.email)
   return (
     <div style={card()}>
-      <p style={{ fontSize: 13, color: C.txt3, margin: 0 }}>
+      {entry.legitimacy && <LegitimacyChip verdict={entry.legitimacy} />}
+      <p style={{ fontSize: 13, color: C.txt3, margin: entry.legitimacy ? '8px 0 0' : 0 }}>
         {phone && (
           <span>Phone: <span style={{ color: C.txt, userSelect: 'all' as const }}>{phone}</span><NoteStatusChip status={entry.phone_status} /></span>
         )}
@@ -513,6 +514,34 @@ function CheckEntryCard({ entry, controls }: { entry: ContactCheckEntry; control
           <span>Email: <span style={{ color: C.txt, userSelect: 'all' as const, overflowWrap: 'anywhere' }}>{email}</span><NoteStatusChip status={entry.email_status} /></span>
         )}
       </p>
+      {/* Agency-level findings exist only on runs of the two-pronged check;
+          older history entries simply skip these rows. */}
+      {(entry.website_status || entry.external_confirmation) && (
+        <p style={{ fontSize: 13, color: C.txt3, margin: '6px 0 0' }}>
+          {entry.website_status && (
+            <span>
+              Their website:{' '}
+              <span style={{ color: C.txt }}>
+                {entry.website_status === 'aligns' ? 'matches the logged info'
+                  : entry.website_status === 'differs' ? 'shows different info'
+                  : 'not found'}
+              </span>
+              {entry.website_url && (
+                <>{' '}(<a href={entry.website_url} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(entry.website_url)}</a>)</>
+              )}
+            </span>
+          )}
+          {entry.website_status && entry.external_confirmation && <span style={{ margin: '0 8px' }}>|</span>}
+          {entry.external_confirmation && (
+            <span>
+              Outside source:{' '}
+              <span style={{ color: C.txt }}>
+                {entry.external_confirmation === 'confirmed' ? 'confirmed name + contact' : 'no confirmation found'}
+              </span>
+            </span>
+          )}
+        </p>
+      )}
       {entry.blurb && (
         <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>{entry.blurb}</p>
       )}
@@ -530,10 +559,42 @@ function CheckEntryCard({ entry, controls }: { entry: ContactCheckEntry; control
         )}
         checked {pacificDateTime(entry.checked_at)}
         {entry.edited_at && <> · edited {pacificDateTime(entry.edited_at)}</>}
+        {entry.usage && <> · {usageLine(entry.usage)}</>}
       </p>
       {controls}
     </div>
   )
+}
+
+/**
+ * Overall verdict chip for a two-pronged check run. Derived server-side
+ * (deriveLegitimacy): legit needs the agency's own site to align AND an
+ * outside source to confirm it.
+ */
+function LegitimacyChip({ verdict }: { verdict: NonNullable<ContactCheckEntry['legitimacy']> }) {
+  const s = verdict === 'legit' ? { label: 'Insurer legit: website + outside source', color: C.ok as string }
+    : verdict === 'mismatch' ? { label: 'Mismatch with online records', color: C.warn as string }
+    : { label: 'Not fully verified online', color: C.txt3 as string }
+  return (
+    <span style={{
+      display: 'inline-block', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+      color: s.color, background: `color-mix(in oklch, ${s.color} 11%, transparent)`,
+      padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' as const,
+    }}>
+      {s.label}
+    </span>
+  )
+}
+
+/**
+ * Compact run telemetry: what the check actually spent. cost_usd is computed
+ * at run time with the model's own rates (lib/claude.ts), so historical
+ * entries stay correct across model changes.
+ */
+function usageLine(u: NonNullable<ContactCheckEntry['usage']>): string {
+  const k = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  const base = `${u.searches} search${u.searches === 1 ? '' : 'es'} · ${k(u.input_tokens)} in / ${k(u.output_tokens)} out`
+  return u.cost_usd != null ? `${base} · $${u.cost_usd.toFixed(2)}` : base
 }
 
 /** Bare hostname for compact source links; falls back to the raw string. */

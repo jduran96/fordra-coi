@@ -3,12 +3,23 @@
 import { useState } from 'react'
 import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
-import type { NoteContactCheck, OnlineListingStatus } from '@/lib/types'
+import type { ExternalConfirmation, NoteContactCheck, OnlineListingStatus, WebsiteStatus } from '@/lib/types'
 
 const STATUS_OPTIONS: { value: OnlineListingStatus; label: string }[] = [
   { value: 'verified', label: 'Verified online' },
   { value: 'not_found', label: 'Not found online' },
   { value: 'differs', label: 'Differs from online' },
+]
+
+const WEBSITE_OPTIONS: { value: WebsiteStatus; label: string }[] = [
+  { value: 'aligns', label: 'Site matches logged info' },
+  { value: 'not_found', label: 'No official site found' },
+  { value: 'differs', label: 'Site shows different info' },
+]
+
+const EXTERNAL_OPTIONS: { value: ExternalConfirmation; label: string }[] = [
+  { value: 'confirmed', label: 'Confirmed by outside source' },
+  { value: 'not_confirmed', label: 'No outside confirmation' },
 ]
 
 /**
@@ -69,6 +80,29 @@ export default function NoteCheckControls({
               </label>
             )}
           </div>
+          {/* Agency-level findings exist only on checks run after the
+              two-pronged rework; the derived legitimacy verdict re-computes
+              server-side on save and is never edited directly. */}
+          {(check.website_status || check.external_confirmation) && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              {check.website_status && (
+                <label style={label()}>
+                  Their website
+                  <select name="website_status" defaultValue={check.website_status} style={input()}>
+                    {WEBSITE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {check.external_confirmation && (
+                <label style={label()}>
+                  Outside source
+                  <select name="external_confirmation" defaultValue={check.external_confirmation} style={input()}>
+                    {EXTERNAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
           <label style={label()}>
             Customer blurb
             <textarea name="blurb" defaultValue={check.blurb} rows={3}

@@ -14,8 +14,8 @@ import { runExtractionPipeline } from '@/lib/extraction'
 import { verifyLoggedContact } from '@/lib/claude'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
-import { contactValue, noteCheckFromRegistry, normalizePhone, normalizeEmail } from '@/lib/contact-notes'
-import type { COIExtracted, ContactCheckEntry, ContactNote, NoteContactCheck, OnlineListingStatus } from '@/lib/types'
+import { contactValue, deriveLegitimacy, noteCheckFromRegistry, normalizePhone, normalizeEmail } from '@/lib/contact-notes'
+import type { COIExtracted, ContactCheckEntry, ContactNote, ExternalConfirmation, NoteContactCheck, OnlineListingStatus, WebsiteStatus } from '@/lib/types'
 
 /**
  * Run OCR/extraction on a verification's documents and store the parsed analysis.
@@ -49,10 +49,16 @@ export async function runExtraction(verificationId: string, formData?: FormData)
  * and APPEND the result to the verification-level check history
  * (contact_checks). This is the ONLY place a contact web search runs —
  * deliberately its own button, never automatic: each run costs real money
- * (up to 5 web searches, roughly $0.10-0.20). Contact logs inherit their
- * tags by value-matching against this history, spending nothing.
- * Blank fields are never searched.
+ * (Haiku + up to 4 searches + 2 page fetches; typically ~$0.05-0.08, capped
+ * around $0.20 — the entry's stored usage records the real cost). Contact
+ * logs inherit their tags by value-matching against this history, spending
+ * nothing. Blank fields are never searched.
  */
+const parseWebsiteStatus = (raw: FormDataEntryValue | null): WebsiteStatus =>
+  raw === 'aligns' || raw === 'differs' ? raw : 'not_found'
+const parseExternal = (raw: FormDataEntryValue | null): ExternalConfirmation =>
+  raw === 'confirmed' ? raw : 'not_confirmed'
+
 export async function runOnlineContactCheck(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
@@ -128,9 +134,15 @@ export async function saveContactCheckEdit(verificationId: string, entryAt: stri
     // renders a select per checked field only.
     ...(formData.has('phone_status') ? { phone_status: parseStatus(formData.get('phone_status')) } : {}),
     ...(formData.has('email_status') ? { email_status: parseStatus(formData.get('email_status')) } : {}),
+    ...(formData.has('website_status') ? { website_status: parseWebsiteStatus(formData.get('website_status')) } : {}),
+    ...(formData.has('external_confirmation') ? { external_confirmation: parseExternal(formData.get('external_confirmation')) } : {}),
     blurb: String(formData.get('blurb') || '').trim(),
     edited_at: new Date().toISOString(),
   }
+  // The verdict is always derived, never edited directly: an admin flipping
+  // any status re-computes it here so history and note snapshots agree.
+  const legitimacy = deriveLegitimacy(next)
+  if (legitimacy) next.legitimacy = legitimacy
   const { error: werr } = await supabase.rpc('admin_set_contact_check', {
     vid: verificationId,
     entry_at: entryAt,
@@ -223,9 +235,14 @@ export async function saveNoteCheck(verificationId: string, noteAt: string, form
     // renders a select per checked field only.
     ...(formData.has('phone_status') ? { phone_status: parseStatus(formData.get('phone_status')) } : {}),
     ...(formData.has('email_status') ? { email_status: parseStatus(formData.get('email_status')) } : {}),
+    ...(formData.has('website_status') ? { website_status: parseWebsiteStatus(formData.get('website_status')) } : {}),
+    ...(formData.has('external_confirmation') ? { external_confirmation: parseExternal(formData.get('external_confirmation')) } : {}),
     blurb: String(formData.get('blurb') || '').trim(),
     edited_at: new Date().toISOString(),
   }
+  // Same rule as the history edit: the verdict is derived, never typed in.
+  const legitimacy = deriveLegitimacy(next)
+  if (legitimacy) next.legitimacy = legitimacy
   const { error: werr } = await supabase.rpc('admin_set_note_check', {
     vid: verificationId,
     note_at: noteAt,

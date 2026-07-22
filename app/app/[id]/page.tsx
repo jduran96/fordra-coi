@@ -10,7 +10,7 @@ import { parseStandardLine } from '@/lib/templates'
 import { orderBySubmitted, orderFromText } from '@/lib/gap-order'
 import { contactValue } from '@/lib/contact-notes'
 import type { ReactNode } from 'react'
-import type { COIExtracted, ContactNote, OnlineListingStatus } from '@/lib/types'
+import type { COIExtracted, ContactNote, Legitimacy, OnlineListingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -213,6 +213,21 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
                       <span>Email: <span style={{ color: C.txt2 }}>{email}</span><StatusChip status={check?.email_status} /></span>
                     )}
                   </p>
+                  {/* Overall verdict of the two-pronged online check (website
+                      alignment + outside confirmation). Only present on
+                      checks run after 2026-07-22; older reports skip it. */}
+                  {check?.legitimacy && (
+                    <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
+                        color: legitimacyColor(check.legitimacy),
+                        background: `color-mix(in oklch, ${legitimacyColor(check.legitimacy)} 11%, transparent)`,
+                        padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', verticalAlign: 'middle',
+                      }}>
+                        {legitimacyLabel(check.legitimacy)}
+                      </span>
+                    </p>
+                  )}
                   {/* The explanatory blurb + source attribution collapse
                       behind See more (owner spec 2026-07-16); the chips above
                       stay always-visible. The PDF is unaffected: it renders
@@ -288,6 +303,21 @@ function Expando({ children }: { children: ReactNode }) {
  * exists but no online check has covered it yet; blank fields never reach
  * this component, so nothing wears a tag it did not earn.
  */
+/**
+ * Customer wording for the overall two-pronged verdict (owner directed
+ * "insurer" wording 2026-07-22): legit needs the insurer's own website to
+ * align AND an outside source to confirm it. No em dashes.
+ */
+function legitimacyLabel(v: Legitimacy): string {
+  return v === 'legit' ? 'Insurer verified online'
+    : v === 'mismatch' ? 'Discrepancies found in online search'
+    : 'Not able to find online'
+}
+
+function legitimacyColor(v: Legitimacy): string {
+  return v === 'legit' ? (C.ok as string) : v === 'mismatch' ? (C.warn as string) : (C.txt3 as string)
+}
+
 function StatusChip({ status }: { status?: OnlineListingStatus }) {
   const s = status === 'verified' ? { label: 'Verified online', color: C.ok }
     : status === 'differs' ? { label: 'Differs from online', color: C.warn }
