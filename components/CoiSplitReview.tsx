@@ -33,6 +33,7 @@ export interface CheckItem {
   requirement: { coverage_type?: string; minimum_limit?: string; notes?: string | null }
   status: 'met' | 'not_met' | 'uncertain'
   evidence?: string
+  insurer_confirmation?: 'call' | 'email'
 }
 export interface CoiDocFile {
   url: string
@@ -525,6 +526,16 @@ export default function CoiSplitReview({
             </div>
             {item.evidence && (
               <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '6px 0 0' }}>{item.evidence}</p>
+            )}
+            {item.insurer_confirmation && (
+              <p style={{ margin: '8px 0 0' }}>
+                <span style={{
+                  fontSize: 12, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap',
+                  background: C.lime, padding: '3px 10px', borderRadius: 20,
+                }}>
+                  Verified with insurer via {item.insurer_confirmation === 'call' ? 'call' : 'email'}
+                </span>
+              </p>
             )}
           </div>
         )

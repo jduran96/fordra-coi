@@ -20,6 +20,7 @@ interface ReportItem {
   requirement?: { coverage_type?: string; minimum_limit?: string; notes?: string | null }
   status?: 'met' | 'not_met' | 'uncertain'
   evidence?: string
+  insurer_confirmation?: 'call' | 'email'
 }
 interface Report { met?: ReportItem[]; not_met?: ReportItem[]; uncertain?: ReportItem[]; narrative_summary?: string }
 
@@ -113,6 +114,11 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         doc.y = yBefore
         if ((it.evidence ?? '').trim()) {
           doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(it.evidence!.trim(), { width: width - 90, lineGap: 2 })
+        }
+        if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email') {
+          doc.moveDown(0.15)
+          doc.font('Helvetica-Bold').fontSize(8.5).fillColor(STATUS_COLOR.met)
+            .text(`VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`, { width: width - 90, characterSpacing: 0.8 })
         }
         doc.moveDown(0.55)
       }

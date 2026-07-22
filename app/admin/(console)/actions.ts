@@ -455,6 +455,7 @@ interface AssessmentItem {
   requirement: { coverage_type: string; minimum_limit: string; notes: string | null }
   status: 'met' | 'not_met' | 'uncertain'
   evidence: string
+  insurer_confirmation?: 'call' | 'email'
 }
 
 /**
@@ -505,7 +506,13 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     const raw = String(formData.get(`req_${i}_status`) || 'uncertain')
     const status: AssessmentItem['status'] = raw === 'met' || raw === 'not_met' ? raw : 'uncertain'
     const evidence = String(formData.get(`req_${i}_evidence`) || '').trim()
-    report[status].push({ requirement, status, evidence })
+    // Omitted entirely when not confirmed, so legacy readers and the
+    // automated-report path never see the key.
+    const conf = String(formData.get(`req_${i}_insurer_confirmation`) || '')
+    report[status].push({
+      requirement, status, evidence,
+      ...(conf === 'call' || conf === 'email' ? { insurer_confirmation: conf } : {}),
+    })
   }
 
   const narrative_summary = String(formData.get('narrative_summary') || '').trim()

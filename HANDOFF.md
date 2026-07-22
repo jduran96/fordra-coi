@@ -3,7 +3,35 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-22 — two-pronged contact check: website + external source, legitimacy verdict)
+## ⏱️ START HERE (as of 2026-07-22 late — branded emails, per-requirement insurer confirmation)
+
+**2026-07-22 late session (owner-approved on localhost, deployed to prod):**
+
+- **All notification emails now wear the Fordra shell** (`lib/email-template.ts`
+  `emailShell()`, used by both senders in `lib/notify.ts`): cream page, icon +
+  wordmark header, white card with lime top rule, ink pill CTA, footer
+  "Fordra · app.fordra.com" (owner-approved). Email-safe by construction:
+  tables, inline styles, HEX ONLY (theme oklch colors don't survive email
+  clients), no webfonts, no inline SVG — the mark is a committed PNG
+  (`public/email/fordra-mark.png`, rasterized from the LogoMark art) served
+  from `NEXT_PUBLIC_BASE_URL` (falls back to app.fordra.com). Owner-approved
+  sentences/subjects unchanged word-for-word; customer CTA is "View details"
+  for BOTH outcomes (owner decision). Plain-text parts untouched.
+- **Per-requirement insurer confirmation** (replaces admins typing "confirmed
+  via insurer call" into evidence): `GapItem.insurer_confirmation?: 'call'|'email'`,
+  key OMITTED entirely when not confirmed (legacy reports, automated
+  gap_analysis, sandbox canned results all render nothing). Admin assessment
+  form has a second per-row select under the verdict (Not confirmed with
+  insurer / Confirmed by call / Confirmed by email; `req_<i>_insurer_confirmation`,
+  same closed-case discipline). Customer card shows a lime chip
+  "Verified with insurer via call/email" (`CoiSplitReview.tsx`); PDF prints
+  "VERIFIED WITH INSURER VIA CALL/EMAIL" in the report green. No migration,
+  no /v1 change (serializer never exposes final_report items), flag changes
+  deliberately not activity-logged. Verified end-to-end on localhost
+  (draft round-trip, publish, customer page, PDF, reopen keeps flags,
+  test row VRF-1075 deleted).
+
+## Previous (as of 2026-07-22 — two-pronged contact check: website + external source, legitimacy verdict)
 
 **2026-07-22 session (localhost-verified end-to-end, owner approved the
 verdict copy and directed the prod push):**

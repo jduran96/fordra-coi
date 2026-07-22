@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { pacificDateTime } from '@/lib/dates'
+import { emailShell } from '@/lib/email-template'
 
 /**
  * Email alert on every new verification submission, so the review SLA clock
@@ -63,10 +64,13 @@ export async function notifyNewVerification(n: NewVerificationNotice): Promise<v
     const text =
       `${orgName} submitted a new verification for ${n.carrierName} via ${SOURCE_LABEL[n.source] ?? n.source}.\n`
       + `Submitted: ${when}\n\nReview it: ${link}\n`
-    const html =
-      `<p>${esc(orgName)} submitted a new verification for <strong>${esc(n.carrierName)}</strong> via ${esc(SOURCE_LABEL[n.source] ?? n.source)}.</p>`
-      + `<p>Submitted: ${esc(when)}</p>`
-      + `<p><a href="${esc(link)}">Review it in the Fordra admin console</a></p>`
+    const html = emailShell({
+      bodyHtml:
+        `<p style="margin:0 0 12px;">${esc(orgName)} submitted a new verification for <strong>${esc(n.carrierName)}</strong> via ${esc(SOURCE_LABEL[n.source] ?? n.source)}.</p>`
+        + `<p style="margin:0;">Submitted: ${esc(when)}</p>`,
+      ctaLabel: 'Review it in the Fordra admin console',
+      ctaUrl: esc(link),
+    })
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -119,11 +123,16 @@ export async function notifyVerificationResult(n: VerificationResultNotice): Pro
     const text = n.outcome === 'completed'
       ? `Your verification for ${n.carrierName}${label} is complete. The report is ready in your Fordra portal.\n\nView the report: ${link}\n`
       : `Your verification for ${n.carrierName}${label} could not be completed. The reason is in your Fordra portal.\n\nView the details: ${link}\n`
-    const html = n.outcome === 'completed'
-      ? `<p>Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} is complete. The report is ready in your Fordra portal.</p>`
-        + `<p><a href="${esc(link)}">View the report</a></p>`
-      : `<p>Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} could not be completed. The reason is in your Fordra portal.</p>`
-        + `<p><a href="${esc(link)}">View the details</a></p>`
+    // Sentences are owner-approved verbatim; the shell only adds the visual
+    // frame. CTA label is "View details" for both outcomes (owner decision
+    // 2026-07-22).
+    const html = emailShell({
+      bodyHtml: n.outcome === 'completed'
+        ? `<p style="margin:0;">Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} is complete. The report is ready in your Fordra portal.</p>`
+        : `<p style="margin:0;">Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} could not be completed. The reason is in your Fordra portal.</p>`,
+      ctaLabel: 'View details',
+      ctaUrl: esc(link),
+    })
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',

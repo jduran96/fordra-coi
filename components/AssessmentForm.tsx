@@ -8,7 +8,7 @@ import { ConditionChip } from '@/components/RequirementsEditor'
 import { useAnalysisBodyVisible } from '@/components/AdminTabs'
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
-interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string }
+interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string; insurer_confirmation?: 'call' | 'email' }
 
 /**
  * The admin's requirement-by-requirement review. Rows are client-state so the
@@ -94,11 +94,18 @@ export default function AssessmentForm({
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={{ ...input(), width: 160, flexShrink: 0 }}>
-              <option value="met">Passed</option>
-              <option value="not_met">Discrepancy</option>
-              <option value="uncertain">Needs attention</option>
-            </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 200, flexShrink: 0 }}>
+              <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={input()}>
+                <option value="met">Passed</option>
+                <option value="not_met">Discrepancy</option>
+                <option value="uncertain">Needs attention</option>
+              </select>
+              <select name={`req_${i}_insurer_confirmation`} defaultValue={item.insurer_confirmation ?? ''} disabled={closed} style={input()}>
+                <option value="">Not confirmed with insurer</option>
+                <option value="call">Confirmed by call</option>
+                <option value="email">Confirmed by email</option>
+              </select>
+            </div>
             <textarea
               name={`req_${i}_evidence`}
               defaultValue={item.evidence ?? ''}

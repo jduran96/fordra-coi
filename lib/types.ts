@@ -179,6 +179,10 @@ export interface GapItem {
   requirement: Requirement;
   status: 'met' | 'not_met' | 'uncertain';
   evidence: string;
+  /** Admin-set only: this detail was confirmed directly with the insurer.
+   *  Key is omitted entirely when not confirmed; the automated pipeline
+   *  never writes it. */
+  insurer_confirmation?: 'call' | 'email';
 }
 
 export interface GapAnalysis {

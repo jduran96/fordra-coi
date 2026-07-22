@@ -18,6 +18,7 @@ interface GapItem {
   requirement: { coverage_type?: string; minimum_limit?: string; notes?: string | null }
   status: 'met' | 'not_met' | 'uncertain'
   evidence?: string
+  insurer_confirmation?: 'call' | 'email'
 }
 interface Gap { met?: GapItem[]; not_met?: GapItem[]; uncertain?: GapItem[] }
 
