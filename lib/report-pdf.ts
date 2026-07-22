@@ -117,8 +117,13 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         }
         if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email') {
           doc.moveDown(0.15)
-          doc.font('Helvetica-Bold').fontSize(8.5).fillColor(STATUS_COLOR.met)
-            .text(`VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`, { width: width - 90, characterSpacing: 0.8 })
+          // Helvetica (WinAnsi) has no ✓ glyph: draw the check as strokes.
+          const cy = doc.y
+          doc.save().strokeColor(STATUS_COLOR.met).lineWidth(1.4).lineCap('round').lineJoin('round')
+            .moveTo(56, cy + 4).lineTo(58.4, cy + 6.4).lineTo(63, cy + 1.4).stroke().restore()
+          doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK)
+            .text(`VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`, 56 + 12, cy, { width: width - 102, characterSpacing: 0.8 })
+          doc.x = 56
         }
         doc.moveDown(0.55)
       }

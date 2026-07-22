@@ -14,8 +14,8 @@ import { C } from '@/lib/theme'
  *   direction from the description. The stored kind stays 'limit' — renaming
  *   it would orphan every saved template row.
  * - variable: a coverage whose value changes per deal (a dollar amount, a
- *   make/model/VIN, etc.) — the Amount cell holds the human title ("Asset Sale
- *   Price"); normalizeRequirementRows turns it into an {asset_sale_price}
+ *   make/model/VIN, etc.) — the Amount cell is locked; the Title names the
+ *   value and normalizeRequirementRows turns it into an {asset_sale_price}
  *   token at save time
  * - condition: a qualitative check with no dollar amount, judged by its notes
  */
@@ -105,11 +105,11 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
             <AutoGrowTextarea
               value={row.coverage_type}
               onChange={v => updateRow(i, { coverage_type: v })}
-              placeholder={kind === 'condition' ? 'e.g. Loss Payee' : titlePlaceholder}
+              placeholder={kind === 'condition' ? 'e.g. Loss Payee' : kind === 'variable' ? 'e.g. Asset Sale Price' : titlePlaceholder}
               style={inputS}
             />
             <select value={kind} onChange={e => setKind(i, e.target.value as 'limit' | 'condition' | 'variable')}
-              title="Amount: a fixed dollar threshold, read with the description (a minimum unless the description says otherwise). Variable: value entered on each deal. Condition: no dollar amount, judged by its notes."
+              title="Amount: a fixed dollar threshold, read with the description (a minimum unless the description says otherwise). Variable: the amount changes per deal; the title names the value entered on each new verification. Condition: no dollar amount, judged by its notes."
               style={{ ...inputS, padding: '10px 8px', color: C.txt2 }}>
               <option value="limit">Amount</option>
               <option value="variable">Variable</option>
@@ -119,11 +119,8 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
               <input value="" disabled placeholder="No dollar amount"
                 style={{ ...inputS, background: C.paper, color: C.txt3, cursor: 'not-allowed' }} />
             ) : kind === 'variable' ? (
-              <input value={row.minimum_limit}
-                onChange={e => updateRow(i, { minimum_limit: e.target.value })}
-                placeholder="e.g. Asset Sale Price"
-                title="Name what the value depends on; it is entered on each new verification"
-                style={inputS} />
+              <input value="" disabled placeholder="Entered on each verification"
+                style={{ ...inputS, background: C.paper, color: C.txt3, cursor: 'not-allowed' }} />
             ) : (
               <input value={row.minimum_limit}
                 onChange={e => updateRow(i, { minimum_limit: smartLimitInput(e.target.value) })}

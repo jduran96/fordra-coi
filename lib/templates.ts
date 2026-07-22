@@ -85,8 +85,8 @@ export function slugifyVariable(title: string): string {
 
 /**
  * Canonicalize editor rows for storage and derive the per-deal variable inputs.
- * Variable rows arrive with the human title the user typed in the Amount cell
- * ("Asset Sale Price"); storage keeps the {asset_sale_price} token so the
+ * A Variable row's Title ("Asset Sale Price") IS the variable: it becomes the
+ * per-deal input label and the stored {asset_sale_price} token, so the
  * substitution machinery is unchanged. Raw {tokens} typed into limits or notes
  * still work and derive variables too. {carrier_name} is never asked for: it is
  * filled from the verification's carrier field automatically.
@@ -106,21 +106,20 @@ export function normalizeRequirementRows(raw: Requirement[]): {
     const kind = requirementKind(r)
     let minimum_limit = kind === 'condition' ? '' : (r.minimum_limit ?? '').trim()
     if (kind === 'variable') {
-      const token = minimum_limit.match(VARIABLE_TOKEN_RE)
-      const key = token ? token[1].toLowerCase() : slugifyVariable(minimum_limit)
+      const key = slugifyVariable(coverage_type)
       if (!key) {
-        // In-progress Variable row: title typed, value name still empty. Record
-        // the error and skip ONLY this row — the /app/new form derives its
-        // per-deal inputs from this function on every keystroke, and wiping all
-        // rows/variables here made every prompt vanish mid-edit. All callers
-        // treat `error` as blocking, so saving/submitting still can't proceed.
-        error ??= `Name the per-deal value for "${coverage_type}" (for example "Asset Sale Price").`
+        // Title has no sluggable characters. Record the error and skip ONLY
+        // this row — the /app/new form derives its per-deal inputs from this
+        // function on every keystroke, and wiping all rows/variables here made
+        // every prompt vanish mid-edit. All callers treat `error` as blocking,
+        // so saving/submitting still can't proceed.
+        error ??= `Give the variable requirement a title (for example "Asset Sale Price").`
         continue
       }
       minimum_limit = `{${key}}`
       if (!seen.has(key)) {
         seen.add(key)
-        variables.push({ key, label: token ? humanizeToken(key) : (r.minimum_limit ?? '').trim(), type: 'text', required: true })
+        variables.push({ key, label: coverage_type, type: 'text', required: true })
       }
     }
     // Descriptions are required on every row: the requirements parser needs
@@ -148,16 +147,14 @@ export function normalizeRequirementRows(raw: Requirement[]): {
 }
 
 /**
- * Stored rows -> editor rows: variable rows swap their {token} for the human
- * title shown while editing (the saved variable label when we have it).
+ * Stored rows -> editor rows: variable rows drop their {token} — the Amount
+ * cell is locked in the editor and the token re-derives from the Title on save.
  */
 export function editableRows(t: Pick<RequirementTemplate, 'requirements' | 'variables'>): Requirement[] {
-  const labels = new Map((t.variables ?? []).map(v => [v.key, v.label]))
   return (t.requirements ?? []).map(r => {
     const token = (r.minimum_limit ?? '').trim().match(VARIABLE_TOKEN_RE)
     if (token && requirementKind(r) === 'variable') {
-      const key = token[1].toLowerCase()
-      return { ...r, kind: 'variable' as const, minimum_limit: labels.get(key) ?? humanizeToken(key) }
+      return { ...r, kind: 'variable' as const, minimum_limit: '' }
     }
     return { ...r }
   })

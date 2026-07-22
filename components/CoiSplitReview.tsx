@@ -528,11 +528,12 @@ export default function CoiSplitReview({
               <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '6px 0 0' }}>{item.evidence}</p>
             )}
             {item.insurer_confirmation && (
-              <p style={{ margin: '8px 0 0' }}>
-                <span style={{
-                  fontSize: 12, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap',
-                  background: C.lime, padding: '3px 10px', borderRadius: 20,
-                }}>
+              <p style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                  stroke={C.ok} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.txt, whiteSpace: 'nowrap' }}>
                   Verified with insurer via {item.insurer_confirmation === 'call' ? 'call' : 'email'}
                 </span>
               </p>

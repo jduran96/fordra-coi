@@ -65,13 +65,17 @@ export async function saveTemplate(_prev: TemplateState, formData: FormData): Pr
 
 export async function deleteTemplate(templateId: string): Promise<{ error?: string } | void> {
   const profile = await getProfile()
-  if (!profile?.org_id) return
+  if (!profile?.org_id) return { error: 'Your session has expired. Refresh the page and sign in again.' }
   const supabase = await createClient()
-  const { error } = await supabase.from('requirement_templates')
+  // .select() makes the delete report what it removed: RLS filtering the row
+  // out yields NO Supabase error, just zero rows — surface that instead of
+  // silently succeeding (the button otherwise looks dead).
+  const { data, error } = await supabase.from('requirement_templates')
     .delete()
     .eq('id', templateId)
     .eq('org_id', profile.org_id)
-  if (error) return { error: 'Could not delete. Please retry.' }
+    .select('id')
+  if (error || !data?.length) return { error: 'Could not delete. Please retry.' }
   revalidatePath('/app/settings')
   revalidatePath('/app/new')
 }
