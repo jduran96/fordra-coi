@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { after } from 'next/server'
 import { notifyVerificationResult } from '@/lib/notify'
+import { notifySlackReportReady } from '@/Slack/notify'
 import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { DOCUMENTS_BUCKET } from '@/lib/storage'
@@ -553,31 +554,48 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     return { error: 'Could not save. Nothing was changed. Please retry.' }
   }
 
-  // "Notify app user" checkbox in the publish/fail confirm dialogs: the email
-  // to the submitter fires ONLY on this explicit per-case opt-in (human in the
-  // loop, so test publishes on other orgs never spam anyone). created_by is
-  // null for API/Slack rows — no portal user to notify, flag ignored.
-  if ((publish || fail) && formData.get('notify_user') === 'on' && v.created_by) {
-    const { data: uploader } = await supabase.from('profiles')
-      .select('email').eq('id', v.created_by).maybeSingle()
-    const toEmail = uploader?.email
-    if (toEmail) {
-      after(() => notifyVerificationResult({
-        verificationId,
-        displayId: (v as { display_id?: string }).display_id,
-        carrierName: String(v.carrier_name ?? 'your carrier'),
-        outcome: publish ? 'completed' : 'failed',
-        toEmail,
-      }))
-      // Every send goes on the activity log so there's a record of who
-      // notified whom. Log failure must not block the publish itself.
+  // Notify checkbox in the publish/fail confirm dialogs: the message to the
+  // submitter fires ONLY on this explicit per-case opt-in (human in the loop,
+  // so test publishes on other orgs never spam anyone). Web rows email the
+  // created_by portal user; Slack rows DM the captured slack_context channel.
+  // API rows (and legacy Slack rows without context) have no one to notify.
+  if ((publish || fail) && formData.get('notify_user') === 'on') {
+    const outcomeNote = publish ? 'report published' : 'could not be completed'
+    // Every send goes on the activity log so there's a record of who
+    // notified whom. Log failure must not block the publish itself.
+    const logNotify = async (note: string) => {
       const { error: logErr } = await supabase.rpc('admin_append_activity', {
         vid: verificationId,
         kind: 'note',
         actor: adminInitials(admin.email ?? ''),
-        note: `Notified ${toEmail}: ${publish ? 'report published' : 'could not be completed'}`,
+        note,
       })
       if (logErr) console.error('saveAssessment: notify audit log failed', logErr)
+    }
+    if (v.created_by) {
+      const { data: uploader } = await supabase.from('profiles')
+        .select('email').eq('id', v.created_by).maybeSingle()
+      const toEmail = uploader?.email
+      if (toEmail) {
+        after(() => notifyVerificationResult({
+          verificationId,
+          displayId: (v as { display_id?: string }).display_id,
+          carrierName: String(v.carrier_name ?? 'your carrier'),
+          outcome: publish ? 'completed' : 'failed',
+          toEmail,
+        }))
+        await logNotify(`Notified ${toEmail}: ${outcomeNote}`)
+      }
+    } else if (v.source === 'slack' && v.slack_context) {
+      const slackContext = v.slack_context as { team_id: string; channel_id: string; user_id: string }
+      after(() => notifySlackReportReady({
+        verificationId,
+        displayId: (v as { display_id?: string }).display_id,
+        carrierName: String(v.carrier_name ?? 'your carrier'),
+        outcome: publish ? 'completed' : 'failed',
+        slackContext,
+      }))
+      await logNotify(`Notified Slack submitter: ${outcomeNote}`)
     }
   }
 

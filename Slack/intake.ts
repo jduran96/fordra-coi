@@ -384,6 +384,13 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
     return
   }
 
+  // Remember where this came from so publish can DM the submitter, and link
+  // the session row for the audit trail before it is deleted.
+  await svc.from('verifications').update({
+    slack_context: { team_id: install.team_id, channel_id: ev.channel, user_id: ev.user },
+  }).eq('id', verification.id)
+  await svc.from('slack_intake_sessions').update({ verification_id: verification.id }).eq('id', sessionId)
+
   await svc.from('slack_intake_sessions').delete().eq('id', sessionId)
   await emitEvent(install.org_id, 'verification.created', serializeVerification(verification, docRefs))
 

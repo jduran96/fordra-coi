@@ -22,6 +22,7 @@ export default function AssessmentForm({
   published,
   failed,
   submitterEmail,
+  slackNotifiable,
 }: {
   action: (formData: FormData) => Promise<{ error?: string } | void>
   items: Item[]
@@ -30,6 +31,8 @@ export default function AssessmentForm({
   failed: boolean
   /** Portal user who submitted the case; null for API/Slack rows (nobody to notify). */
   submitterEmail: string | null
+  /** Slack row with captured slack_context: notify DMs the submitter instead of emailing. */
+  slackNotifiable: boolean
 }) {
   const [rows, setRows] = useState(() => items.map((it, i) => ({ ...it, key: i })))
   const [nextKey, setNextKey] = useState(items.length)
@@ -166,7 +169,7 @@ export default function AssessmentForm({
             <p style={{ fontSize: 13.5, color: C.txt2, fontFamily: C.sans, lineHeight: 1.6, margin: 0 }}>
               Releases exactly this assessment to the customer.
             </p>
-            <NotifyUserChoice submitterEmail={submitterEmail} />
+            <NotifyUserChoice submitterEmail={submitterEmail} slackNotifiable={slackNotifiable} />
             {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setPublishOpen(false)} style={smallBtn()}>Cancel</button>
@@ -191,7 +194,7 @@ export default function AssessmentForm({
               placeholder="Reason shown to the customer"
               style={{ ...input(), width: '100%', resize: 'vertical' }}
             />
-            <NotifyUserChoice submitterEmail={submitterEmail} />
+            <NotifyUserChoice submitterEmail={submitterEmail} slackNotifiable={slackNotifiable} />
             {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setFailOpen(false)} style={smallBtn()}>Cancel</button>
@@ -208,13 +211,15 @@ export default function AssessmentForm({
 }
 
 /**
- * The opt-in "Notify app user" checkbox inside the publish/fail confirm
- * dialogs. Unchecked by default: no email ever fires without the admin
- * deliberately checking it. Only one dialog is mounted at a time, so exactly
- * one notify_user field can submit. API/Slack rows have no portal user.
+ * The opt-in notify checkbox inside the publish/fail confirm dialogs.
+ * Unchecked by default: nothing ever fires without the admin deliberately
+ * checking it. Only one dialog is mounted at a time, so exactly one
+ * notify_user field can submit. Web rows email the portal user; Slack rows
+ * with captured context DM the submitter; API rows (and legacy Slack rows
+ * without context) have no one to notify.
  */
-function NotifyUserChoice({ submitterEmail }: { submitterEmail: string | null }) {
-  if (!submitterEmail) {
+function NotifyUserChoice({ submitterEmail, slackNotifiable }: { submitterEmail: string | null; slackNotifiable: boolean }) {
+  if (!submitterEmail && !slackNotifiable) {
     return (
       <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: 0 }}>
         Submitted via API or Slack, no app user to notify.
@@ -224,7 +229,7 @@ function NotifyUserChoice({ submitterEmail }: { submitterEmail: string | null })
   return (
     <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, color: C.txt, fontFamily: C.sans, cursor: 'pointer' }}>
       <input type="checkbox" name="notify_user" style={{ margin: 0 }} />
-      Notify app user ({submitterEmail}) by email
+      {submitterEmail ? `Notify app user (${submitterEmail}) by email` : 'Notify the Slack submitter in their DM'}
     </label>
   )
 }

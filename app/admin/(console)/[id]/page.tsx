@@ -453,6 +453,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           published={!!v.published_at}
           failed={v.case_status === 'failed'}
           submitterEmail={uploader?.email ?? null}
+          slackNotifiable={v.source === 'slack' && !!v.slack_context}
         />
       }
       />
