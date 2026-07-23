@@ -176,8 +176,8 @@ verdict copy and directed the prod push):**
   lib/types.ts). Latest run is the prominent card; older runs collapse under
   "Previous checks". Old COI-level check removed: `verifyInsurerContact`,
   `AgentContactCheck`, `runContactCheck` deleted; the orphaned
-  `verifications.contact_check` column (0019) still exists — drop in a later
-  cleanup migration after prod verify (0024/0025 pattern).
+  `verifications.contact_check` column (0019) was dropped by 0031 (applied
+  2026-07-23; verified no code, view, or grant depended on it).
 - **Logs inherit tags by VALUE MATCH, no web call at log time**: `saveCallNote`
   derives the note's `contact_check` snapshot from the history via
   `noteCheckFromRegistry` (lib/contact-notes.ts; phone compared digits-only
@@ -602,8 +602,9 @@ Both surfaces auto-deploy from GitHub (`jduran96/fordra-coi`, one repo, two Verc
   `../fordra-coi-website` clone are retired).
 - Push = deploy. No CLI steps needed; `npx vercel` is authenticated on this machine if manual
   deploys are ever required.
-- Vercel env is complete (incl. `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`). A stray
-  `SUPABASE_SECRET_KEY` var duplicates the service key under the wrong name; unused, deletable.
+- Vercel env is complete (incl. `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`). The stray
+  `SUPABASE_SECRET_KEY` var was deleted 2026-07-08 (confirmed gone via `vercel env ls`
+  2026-07-23; zero code references).
 - Supabase Auth URL config: Site URL `https://app.fordra.com`; redirect allowlist includes the
   prod and `localhost:3000` callbacks, so magic-link login works in both environments.
 - **Prod and local dev share the same Supabase project** — migrations apply once, data is common.
@@ -727,8 +728,13 @@ against prod, all test rows cleaned). Changes from the owner's round-2 feedback:
   lib/upload-validation.ts; raise the bucket limit first if these ever grow past 10MB).
   Gotchas: `statStoredObject` must use the `/object/authenticated/` storage endpoint (the
   bare `/object/` path 400s for service GETs); the bucket enforces an allowed-mime list,
-  so uploads must carry a real content type; abandoned `incoming/` objects are orphans
-  (cleanup task, backlog). `/v1` and /demo still send multipart and are therefore
+  so uploads must carry a real content type. Abandoned `incoming/` objects are orphans:
+  storage objects with no `documents` row accumulate in the live bucket whenever an
+  upload session is abandoned mid-flow. Plan of attack: script (node + service client)
+  lists `incoming/` objects, cross-references `documents.storage_path`, and reports
+  unreferenced objects older than 48h for review before any delete. Dry-run report
+  first, deletion only as a second explicitly-approved pass. `/v1` and /demo still
+  send multipart and are therefore
   still subject to the ~4.5MB platform cap (documented on /app/docs; two-step upload API
   is backlog).
 - **Descriptions are required on every requirement row (2026-07-11):**
