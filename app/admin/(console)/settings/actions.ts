@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
-import { CONFIG_KEYS, setConfig, deleteConfig } from '@/lib/config'
+import { CONFIG_KEYS, CALL_CONFIG_KEY, callConfigOrgKey, setConfig, deleteConfig } from '@/lib/config'
 import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
@@ -110,4 +110,34 @@ export async function deleteOrgTemplate(templateId: string): Promise<void> {
   const { error } = await supabase.from('requirement_templates').delete().eq('id', templateId)
   if (error) throw new Error(`Could not delete the template: ${error.message}`)
   revalidatePath('/admin/settings')
+}
+
+/**
+ * Save the AI call identity config for one scope: 'global' or an org id.
+ * Only non-blank fields are stored; blanks fall back (org -> global ->
+ * built-in defaults) at read time via getCallConfig. An all-blank submission
+ * clears the scope's override entirely.
+ */
+export async function saveCallConfig(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin()
+  const scope = String(formData.get('scope') || 'global')
+  const key = scope === 'global' ? CALL_CONFIG_KEY : callConfigOrgKey(scope)
+
+  const value: Record<string, string> = {}
+  for (const field of [
+    'assistant_name', 'on_behalf_of', 'relationship_line', 'holder_legal_name',
+    'holder_address', 'reply_email', 'email_enabled', 'on_behalf_of_info',
+    'callback_number', 'languages', 'entity_type',
+  ]) {
+    const v = String(formData.get(field) ?? '').trim()
+    if (v) value[field] = v
+  }
+  const reply = value.reply_email
+  if (reply && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reply)) {
+    return { error: `"${reply}" is not a valid email address.` }
+  }
+  if (Object.keys(value).length === 0) await deleteConfig(key)
+  else await setConfig(key, value)
+  revalidatePath('/admin/settings')
+  return { ok: true }
 }

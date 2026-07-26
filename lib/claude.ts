@@ -629,8 +629,8 @@ Before returning, review your list: remove any duplicate or near-duplicate quest
  * Admin-pipeline variant: one question per requirement in the org's standards
  * (not just the uncertain ones), each worded around what OCR already read off
  * the COI (e.g. "The certificate shows X as the named insured — are there
- * other insured parties?"). Used only by runExtractionPipeline; the frozen
- * /demo flow keeps generateAgentQuestions above.
+ * other insured parties?"). Used only by runExtractionPipeline.
+ * (generateAgentQuestions above is the legacy demo variant, kept for reference.)
  */
 export async function generateInsurerQuestions(
   requirements: Requirement[],
@@ -644,7 +644,7 @@ export async function generateInsurerQuestions(
 
   const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to verify a Certificate of Insurance against a customer's insurance requirements.
 
-Draft EXACTLY ONE question per requirement, in the same order the requirements are given, covering every requirement — including ones the certificate appears to satisfy (those become confirmation questions).
+Draft questions in the same order the requirements are given, covering every requirement — including ones the certificate appears to satisfy (those become confirmation questions). Usually one question per requirement; a requirement that bundles several facts gets one question per fact.
 
 Ground each question in what was already read from the certificate:
 - If the certificate shows a relevant value, reference it ("The certificate shows $1,000,000 per occurrence for Auto Liability — is that the current limit?").
@@ -653,11 +653,15 @@ Ground each question in what was already read from the certificate:
 
 Each question must be:
 - 25 words or fewer
+- ATOMIC: exactly one fact per question, answerable with a yes/no or a
+  single concrete value. Never join two checks with "and" (loss payee
+  and additional insured are TWO questions; limit and deductible are
+  TWO questions). If a requirement bundles several facts, split it into
+  one question per fact, keeping requirement order.
 - Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
 - About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
-- Specific: answerable with a yes/no or a single concrete value
 
-Return ONLY a valid JSON array of question strings, one per requirement, same order. No prose.`;
+Return ONLY a valid JSON array of question strings, in requirement order. No prose.`;
 
   const messages: Anthropic.MessageParam[] = [
     {

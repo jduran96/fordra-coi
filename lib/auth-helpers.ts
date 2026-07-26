@@ -46,3 +46,14 @@ export async function requireAdmin() {
   if (!isAdminEmail(user.email)) redirect('/access-denied')
   return user
 }
+
+/**
+ * Admin gate for API route handlers (fetch callers): returns the user or
+ * null instead of redirecting, so routes can answer 401 JSON. Same checks as
+ * requireAdmin: revalidated Supabase JWT + ADMIN_EMAIL allowlist.
+ */
+export async function requireAdminApi() {
+  const user = await getSessionUser()
+  if (!user || !isAdminEmail(user.email)) return null
+  return user
+}

@@ -1,0 +1,343 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { requireAdmin } from '@/lib/auth-helpers'
+import { createServiceClient } from '@/lib/supabase/server'
+import { adminInitials } from '@/lib/admin-activity'
+import { createAiVerificationCall, stopCall, configuredAgentId } from '@/lib/retell'
+import {
+  buildDynamicVariables, normalizeE164, validateDispatch,
+  type AiCallQuestion, type CallContextFields, type ReferenceDetail, CONTEXT_FIELD_NAMES,
+} from '@/lib/call-config'
+import {
+  ACTIVE_STATUSES, syncAiCall, summaryHtmlFromAnalysis,
+  type AiCall,
+} from '@/lib/ai-calls'
+import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
+import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
+import type { ContactCheckEntry } from '@/lib/types'
+
+/**
+ * AI call dispatch actions (voice spec v5 §10). Every mutation here begins
+ * with requireAdmin(): initiating, stopping, and publishing AI calls are
+ * admin-only, full stop. approveAndDispatchCall is the ONLY code path that
+ * hands a payload to Retell, and it re-runs the §10 validation server-side —
+ * the client form's validation is a courtesy copy, never the gate.
+ */
+
+/** Same closed-case rule as the main admin actions: published or failed = read-only. */
+async function caseClosed(supabase: ReturnType<typeof createServiceClient>, verificationId: string): Promise<boolean> {
+  const { data } = await supabase.from('verifications')
+    .select('published_at, case_status')
+    .eq('id', verificationId)
+    .maybeSingle()
+  return !!data && (!!data.published_at || data.case_status === 'failed')
+}
+
+const CLOSED_ERROR = 'This case is closed. Click Edit Status in the Assessment section to reopen it first.'
+
+function parseContext(formData: FormData): CallContextFields {
+  const ctx = {} as Record<string, string>
+  for (const name of CONTEXT_FIELD_NAMES) {
+    ctx[name] = String(formData.get(name) ?? '').trim()
+  }
+  const fields = ctx as unknown as CallContextFields
+  fields.email_enabled = ctx.email_enabled === 'true' ? 'true' : 'false'
+  fields.entity_type = ctx.entity_type === 'carrier' || ctx.entity_type === 'mga' ? ctx.entity_type : 'agency'
+  fields.call_context = ctx.call_context === 'resumed' ? 'resumed' : 'new'
+  return fields
+}
+
+function parseDetails(formData: FormData): ReferenceDetail[] | null {
+  try {
+    const raw = JSON.parse(String(formData.get('details_json') || '[]'))
+    if (!Array.isArray(raw)) return null
+    return raw
+      .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
+      .map(d => ({ label: String(d.label ?? '').trim(), value: String(d.value ?? '').trim() }))
+      .filter(d => d.label || d.value)
+  } catch {
+    return null
+  }
+}
+
+function parseQuestions(formData: FormData): AiCallQuestion[] | null {
+  try {
+    const raw = JSON.parse(String(formData.get('questions_json') || '[]'))
+    if (!Array.isArray(raw)) return null
+    return raw
+      .filter((q): q is Record<string, unknown> => !!q && typeof q === 'object')
+      .map((q): AiCallQuestion => ({
+        text: String(q.text ?? '').trim(),
+        ...(q.blocker === true ? { blocker: true } : {}),
+      }))
+      .filter(q => q.text)
+  } catch {
+    return null
+  }
+}
+
+async function logActivity(
+  supabase: ReturnType<typeof createServiceClient>,
+  verificationId: string,
+  adminEmail: string,
+  kind: 'called' | 'note',
+  note: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_append_activity', {
+    vid: verificationId,
+    kind,
+    actor: adminInitials(adminEmail),
+    note,
+  })
+  if (error) console.error('ai-call activity log failed', error)
+}
+
+/** Save the review form as the verification's draft (one draft row per verification). */
+export async function saveCallDraft(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
+  const admin = await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) return { error: CLOSED_ERROR }
+
+  const context = parseContext(formData)
+  const questions = parseQuestions(formData)
+  if (!questions) return { error: 'Could not read the question list. Please retry.' }
+  const details = parseDetails(formData)
+  if (!details) return { error: 'Could not read the reference details. Please retry.' }
+  const toNumber = String(formData.get('to_number') || '').trim()
+  const numberSource = String(formData.get('number_source') || 'manual')
+
+  const { data: existing } = await supabase.from('ai_calls')
+    .select('id')
+    .eq('verification_id', verificationId)
+    .eq('status', 'draft')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const row = {
+    verification_id: verificationId,
+    created_by: adminInitials(admin.email ?? ''),
+    status: 'draft',
+    to_number: toNumber,
+    number_source: numberSource,
+    questions,
+    // Reference details ride inside draft_input so the draft round-trips
+    // without a schema change; the review page splits them back out.
+    draft_input: { ...context, details_json: JSON.stringify(details) } as unknown as Record<string, string>,
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = existing
+    ? await supabase.from('ai_calls').update(row).eq('id', existing.id)
+    : await supabase.from('ai_calls').insert(row)
+  if (error) {
+    console.error('saveCallDraft failed', error)
+    return { error: 'Could not save the draft. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}/call`)
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/** Reject the current draft with a reason (kept for the §10 audit trail). */
+export async function rejectCallDraft(verificationId: string, draftId: string, formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const reason = String(formData.get('rejected_reason') || '').trim()
+  if (!reason) return { error: 'Write the reason before rejecting.' }
+  const { error } = await supabase.from('ai_calls')
+    .update({ status: 'rejected', rejected_reason: reason, updated_at: new Date().toISOString() })
+    .eq('id', draftId)
+    .eq('verification_id', verificationId)
+    .eq('status', 'draft')
+  if (error) {
+    console.error('rejectCallDraft failed', error)
+    return { error: 'Could not reject the draft. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}/call`)
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * The §10 gate: validate the exact payload, freeze it with the approver's
+ * identity, then dispatch to Retell. A dispatch failure keeps the frozen
+ * payload and the error on the row — the attempt is part of the audit trail.
+ */
+export async function approveAndDispatchCall(verificationId: string, formData: FormData): Promise<{ error?: string; callId?: string } | void> {
+  const admin = await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) return { error: CLOSED_ERROR }
+
+  const context = parseContext(formData)
+  const questions = parseQuestions(formData)
+  if (!questions) return { error: 'Could not read the question list. Please retry.' }
+  const details = parseDetails(formData)
+  if (!details) return { error: 'Could not read the reference details. Please retry.' }
+  const toNumberRaw = String(formData.get('to_number') || '').trim()
+  const numberSource = String(formData.get('number_source') || 'manual')
+
+  // Server-side validation: hard blocks refuse the dispatch outright.
+  const { blocks } = validateDispatch({ context, questions, details, toNumber: toNumberRaw })
+  if (blocks.length) return { error: blocks.join(' ') }
+  const toNumber = normalizeE164(toNumberRaw)!
+
+  const agentId = configuredAgentId()
+  if (!agentId || !process.env.RETELL_FROM_NUMBER) {
+    return { error: 'Retell is not configured (agent id or from number missing). Check the environment settings.' }
+  }
+
+  // One in-flight call per verification: a second dial while the first is
+  // live would talk over the same office.
+  const { data: active } = await supabase.from('ai_calls')
+    .select('id')
+    .eq('verification_id', verificationId)
+    .in('status', ACTIVE_STATUSES)
+    .limit(1)
+    .maybeSingle()
+  if (active) return { error: 'A call for this verification is already in progress. Stop it or wait for it to end.' }
+
+  const payload = buildDynamicVariables(context, questions, details)
+  const { data: display } = await supabase.from('verifications')
+    .select('display_id').eq('id', verificationId).maybeSingle()
+
+  // Freeze the approved payload FIRST: the audit record exists even if the
+  // Retell request dies. Reuse the draft row when there is one.
+  const { data: draft } = await supabase.from('ai_calls')
+    .select('id')
+    .eq('verification_id', verificationId)
+    .eq('status', 'draft')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const approvedRow = {
+    verification_id: verificationId,
+    created_by: adminInitials(admin.email ?? ''),
+    status: 'approved',
+    to_number: toNumber,
+    number_source: numberSource,
+    questions,
+    draft_input: { ...context, details_json: JSON.stringify(details) } as unknown as Record<string, string>,
+    payload,
+    approved_by: admin.email ?? '',
+    approved_at: new Date().toISOString(),
+    retell_agent_id: agentId,
+    updated_at: new Date().toISOString(),
+  }
+  const { data: saved, error: saveErr } = draft
+    ? await supabase.from('ai_calls').update(approvedRow).eq('id', draft.id).select('id').single()
+    : await supabase.from('ai_calls').insert(approvedRow).select('id').single()
+  if (saveErr || !saved) {
+    console.error('approveAndDispatchCall: approval write failed', saveErr)
+    return { error: 'Could not record the approval. Nothing was dialed. Please retry.' }
+  }
+
+  await logActivity(supabase, verificationId, admin.email ?? '', 'called',
+    `AI call dispatched to ${toNumber}${display?.display_id ? ` (${display.display_id})` : ''}`)
+
+  try {
+    const retellCallId = await createAiVerificationCall({ toNumber, variables: payload })
+    const { error } = await supabase.from('ai_calls')
+      .update({ status: 'dispatched', retell_call_id: retellCallId, updated_at: new Date().toISOString() })
+      .eq('id', saved.id)
+    if (error) console.error('approveAndDispatchCall: dispatched update failed', error)
+    revalidatePath(`/admin/${verificationId}/call`)
+    revalidatePath(`/admin/${verificationId}`)
+    return { callId: saved.id }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    await supabase.from('ai_calls')
+      .update({ status: 'failed', error: detail.slice(0, 500), updated_at: new Date().toISOString() })
+      .eq('id', saved.id)
+    revalidatePath(`/admin/${verificationId}/call`)
+    revalidatePath(`/admin/${verificationId}`)
+    return { error: `The call could not be placed: ${detail}` }
+  }
+}
+
+/** Kill switch: end an in-flight call now. The status settles via the next sync. */
+export async function stopAiCall(verificationId: string, aiCallId: string): Promise<{ error?: string } | void> {
+  const admin = await requireAdmin()
+  const supabase = createServiceClient()
+  const { data: row, error } = await supabase.from('ai_calls')
+    .select('*')
+    .eq('id', aiCallId)
+    .eq('verification_id', verificationId)
+    .maybeSingle()
+  if (error || !row) return { error: 'Could not load this call. Please retry.' }
+  const call = row as AiCall
+  if (!ACTIVE_STATUSES.includes(call.status) || !call.retell_call_id) {
+    return { error: 'This call is not in progress.' }
+  }
+  await supabase.from('ai_calls')
+    .update({ stopped_by: admin.email ?? '', updated_at: new Date().toISOString() })
+    .eq('id', aiCallId)
+  try {
+    await stopCall(call.retell_call_id)
+  } catch (e) {
+    console.error('stopAiCall: stop failed', e)
+    return { error: 'Retell did not accept the stop request. Please retry.' }
+  }
+  await syncAiCall(supabase, { ...call, stopped_by: admin.email ?? '' })
+  await logActivity(supabase, verificationId, admin.email ?? '', 'note', 'AI call stopped by admin')
+  revalidatePath(`/admin/${verificationId}/call`)
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Publish the AI call's summary + transcript into the Insurer Contact Log.
+ * The result is an ordinary contact note: editable and deletable through the
+ * existing note UI, customer-visible only via the existing publish gating.
+ */
+export async function publishAiCallNote(verificationId: string, aiCallId: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) return { error: CLOSED_ERROR }
+
+  const { data: row, error } = await supabase.from('ai_calls')
+    .select('*')
+    .eq('id', aiCallId)
+    .eq('verification_id', verificationId)
+    .maybeSingle()
+  if (error || !row) return { error: 'Could not load this call. Please retry.' }
+  const call = row as AiCall
+  if (call.published_note_at) return { error: 'This call is already in the contact log.' }
+  if (!call.transcript && !call.call_analysis?.call_summary) {
+    return { error: 'Nothing to publish yet: the call has no transcript or summary.' }
+  }
+
+  const summary_html = sanitizeSummaryHtml(summaryHtmlFromAnalysis(call.call_analysis))
+  const summary_text = summaryPlainText(summary_html)
+
+  const { data: v } = await supabase.from('verifications')
+    .select('insurance_contact, contact_checks')
+    .eq('id', verificationId)
+    .maybeSingle()
+  const savedContact = (v?.insurance_contact ?? {}) as { name?: string; phone?: string; email?: string }
+  const responder = String(call.call_analysis?.custom_analysis_data?.responder_name ?? '').trim()
+  const contact = {
+    name: responder || savedContact.name || '',
+    phone: call.to_number ?? '',
+    email: '',
+  }
+  const rawChecks = v?.contact_checks
+  const check_data = noteCheckFromRegistry(
+    (Array.isArray(rawChecks) ? rawChecks : []) as ContactCheckEntry[],
+    contactValue(contact.phone),
+    '',
+  )
+
+  const { error: werr } = await supabase.rpc('admin_publish_ai_call_note', {
+    p_call_id: aiCallId,
+    contact_method: 'call',
+    summary_html,
+    summary_text,
+    transcript: call.transcript ?? '',
+    contact,
+    check_data,
+  })
+  if (werr) {
+    console.error('publishAiCallNote failed', werr)
+    return { error: 'Could not publish to the contact log. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}/call`)
+  revalidatePath(`/admin/${verificationId}`)
+}

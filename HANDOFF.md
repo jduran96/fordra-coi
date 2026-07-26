@@ -383,7 +383,7 @@ per design-partner feedback ("layer the checks on top of the actual COI"):
   `agent_questions` column via NEW `generateInsurerQuestions` (one question per
   requirement, grounded in the extracted COI). Rendered on /admin/[id] under
   the extracted JSONs. Admin-only: /v1 serializer, customer page, and PDF never
-  expose it; the frozen /demo keeps the old `generateAgentQuestions`.
+  expose it. (`generateAgentQuestions` is the legacy demo variant, unused.)
   Questions exist only for verifications extracted after bdfae19 (re-run to get them).
 
 **Owner's testing state at freeze:** end-to-end verification + report email
@@ -402,7 +402,8 @@ Fordra Testing AND Dakota Financial orgs were wiped clean of verification data
 
 **Design/process notes:** all new user-facing copy needs owner approval before
 push (he often supplies exact wording). No em dashes, no phone numbers in
-customer copy. `/demo` is frozen. Descriptions are required on all requirement
+customer copy. `/demo` was deleted 2026-07-23 (owner decision; formerly frozen).
+Descriptions are required on all requirement
 rows; the `/v1` `rate_confirmation` field was intentionally removed (no alias).
 
 ---
@@ -413,21 +414,20 @@ rows; the `/v1` `rate_confirmation` field was intentionally removed (no alias).
 companies. A factor's broker submits a carrier's insurance documents; Fordra extracts and checks
 them against the deal's requirements, a human reviews, and the verdict is returned.
 
-It ships as **one Next.js app + one Supabase backend**, with **five surfaces** behind four
-different auth mechanisms, plus a **separate static marketing site**.
+It ships as **one Next.js app + one Supabase backend**, with **four surfaces** behind three
+different auth mechanisms, plus a **separate static marketing site**. (The password-gated
+`/demo` surface and its `/api/*` pipeline routes were deleted 2026-07-23; the marketing
+site's nav "Demo" link should be removed on its next deploy.)
 
 | Surface | Path | Who | Auth |
 |---|---|---|---|
 | Marketing site | `fordra.com` (static, separate repo dir) | Public | none |
-| Demo | `/demo` | Sales / Jullian | **Password gate** (`APP_PASSWORD`); session cookie, token hard-expires after 24h (`lib/demo-token.ts`) |
 | Customer portal | `/app` | Customers (e.g. HaulPay) | **Supabase magic-link or password** at `/login` (RLS-scoped); invite-only, no self-signup |
 | Admin console | `/admin` | Jullian + Emmanuel | **Supabase magic-link only** at `/admin/login`, gated to the `ADMIN_EMAIL` comma-separated allowlist |
 | Machine API | `/v1/*` | Customer systems | **API keys** (`sk_test_`/`sk_live_`) |
 | Slack intake | `/api/slack/*` | Partner Slack workspaces | **Signed install links + Slack signing secret** (see `Slack/README.md`) |
 
-The landing chooser is the marketing site's nav: **Demo / Admin / App** links point at
-`app.fordra.com/{demo,admin,}` in production, and auto-rewrite to `localhost:3000` when viewed
-locally. The Next app root `/` redirects to `/app`.
+The Next app root `/` redirects to `/app`.
 
 ---
 
@@ -439,7 +439,7 @@ locally. The Next app root `/` redirects to `/app`.
 - **Supabase**: Auth (Google + email magic link; only magic link is used), Postgres (+ RLS),
   Storage (private `documents` bucket). Project ref `nkmhzkwqzbfzwtrzqpsa`.
 - **Anthropic Claude** (`claude-sonnet-4-6`) for OCR/extraction + gap analysis.
-- **Retell** for the demo's AI phone-call step.
+- **Retell** for admin-dispatched AI verification calls (see "AI voice calls" below).
 - **sharp** for image downscaling; **pg** for migrations; **Vercel** for deploy.
 
 ---
@@ -481,11 +481,12 @@ npm run db:migrate
 
 Entry points: app at **http://localhost:3000**, marketing site at **http://localhost:8080**.
 
-**Required `.env.local`** keys: `ANTHROPIC_API_KEY`, `RETELL_*`, `APP_PASSWORD`, `SESSION_SECRET`,
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (`sb_publishable_…`),
+**Required `.env.local`** keys: `ANTHROPIC_API_KEY`, `RETELL_*` (`RETELL_API_KEY`,
+`RETELL_AGENT_ID`, `RETELL_FROM_NUMBER`, `RETELL_WEBHOOK_SECRET` — reused by the admin AI-call
+feature), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (`sb_publishable_…`),
 `SUPABASE_SERVICE_ROLE_KEY` (`sb_secret_…`), `ADMIN_EMAIL`, `SUPABASE_DB_URL` (Postgres session-pooler
-connection string, used only by migrations). `POSTGRES_URL` points at a **separate Prisma DB used by
-the legacy demo** — do not confuse it with Supabase.
+connection string, used only by migrations). Dead since the 2026-07-23 demo deletion (safe to
+remove from Vercel): `APP_PASSWORD`, `SESSION_SECRET`, `POSTGRES_URL` (the legacy Prisma demo DB).
 
 ---
 
@@ -530,24 +531,141 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
 
 ## What's built (Phase A — the pilot)
 
-- **Auth/routing**: `proxy.ts` routes the 3 browser surfaces + passes `/v1` through;
+- **Auth/routing**: `proxy.ts` routes the 2 browser surfaces + passes `/v1`, `/api/slack`,
+  `/api/admin` (admin-session-in-route), and `/api/retell` (signature-in-route) through;
   `lib/supabase/{server,client,proxy}.ts`, `lib/auth-helpers.ts`; `/login` magic link →
   **`/auth/link`** (crawler-proof interstitial, JS auto-continue; repeat-bug #10) →
   `/auth/callback` (role-based redirect) → `/auth/signout`. ALL sign-in links (emails and
   admin-minted) must point at `/auth/link`, never raw `/auth/callback`.
-- **`/demo`**: the original operator pipeline (`app/demo/AppClient.tsx`, ~1800 lines) behind the
-  password gate at `/demo/login`. Upload screen collects Broker, Carrier, COI, **Rate Confirmation
-  Sheet** (required), and **Additional Insurance Standards** (file or manual rows). `/api/verify`
-  downsizes images, extracts COI + parses requirements (incl. rate-con text) → gap analysis →
-  optional Retell call → Preliminary/Final report. Reports have no subtitle; the final summary
-  includes the policyholder-name check.
+- **`/demo` (DELETED 2026-07-23):** the original password-gated operator pipeline and its
+  `/api/{auth,call,call-status,verify,parse-transcript,final-report}` routes, `lib/auth.ts`,
+  `lib/demo-token.ts`, `lib/dal.ts`, and `scripts/setup-retell-agent.js` were removed by owner
+  decision (git history keeps them). Its Retell agent is superseded by the admin AI-call
+  feature below.
+- **AI voice calls (admin-only, voice spec v5 §10, added 2026-07-23):** human-in-the-loop
+  Retell dispatch. One row per attempt in the **`ai_calls`** table (migration `0032`;
+  RLS admin-only, `revoke all` from anon/authenticated, service client only); the `payload`
+  column freezes the exact approved dynamic-variable map at approval (the audit artifact).
+  Pieces:
+  - **Pre-dial review** at `/admin/[id]/call` (`CallReviewForm.tsx`): identity card with the
+    disclosure line rendered as spoken, question editor with per-question modes
+    (open/confirm/split_key + conditional follow-ups), lookup-key pack prefilled from
+    `coi_extracted`, number panel (COI number vs `contact_checks` numbers vs manual, live
+    E.164 preview), live validation (hard blocks disable dispatch; the server re-runs the
+    same validator). Two-step inline confirm on dispatch (calls bill per minute).
+  - **Payload builder + validation** in `lib/call-config.ts` (pure, client-importable).
+    Its emitted variable names ARE the Retell agent's `{{variable}}` names; every optional
+    var is sent as `''` (Retell speaks missing vars literally with braces). Org identity
+    prefills live in `app_config` keys `call_config` / `call_config:<orgId>` (edited on
+    `/admin/settings`, merged in `getCallConfig`).
+  - **Generic reference details (owner redesign 2026-07-24, replaces named lookup
+    fields):** certificate/deal facts are label/value rows (`ReferenceDetail[]`) edited
+    on the review screen (prefilled from `coi_extracted`: policy numbers per coverage,
+    insured address, USDOT/MC) and rendered into ONE `{{reference_details}}` variable.
+    Identifier-looking values (6+ alphanumerics with a digit) get deterministic
+    `[last four: … | spoken: …]` hints appended per row (`renderReferenceDetails`),
+    so any vertical (factoring MC numbers, trade-finance LC refs) and any row count
+    (one row per VIN for multi-vehicle) works with zero code changes. Retired
+    variables: `policy_numbers(_spoken)`, `vin(_last4/_spoken)`, `dot_number`,
+    `insured_address`, `disclosable_context`, `insured_name_spelled`,
+    `holder_name_spelled`. The identity core (assistant/on_behalf_of/relationship,
+    insured + agency + agent names, holder pack, reply_email, reference_id, languages)
+    stays as named fields because verbatim node lines speak them. Facts not in the
+    list: the agent says "I don't have that in front of me" (global rule 11). Details
+    persist in drafts inside `ai_calls.draft_input.details_json` (no schema change).
+    Per-question `blocker` flags route to `{{gate_questions}}` (flow gate node ends
+    the call on a negative answer); non-blockers go to `{{questions}}`.
+  - **Lifecycle** in `lib/ai-calls.ts`: draft → approved → dispatched → in_progress →
+    completed/stopped/failed (+ rejected). ONE pure mapper (`applyRetellCall`) + a monotonic
+    status-rank guard makes polling, the webhook, and the kill switch idempotent with each
+    other; `manual_stopped` maps to `stopped` so a racing poll can't flip it.
+  - **Live status + kill switch**: `LiveCallPanel.tsx` polls
+    `GET /api/admin/calls/[id]/status` (admin session enforced in-route via
+    `requireAdminApi()`) every 5s; each poll persists Retell's latest state. Stop call =
+    `stopAiCall` server action → `client.call.stop()`. Polling is primary (webhooks can't
+    reach localhost); `POST /api/retell/webhook` (signature-verified, ingest-only) is prod
+    redundancy.
+  - **Records**: per-verification cards in the Calls tab + global `/admin/calls` page.
+    "Publish to contact log" copies summary (from Retell `call_analysis`) + transcript into
+    `call_notes` via the atomic `admin_publish_ai_call_note` RPC; the resulting note is an
+    ordinary editable contact note, customer-visible only through existing publish gating.
+  - **Security invariant: only admins can dial, stop, or configure.** Every mutation is a
+    `requireAdmin()` server action in `app/admin/(console)/[id]/call/actions.ts` (the only
+    caller of the dispatch/stop wrappers in `lib/retell.ts`). Keep it that way.
+  - **CONFIGURE THE RETELL AGENT VIA THE API, NEVER BY HAND IN THE DASHBOARD.** Learned the
+    hard way 2026-07-24: a day was wasted hand-building nodes in the UI before anyone checked
+    that `retell-sdk` can do the whole thing in one call. The dashboard is for *looking* at
+    the flow and running simulations; it is not the build tool. Rules:
+    1. **Never write UI click-by-click instructions for agent config.** Retell renames and
+       reshapes controls constantly, so any such guide is wrong within weeks (the "skip
+       response" and "block interruptions" toggles referenced in voice spec v5 §6.3/§7 no
+       longer exist as toggles — see the mapping below).
+    2. **The SDK type file is the source of truth**, not the docs site (which lags badly):
+       `node_modules/retell-sdk/resources/conversation-flow.d.ts` and `agent.d.ts` carry every
+       field and every valid enum value.
+    3. **Always back up before updating**: `conversationFlow.retrieve(id)` → write the JSON to
+       disk → then `update()`. `update()` is a merge, so passing only `{nodes}` leaves
+       `global_prompt` / `default_dynamic_variables` / settings untouched.
+    - Live IDs: agent `agent_e581fdc4114615fa088b0690ec`, flow
+      `conversation_flow_283618e37c0c`. Auth from `RETELL_API_KEY` in `.env.local`.
+    - **Env cutover done locally 2026-07-24** (`RETELL_AGENT_ID` → v5 agent;
+      `RETELL_WEBHOOK_SECRET` set equal to the API key because Retell signs webhooks with
+      the API key). **Vercel still has the old values** — update both there before any
+      prod dispatch, then delete the old demo agent `agent_7b8d16eae5151a12b4545ad591`
+      ("COI Validation - v1", still live in Retell).
+    - **Callback-number caveat:** the outbound number `+13055207762` has NO inbound agent
+      bound. Until the §6.4 inbound callback agent exists, `callback_number` in the admin
+      call config must be a human-answered line, or callbacks invited by the voicemail
+      script and N8 closing line go nowhere.
+    - **Spanish (added 2026-07-24, owner decision — en + es only, no other languages):**
+      agent `language: ['en-US','es-419']`; five es static nodes (`node-n1-es` disclosure,
+      `node-n2-es`, `node-n3-es`, `node-n4b-es` re-disclosure, `node-n9-es` goodbye) with
+      Spanish-detection edges from N2/N3 (routes through the es disclosure first, per G8)
+      and Spanish-new-voice edges from N4/N5 to the es re-disclosure; N8 closes Spanish
+      conversations at N9es. Prompt nodes mirror language via global rule 13;
+      `languages` default is now `en,es` (flow + app `DEFAULT_CALL_CONFIG`). The es
+      disclosure wording is UNREVIEWED by counsel (spec open item 10) — same statutes
+      must be satisfied in Spanish; flag before high-volume es calling. The voicemail
+      script remains English-only (Retell allows one static voicemail text per agent).
+      `handbook_config.speech_normalization` is ON via API (the "normalization" toggle).
+    - Split of concerns: **flow-level** (`conversationFlow.update`) owns nodes, edges,
+      `start_node_id`, `start_speaker`, `global_prompt`, `model_choice`, `flex_mode`
+      (= the UI's "Transition Flexibility"), `default_dynamic_variables`. **Agent-level**
+      (`agent.update`) owns voice, STT, denoising, backchannel, silence/duration/ring timers,
+      `boosted_keywords`, `voicemail_option`, `post_call_analysis_data`, webhook URL.
+      `flex_mode` is **false** (rigid transitions) as of 2026-07-24: Retell compiles ALL
+      node prompts into one context in flex mode, which their own UI warns is unreliable
+      past ~20 nodes (we have 24) and which multiplies per-minute token billing. Rigid
+      keeps only the current node + edges in context; global nodes (G1/G2/IVR) and the
+      global prompt still work — they are separate mechanisms. Do not flip flex back on.
+    - Old-UI concept → current API field:
+      `skip user response` → the node's `skip_response_edge` (a transition whose
+      `transition_condition` is the literal prompt `"Skip response"`);
+      `block interruptions` → the node's `interruption_sensitivity: 0`;
+      `global node + entrance condition` → `global_node_setting.condition` (+
+      `go_back_conditions` for return-to-caller behavior, used on G1).
+    - Reference build scripts (16 conversation nodes + 32 edges + both globals, then the
+      3-node IVR cluster) are in this session's scratchpad as `build-flow.mjs` and
+      `add-ivr.mjs`; re-derive from the live flow JSON if they are gone.
+    - **IVR cluster (3 nodes, built 2026-07-24):** `node-ivr` "IVR navigator" is a GLOBAL
+      node whose entrance condition is "a machine answered" (recorded greeting, numbered
+      menu, automated attendant, hold music; explicitly not a live person greeting), so it
+      also catches a machine reached after a transfer. It speaks intents at conversational
+      menus ("verify a certificate of insurance") and routes keypad menus to `node-ivr-press`
+      "IVR keypad", a `press_digit` node with `delay_ms: 1000` whose instruction picks the
+      digit for certificates / commercial lines / customer service / operator, defaulting to
+      0. That node loops back to the navigator so multi-level menus work. Give-up path is
+      `node-ivr-fail`, an end node that hangs up silently after a repeated menu or five
+      selections, so the app's retry matrix redials rather than burning the 25-minute cap.
+      A human at any point routes to N1, which still delivers the disclosure. Retell's own
+      `ivr_option` stays **null** (auto-hangup-on-IVR off) — this flow does the navigating.
 - **`/app`** (customer portal): nav = **Verifications** + **API Docs**. Verifications = history
   table + "New verification" button; first-time users (no org) see a "contact admin (727) 729-9594"
   screen. `/app/new` = manual upload. **API Docs** = admin-provisioned-key notice + hand-written
   docs (single multipart `Start a Verification` call, `Get Result` via webhook/GET, sandbox).
-- **Sessions expire after 24h everywhere:** the demo gate token carries a signed issued-at
-  (`lib/demo-token.ts`), and the proxy rejects Supabase sessions on `/app` + `/admin` once
-  `user.last_sign_in_at` is older than 24h (redirect to `/login?expired=1`, sb-cookies cleared).
+- **Sessions expire after 24h everywhere:** the proxy rejects Supabase sessions on `/app` +
+  `/admin` once `user.last_sign_in_at` is older than 24h (redirect to `/login?expired=1`,
+  sb-cookies cleared; the constant lives inline in `proxy.ts`).
 - **Requirements are entirely org-owned** (the global baseline merge was removed by migration
   `0012`): templates and submitted standards carry the full checklist; manual mode offers two
   opt-in standard checks (policyholder-name match, policy active) pre-checked on the form.
@@ -871,8 +989,7 @@ the owner's earlier decision, left as-is.
   The app mirrors it in `lib/theme.ts` (`C`); UI uses inline styles with that palette. No Tailwind
   classes in the new surfaces. Apply this system to any new UI without being asked.
 - **No em dashes in user-facing copy** (treated as AI-slop tells). **No phone numbers in
-  customer-facing copy** (2026-07-11): say "contact/ask a Fordra admin". The (727) 729-9594
-  number remains only inside the frozen /demo surface.
+  customer-facing copy** (2026-07-11): say "contact/ask a Fordra admin".
 - Test data against the live DB must be **cleaned up** afterward (mint key → exercise → delete rows
   + storage objects). Storage rows can't be deleted via SQL; use the Storage API.
 - `npx tsc --noEmit` to typecheck; ignore stale `.next/types/*` errors after deleting routes (they

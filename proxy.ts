@@ -3,28 +3,24 @@ import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { isAdminEmail } from '@/lib/admin-emails'
 
-// ── Demo password gate ────────────────────────────────────────────────────────
-// Shared token logic: signed issued-at timestamp, 24h expiry (lib/demo-token.ts).
-import { SESSION_COOKIE, SESSION_MAX_AGE_MS, verifyToken as verifyDemoToken } from '@/lib/demo-token'
+/** Sessions hard-expire 24h after the last real sign-in, on every surface. */
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 /**
- * Three auth surfaces, routed here:
- *   - password cookie  → /demo + its /api/* pipeline routes
+ * Two auth surfaces, routed here:
  *   - Supabase session → /app (customer) and /admin (admin-email gated)
  *   - API key (in-route) → /v1/*  (proxy passes through)
+ * (The demo password surface was removed 2026-07-23 along with /demo.)
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public: landing chooser, demo password page, customer + admin logins,
-  // auth callback, demo password POST
+  // Public: root redirect, customer + admin logins, auth callback
   if (
     pathname === '/' ||
-    pathname === '/demo/login' ||
     pathname === '/login' ||
     pathname === '/admin/login' ||
-    pathname.startsWith('/auth/') ||
-    pathname.startsWith('/api/auth')
+    pathname.startsWith('/auth/')
   ) {
     return NextResponse.next()
   }
@@ -37,6 +33,17 @@ export async function proxy(request: NextRequest) {
   // Slack — authenticated in-route (request signature for events, signed
   // install-link state for OAuth); the demo cookie gate must not apply.
   if (pathname.startsWith('/api/slack/')) {
+    return NextResponse.next()
+  }
+
+  // Admin console API (AI call status polling) — admin session verified
+  // in-route (requireAdminApi); this passthrough grants nothing by itself.
+  if (pathname.startsWith('/api/admin/')) {
+    return NextResponse.next()
+  }
+
+  // Retell webhooks — verified in-route by x-retell-signature.
+  if (pathname.startsWith('/api/retell/')) {
     return NextResponse.next()
   }
 
@@ -79,17 +86,10 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
-  // Demo UI + its pipeline API routes — password cookie
-  if (pathname.startsWith('/demo') || pathname.startsWith('/api/')) {
-    const secret = process.env.SESSION_SECRET
-    const token = request.cookies.get(SESSION_COOKIE)?.value ?? ''
-    const valid = secret ? await verifyDemoToken(token, secret) : false
-    if (!valid) {
-      return pathname.startsWith('/api/')
-        ? Response.json({ error: 'Unauthorized' }, { status: 401 })
-        : NextResponse.redirect(new URL('/demo/login', request.url))
-    }
-    return NextResponse.next()
+  // Any other /api/* path has no handler anymore (the demo pipeline routes
+  // were deleted); refuse instead of falling through.
+  if (pathname.startsWith('/api/')) {
+    return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
   return NextResponse.next()

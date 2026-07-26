@@ -23,6 +23,9 @@ import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
 import ActivityLog from './ActivityLog'
+import LiveCallPanel from './LiveCallPanel'
+import PublishCallButton from './PublishCallButton'
+import { ACTIVE_STATUSES, TERMINAL_STATUSES, dispositionLabel, type AiCall } from '@/lib/ai-calls'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -123,6 +126,17 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   // Online-check history, append-only: stored oldest-first, newest run last.
   const checks = (Array.isArray(v.contact_checks) ? v.contact_checks : []) as ContactCheckEntry[]
   const coi = (v.coi_extracted ?? null) as COI | null
+
+  // AI voice-agent calls for this verification (ai_calls, migration 0032):
+  // dispatch history, live panel for in-flight calls, publish-to-log state.
+  const { data: aiCallRows, error: aiCallsErr } = await supabase
+    .from('ai_calls')
+    .select('*')
+    .eq('verification_id', id)
+    .neq('status', 'draft')
+    .order('created_at', { ascending: false })
+  if (aiCallsErr) throw new Error(`Could not load AI calls: ${aiCallsErr.message}`)
+  const aiCalls = (aiCallRows ?? []) as AiCall[]
 
   // The review rows: prefer the admin's saved assessment, then the automated
   // analysis, then the org's parsed requirements so a fully manual review is
@@ -331,6 +345,87 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 )}
               </>
             )}
+          </div>
+        </section>
+
+        {/* AI verification calls: pre-dial review gate + dispatch history.
+            Each dispatched row keeps the exact approved payload as the audit
+            record; publishing copies summary + transcript into the contact
+            log below as an ordinary editable note. */}
+        <section>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <SectionTitle>AI Calls</SectionTitle>
+            {!caseIsClosed && (
+              <Link href={`/admin/${id}/call`} style={{ ...smallBtn(), marginLeft: 'auto', textDecoration: 'none', display: 'inline-block' }}>
+                {aiCalls.some(c => ACTIVE_STATUSES.includes(c.status)) ? 'View live call' : 'Review and dispatch AI call'}
+              </Link>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {aiCalls.length === 0 && <Muted>No AI calls yet. The review screen prefills the number and questions from the extraction.</Muted>}
+            {aiCalls.map(call => {
+              const active = ACTIVE_STATUSES.includes(call.status)
+              const terminal = TERMINAL_STATUSES.includes(call.status)
+              const summary = (call.call_analysis?.call_summary ?? '').trim()
+              const pillColor = active ? C.warn
+                : call.status === 'completed' ? C.ok
+                : call.status === 'approved' ? C.neutral
+                : C.error
+              const pillLabel = call.status === 'in_progress' ? 'On the call'
+                : call.status === 'dispatched' ? 'Ringing'
+                : call.status.charAt(0).toUpperCase() + call.status.slice(1)
+              return (
+                <div key={call.id} style={card()}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: pillColor, background: `color-mix(in oklch, ${pillColor} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>
+                      {pillLabel}
+                    </span>
+                    {call.to_number && <span style={{ fontFamily: C.mono, fontSize: 13, color: C.txt }}>{call.to_number}</span>}
+                    <span style={{ fontSize: 13, color: C.txt3 }}>{pacificDateTime(call.approved_at ?? call.created_at)}</span>
+                    {call.approved_by && <span style={{ fontSize: 12.5, color: C.txt3 }}>approved by {call.approved_by}</span>}
+                    {terminal && dispositionLabel(call) && (
+                      <span style={{ fontSize: 12.5, color: C.txt2 }}>{dispositionLabel(call)}</span>
+                    )}
+                    {typeof call.duration_ms === 'number' && call.duration_ms > 0 && (
+                      <span style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.mono }}>
+                        {Math.floor(call.duration_ms / 60000)}:{String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}
+                      </span>
+                    )}
+                  </div>
+                  {call.error && <p style={{ fontSize: 13, color: C.error, margin: '10px 0 0' }}>{call.error}</p>}
+                  {active && (
+                    <div style={{ marginTop: 12 }}>
+                      <LiveCallPanel
+                        verificationId={id}
+                        aiCallId={call.id}
+                        initial={{ status: call.status, transcript: call.transcript ?? '', durationMs: call.duration_ms, startedAt: call.started_at, error: call.error }}
+                      />
+                    </div>
+                  )}
+                  {!active && summary && (
+                    <p style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, margin: '10px 0 0', whiteSpace: 'pre-wrap' }}>{summary}</p>
+                  )}
+                  {!active && call.transcript?.trim() && (
+                    <details style={{ marginTop: 10 }}>
+                      <summary style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>View transcript</summary>
+                      <div style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere', marginTop: 8, paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>{call.transcript.trim()}</div>
+                    </details>
+                  )}
+                  {terminal && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+                      {call.recording_url && (
+                        <a href={call.recording_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: C.txt2 }}>Recording</a>
+                      )}
+                      {call.published_note_at ? (
+                        <span style={{ fontSize: 12.5, color: C.txt3 }}>Published to contact log · {pacificDateTime(call.published_note_at)}</span>
+                      ) : (!caseIsClosed && (call.transcript || summary) && (
+                        <PublishCallButton verificationId={id} aiCallId={call.id} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </section>
 

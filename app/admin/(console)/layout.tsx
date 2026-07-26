@@ -14,6 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         email={user.email}
         links={[
           { href: '/admin', label: 'Queue' },
+          { href: '/admin/calls', label: 'Calls' },
           { href: '/admin/users', label: 'Users' },
           { href: '/admin/slack', label: 'Slack' },
           { href: '/admin/settings', label: 'Settings' },

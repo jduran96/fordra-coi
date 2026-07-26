@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { DEFAULT_CALL_CONFIG, type OrgCallConfig } from '@/lib/call-config'
 
 /**
  * Admin-editable runtime config, stored in the `app_config` table.
@@ -30,6 +31,32 @@ export async function getExtractionConfig(): Promise<ExtractionConfig> {
     promptDocTextExtraction: (map.get(CONFIG_KEYS.promptDocTextExtraction) as string | undefined) || undefined,
     promptRequirementsParsing: (map.get(CONFIG_KEYS.promptRequirementsParsing) as string | undefined) || undefined,
   }
+}
+
+/**
+ * AI call identity config (voice spec v5 §2): global defaults under
+ * `call_config`, per-org overrides under `call_config:<orgId>`. Values are
+ * partial OrgCallConfig objects; the merge order is hardcoded defaults <-
+ * global <- org. Everything stays editable per dispatch on the review screen —
+ * this is only the prefill.
+ */
+export const CALL_CONFIG_KEY = 'call_config'
+export const callConfigOrgKey = (orgId: string) => `${CALL_CONFIG_KEY}:${orgId}`
+
+export async function getCallConfig(orgId: string | null): Promise<OrgCallConfig> {
+  const svc = createServiceClient()
+  const keys = [CALL_CONFIG_KEY, ...(orgId ? [callConfigOrgKey(orgId)] : [])]
+  const { data, error } = await svc.from('app_config').select('key, value').in('key', keys)
+  if (error) throw new Error(`Could not load call config: ${error.message}`)
+  const map = new Map((data ?? []).map(r => [r.key, r.value]))
+  const global = (map.get(CALL_CONFIG_KEY) ?? {}) as Partial<OrgCallConfig>
+  const org = orgId ? ((map.get(callConfigOrgKey(orgId)) ?? {}) as Partial<OrgCallConfig>) : {}
+  const merged = { ...DEFAULT_CALL_CONFIG, ...global, ...org }
+  // Drop blank overrides so an empty org field falls back to the global value.
+  for (const k of Object.keys(merged) as (keyof OrgCallConfig)[]) {
+    if (!String(merged[k] ?? '').trim()) merged[k] = DEFAULT_CALL_CONFIG[k] as never
+  }
+  return merged
 }
 
 export async function setConfig(key: string, value: unknown): Promise<void> {

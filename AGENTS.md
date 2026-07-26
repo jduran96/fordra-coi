@@ -9,14 +9,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 **Read `HANDOFF.md` first** (current state, how to run, gotchas), then `BUILD_PLAN.md` (design
 rationale + roadmap). Quick orientation:
 
-- **What it is:** a COI verification platform. One Next.js 16 app + Supabase. Four surfaces:
-  `/demo` (operator pipeline, password gate), `/app` (customer portal, Supabase magic-link),
-  `/admin` (review console, gated to `ADMIN_EMAIL`), `/v1/*` (machine API, `sk_test_`/`sk_live_`
-  keys). The static marketing site lives in `website/` (same folder, separate Vercel deploy).
+- **What it is:** a COI verification platform. One Next.js 16 app + Supabase. Three surfaces:
+  `/app` (customer portal, Supabase magic-link), `/admin` (review console, gated to
+  `ADMIN_EMAIL`), `/v1/*` (machine API, `sk_test_`/`sk_live_` keys). The old `/demo` surface
+  was deleted 2026-07-23 (its Retell agent is being rebuilt as the admin AI-call feature).
+  The static marketing site lives in `website/` (same folder, separate Vercel deploy).
 - **Tenant = `orgs`/`org_id`** in the live Supabase schema (the term "partners" in older BUILD_PLAN
   prose is the same thing; orgs is authoritative). RLS isolates by org; admin sees all.
   `my_verifications` view hides analysis until `published_at` (the admin "publish" step).
-- **Key invariants** (details in HANDOFF.md): sessions hard-expire after 24h on all three browser
+- **Key invariants** (details in HANDOFF.md): sessions hard-expire after 24h on both browser
   surfaces; admin status (New/In Progress/Complete) is derived in `lib/admin-status.ts`, never
   stored; the customer results page renders `final_report` over `gap_analysis` so manual and
   automated verdicts look identical; `verifications.requirements` has TWO shapes (web `{text}`,
@@ -27,8 +28,8 @@ rationale + roadmap). Quick orientation:
 ## Load-bearing local-dev workarounds — do NOT revert without understanding
 
 - **Node TLS bug on this machine** corrupts large uploads to Anthropic (`BAD_RECORD_MAC`).
-  `lib/anthropic-fetch.ts` routes the Claude SDK through system `curl` in local dev; `app/api/verify`
-  downscales images with `sharp`. Production (Vercel) uses native fetch.
+  `lib/anthropic-fetch.ts` routes the Claude SDK through system `curl` in local dev.
+  Production (Vercel) uses native fetch.
 - `next.config.ts` → `experimental.proxyClientMaxBodySize: '30mb'` (proxy body cap; needed for
   multipart uploads).
 - Magic-link email only reaches the project owner until SMTP is configured.
@@ -47,9 +48,13 @@ rationale + roadmap). Quick orientation:
   mirrors it via `lib/theme.ts` (`C`). Any new UI in either repo follows that doc by default.
   Inline styles, no Tailwind, in the app surfaces.
 - **No em dashes in user-facing copy.** No phone numbers in customer-facing copy either
-  (2026-07-11): point users to "a Fordra admin" instead. The number (727) 729-9594 survives
-  only inside the frozen /demo surface.
+  (2026-07-11): point users to "a Fordra admin" instead.
 - DB migrations: `supabase/migrations/*.sql`, applied with `npm run db:migrate` (needs
-  `SUPABASE_DB_URL`). `POSTGRES_URL` is a *separate legacy Prisma DB* for the demo — not Supabase.
+  `SUPABASE_DB_URL`). `POSTGRES_URL`, `APP_PASSWORD`, `SESSION_SECRET` are dead env vars from
+  the deleted demo; safe to remove from Vercel.
+- **AI voice calls (admin-only):** dispatch/stop/config live behind `requireAdmin()` server
+  actions only (`app/admin/(console)/[id]/call/actions.ts`); records in the `ai_calls` table
+  (service-role only, no authenticated grants); payload builder + validation in
+  `lib/call-config.ts` (its variable names must match the Retell agent's `{{variables}}`).
 - Clean up any test rows + storage objects written to the live DB during testing.
 - Anthropic/Claude work: consult the `claude-api` skill; default model `claude-sonnet-4-6`.

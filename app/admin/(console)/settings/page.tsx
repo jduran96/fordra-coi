@@ -11,6 +11,9 @@ import { C } from '@/lib/theme'
 import { savePrompt } from './actions'
 import OrgStandards from './OrgStandards'
 import NotificationEmails from './NotificationEmails'
+import CallConfigCard from './CallConfigCard'
+import { CALL_CONFIG_KEY } from '@/lib/config'
+import type { OrgCallConfig } from '@/lib/call-config'
 import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
@@ -35,6 +38,16 @@ export default async function AdminSettings() {
     .from('app_config').select('value').eq('key', NOTIFICATION_EMAILS_KEY).maybeSingle()
   if (notifyError) throw new Error(`Could not load notification settings: ${notifyError.message}`)
   const notifyEmails = typeof notifyRow?.value === 'string' ? notifyRow.value : ''
+
+  // AI call identity config: global defaults + per-org overrides.
+  const { data: callCfgRows, error: callCfgError } = await svc
+    .from('app_config').select('key, value').like('key', `${CALL_CONFIG_KEY}%`)
+  if (callCfgError) throw new Error(`Could not load call config: ${callCfgError.message}`)
+  const callGlobal = (callCfgRows ?? []).find(r => r.key === CALL_CONFIG_KEY)?.value as Partial<OrgCallConfig> ?? {}
+  const callByOrg: Record<string, Partial<OrgCallConfig>> = {}
+  for (const r of callCfgRows ?? []) {
+    if (r.key.startsWith(`${CALL_CONFIG_KEY}:`)) callByOrg[r.key.slice(CALL_CONFIG_KEY.length + 1)] = r.value as Partial<OrgCallConfig>
+  }
 
   const prompts = [
     {
@@ -102,6 +115,20 @@ export default async function AdminSettings() {
             </form>
           </section>
         ))}
+
+        {/* AI call identity config */}
+        <section>
+          <SectionTitle>AI call identity</SectionTitle>
+          <p style={hintStyle()}>
+            Who the voice agent says it is calling for. These prefill the pre-dial review screen;
+            everything stays editable per call there. Org overrides fall back to the global default.
+          </p>
+          <CallConfigCard
+            orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+            global={callGlobal}
+            byOrg={callByOrg}
+          />
+        </section>
 
         {/* New-submission email alerts */}
         <section>
