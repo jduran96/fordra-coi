@@ -91,21 +91,20 @@ export default async function AdminSettings({ searchParams }: {
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
       <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Settings</h1>
       <p style={{ color: C.txt2, fontSize: 14, margin: '4px 0 20px', lineHeight: 1.6 }}>
-        Runtime settings for the verification pipeline. Changes apply to the next extraction run;
-        already-analyzed verifications keep their stored results.
+        Runtime settings for the verification pipeline. Changes apply to the next extraction run.
       </p>
 
-      <nav style={{ display: 'flex', gap: 8, marginBottom: 26 }}>
+      {/* Same segmented control as /app/settings and the /app/new mode picker. */}
+      <nav style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}`, marginBottom: 26 }}>
         {TABS.map(t => (
           <Link
             key={t.key}
             href={`/admin/settings?tab=${t.key}`}
             style={{
-              padding: '8px 18px', fontSize: 13, fontWeight: 600, fontFamily: C.sans,
-              borderRadius: 9999, textDecoration: 'none',
-              border: t.key === tab ? '1px solid transparent' : `1px solid ${C.border}`,
+              fontSize: 12, fontWeight: 600, fontFamily: C.sans, letterSpacing: '0.02em',
+              padding: '6px 14px', borderRadius: 6, textDecoration: 'none',
               background: t.key === tab ? C.txt : 'transparent',
-              color: t.key === tab ? C.onDark : C.txt2,
+              color: t.key === tab ? C.surface : C.txt3, transition: 'all 120ms',
             }}
           >
             {t.label}
