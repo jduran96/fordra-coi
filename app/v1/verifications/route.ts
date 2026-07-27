@@ -14,6 +14,9 @@ export const maxDuration = 120
 /** Canned result returned immediately for sandbox (sk_test_) verifications. */
 function sandboxResult() {
   return {
+    // Mirrors the real pipeline, which stamps insured_name from the COI's
+    // named insured.
+    insured_name: 'ACME Trucking LLC (sandbox)',
     coi_extracted: {
       named_insured: 'ACME Trucking LLC (sandbox)',
       named_insured_address: '4820 Freight Line Rd, Dallas, TX 75207',
@@ -66,7 +69,7 @@ function sandboxResult() {
 
 /**
  * POST /v1/verifications — start a verification in one multipart call.
- * Fields: carrier_name, broker_name (text); coi (file or https link);
+ * Fields: broker_name (text); coi (file or https link);
  * additional_documents (files or https links, repeatable, up to 5);
  * insurance_standards (text, file, or https link). Links are downloaded
  * server-side, so they dodge Vercel's ~4.5MB request-body cap — that is the
@@ -86,9 +89,7 @@ export async function POST(request: Request) {
   }
   const form = await request.formData()
 
-  const carrierName = String(form.get('carrier_name') || '').trim()
   const brokerName = String(form.get('broker_name') || '').trim()
-  if (!carrierName) return apiError('`carrier_name` is required.')
   if (!brokerName) return apiError('`broker_name` is required.')
 
   // Every document slot takes an attached file OR an https link (downloaded
@@ -131,7 +132,6 @@ export async function POST(request: Request) {
         return apiError('`template_variables` must be a JSON object, e.g. {"asset_sale_price": "$85,000"}.')
       }
     }
-    values = { carrier_name: carrierName, ...values }
     try {
       const resolved = resolveTemplate(t, values)
       requirements = [{ type: 'text', value: resolved.text }, { type: 'template', ...resolved.provenance }]
@@ -187,7 +187,6 @@ export async function POST(request: Request) {
   try {
     ({ verification: v, docRefs } = await createVerification(svc, {
       orgId: auth.orgId,
-      carrierName,
       verifierCompany: brokerName,
       source: 'api',
       requirements,

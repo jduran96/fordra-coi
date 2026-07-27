@@ -56,7 +56,8 @@ export function serializeVerification(
     id: v.id,
     display_id: v.display_id,
     status: v.status,
-    carrier_name: v.carrier_name,
+    // Blank until extraction fills it from the COI's named insured.
+    insured_name: v.insured_name || null,
     source: v.source,
     documents: (documents ?? []).map(d => ({ kind: d.kind, file_name: d.file_name })),
     requirements: v.requirements ?? null,

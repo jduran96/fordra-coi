@@ -4,7 +4,8 @@ import { postMessage } from './slack'
 export interface SlackReportReadyNotice {
   verificationId: string
   displayId?: string
-  carrierName: string
+  /** The policyholder, stamped by extraction (admin-correctable); display id when absent. */
+  insuredName: string
   outcome: 'completed' | 'failed'
   slackContext: { team_id: string; channel_id: string; user_id: string }
 }
@@ -35,11 +36,13 @@ export async function notifySlackReportReady(n: SlackReportReadyNotice): Promise
 
     const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://app.fordra.com'
     const link = `${base}/app/${n.verificationId}`
-    const label = n.displayId ? ` (${n.displayId})` : ''
+    // No duplicate id when the display id IS the name (a case published
+    // without extraction has no policyholder name to show).
+    const label = n.displayId && n.displayId !== n.insuredName ? ` (${n.displayId})` : ''
     // Owner-approved copy (2026-07-22); no em dashes.
     const text = n.outcome === 'completed'
-      ? `<@${n.slackContext.user_id}> Your verification for ${n.carrierName}${label} is complete. View the report: ${link}`
-      : `<@${n.slackContext.user_id}> We could not complete your verification for ${n.carrierName}${label}. A Fordra admin will follow up with details.`
+      ? `<@${n.slackContext.user_id}> Your verification for ${n.insuredName}${label} is complete. View the report: ${link}`
+      : `<@${n.slackContext.user_id}> We could not complete your verification for ${n.insuredName}${label}. A Fordra admin will follow up with details.`
 
     await postMessage(install.bot_token, n.slackContext.channel_id, text)
   } catch (e) {

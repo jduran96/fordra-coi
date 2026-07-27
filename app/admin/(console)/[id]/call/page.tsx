@@ -25,7 +25,7 @@ export default async function CallReviewPage({ params }: { params: Promise<{ id:
   const supabase = createServiceClient()
   const { data: v, error } = await withRetry(() => supabase
     .from('verifications')
-    .select('id, display_id, org_id, carrier_name, published_at, case_status, coi_extracted, agent_questions, insurance_contact, contact_checks, orgs(name)')
+    .select('id, display_id, org_id, insured_name, published_at, case_status, coi_extracted, agent_questions, insurance_contact, contact_checks, orgs(name)')
     .eq('id', id)
     .maybeSingle())
   if (!v) {
@@ -90,7 +90,7 @@ export default async function CallReviewPage({ params }: { params: Promise<{ id:
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, margin: '10px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 26, fontWeight: 500, margin: 0 }}>AI call review</h1>
         <span style={{ fontSize: 13.5, color: C.txt3 }}>
-          {String(v.display_id ?? '')}{orgName ? ` · ${orgName}` : ''}{v.carrier_name ? ` · ${String(v.carrier_name)}` : ''}
+          {String(v.display_id ?? '')}{orgName ? ` · ${orgName}` : ''}{v.insured_name ? ` · ${String(v.insured_name)}` : ''}
         </span>
       </div>
       <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 20px', maxWidth: 720 }}>

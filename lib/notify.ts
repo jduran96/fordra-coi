@@ -33,7 +33,6 @@ function esc(s: string): string {
 export interface NewVerificationNotice {
   verificationId: string
   displayId?: string
-  carrierName: string
   orgId: string
   source: string
 }
@@ -60,13 +59,15 @@ export async function notifyNewVerification(n: NewVerificationNotice): Promise<v
     const label = n.displayId ? ` (${n.displayId})` : ''
     const when = pacificDateTime(new Date().toISOString())
 
-    const subject = `New verification: ${n.carrierName}${label}`
+    // No policyholder name at submission (extraction fills it from the COI
+    // later), so the alert identifies the deal by its display id.
+    const subject = `New verification${label}`
     const text =
-      `${orgName} submitted a new verification for ${n.carrierName} via ${SOURCE_LABEL[n.source] ?? n.source}.\n`
+      `${orgName} submitted a new verification${label} via ${SOURCE_LABEL[n.source] ?? n.source}.\n`
       + `Submitted: ${when}\n\nReview it: ${link}\n`
     const html = emailShell({
       bodyHtml:
-        `<p style="margin:0 0 12px;">${esc(orgName)} submitted a new verification for <strong>${esc(n.carrierName)}</strong> via ${esc(SOURCE_LABEL[n.source] ?? n.source)}.</p>`
+        `<p style="margin:0 0 12px;">${esc(orgName)} submitted a new verification${esc(label)} via ${esc(SOURCE_LABEL[n.source] ?? n.source)}.</p>`
         + `<p style="margin:0;">Submitted: ${esc(when)}</p>`,
       ctaLabel: 'Review it in the Fordra admin console',
       ctaUrl: esc(link),
@@ -93,7 +94,8 @@ export async function notifyNewVerification(n: NewVerificationNotice): Promise<v
 export interface VerificationResultNotice {
   verificationId: string
   displayId?: string
-  carrierName: string
+  /** The policyholder, stamped by extraction (admin-correctable); display id when absent. */
+  insuredName: string
   outcome: 'completed' | 'failed'
   toEmail: string
 }
@@ -113,23 +115,25 @@ export async function notifyVerificationResult(n: VerificationResultNotice): Pro
     }
     const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://app.fordra.com'
     const link = `${base}/app/${n.verificationId}`
-    const label = n.displayId ? ` (${n.displayId})` : ''
-    // Subjects stay scannable: a long carrier name is cut, the body keeps it full.
-    const carrier = n.carrierName.length > 60 ? `${n.carrierName.slice(0, 60)}...` : n.carrierName
+    // No duplicate id when the display id IS the name (a case published
+    // without extraction has no policyholder name to show).
+    const label = n.displayId && n.displayId !== n.insuredName ? ` (${n.displayId})` : ''
+    // Subjects stay scannable: a long name is cut, the body keeps it full.
+    const name = n.insuredName.length > 60 ? `${n.insuredName.slice(0, 60)}...` : n.insuredName
 
     const subject = n.outcome === 'completed'
-      ? `Verification for ${carrier} complete`
-      : `Verification for ${carrier} could not be completed`
+      ? `Verification for ${name} complete`
+      : `Verification for ${name} could not be completed`
     const text = n.outcome === 'completed'
-      ? `Your verification for ${n.carrierName}${label} is complete. The report is ready in your Fordra portal.\n\nView the report: ${link}\n`
-      : `Your verification for ${n.carrierName}${label} could not be completed. The reason is in your Fordra portal.\n\nView the details: ${link}\n`
+      ? `Your verification for ${n.insuredName}${label} is complete. The report is ready in your Fordra portal.\n\nView the report: ${link}\n`
+      : `Your verification for ${n.insuredName}${label} could not be completed. The reason is in your Fordra portal.\n\nView the details: ${link}\n`
     // Sentences are owner-approved verbatim; the shell only adds the visual
     // frame. CTA label is "View details" for both outcomes (owner decision
     // 2026-07-22).
     const html = emailShell({
       bodyHtml: n.outcome === 'completed'
-        ? `<p style="margin:0;">Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} is complete. The report is ready in your Fordra portal.</p>`
-        : `<p style="margin:0;">Your verification for <strong>${esc(n.carrierName)}</strong>${esc(label)} could not be completed. The reason is in your Fordra portal.</p>`,
+        ? `<p style="margin:0;">Your verification for <strong>${esc(n.insuredName)}</strong>${esc(label)} is complete. The report is ready in your Fordra portal.</p>`
+        : `<p style="margin:0;">Your verification for <strong>${esc(n.insuredName)}</strong>${esc(label)} could not be completed. The reason is in your Fordra portal.</p>`,
       ctaLabel: 'View details',
       ctaUrl: esc(link),
     })

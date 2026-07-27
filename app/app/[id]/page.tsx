@@ -102,7 +102,7 @@ export default async function CustomerVerification({ params }: { params: Promise
       details.expando .expando-more, details.expando .expando-less { text-decoration: underline; text-underline-offset: 3px; }`}</style>
       <Link href="/app" className="no-print" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Verifications</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
-        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
+        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.insured_name || v.display_id}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{statusLabel(displayStatus)}</span>
         {published && !failed && (
           <a href={`/app/${id}/pdf`} className="no-print" style={{

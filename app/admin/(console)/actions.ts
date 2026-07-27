@@ -279,6 +279,25 @@ async function caseClosed(supabase: ReturnType<typeof createServiceClient>, veri
   return !!data && (!!data.published_at || data.case_status === 'failed')
 }
 
+/**
+ * Correct the insured (policyholder) name when extraction misread the COI.
+ * Stored in the insured_name column, which every display reads; note a later
+ * extraction re-run re-stamps it from the COI, overwriting this correction.
+ */
+export async function updateInsuredName(verificationId: string, formData: FormData): Promise<void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) return
+  const { error } = await supabase.from('verifications')
+    .update({ insured_name: String(formData.get('insured_name') || '').trim() })
+    .eq('id', verificationId)
+  // Never swallow a Supabase error: a silent no-op save would let a wrong
+  // name ride into the published report and notifications.
+  if (error) throw new Error(`Could not save the insured name: ${error.message}`)
+  revalidatePath(`/admin/${verificationId}`)
+  revalidatePath('/admin')
+}
+
 export async function saveCallNote(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
   const supabase = createServiceClient()
@@ -580,7 +599,9 @@ export async function saveAssessment(verificationId: string, formData: FormData)
         after(() => notifyVerificationResult({
           verificationId,
           displayId: (v as { display_id?: string }).display_id,
-          carrierName: String(v.carrier_name ?? 'your carrier'),
+          // Normally stamped by extraction; a case published without
+          // extraction falls back to the display id.
+          insuredName: String(v.insured_name || (v as { display_id?: string }).display_id || 'your carrier'),
           outcome: publish ? 'completed' : 'failed',
           toEmail,
         }))
@@ -591,7 +612,7 @@ export async function saveAssessment(verificationId: string, formData: FormData)
       after(() => notifySlackReportReady({
         verificationId,
         displayId: (v as { display_id?: string }).display_id,
-        carrierName: String(v.carrier_name ?? 'your carrier'),
+        insuredName: String(v.insured_name || (v as { display_id?: string }).display_id || 'your carrier'),
         outcome: publish ? 'completed' : 'failed',
         slackContext,
       }))

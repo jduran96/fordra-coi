@@ -88,8 +88,7 @@ export function slugifyVariable(title: string): string {
  * A Variable row's Title ("Asset Sale Price") IS the variable: it becomes the
  * per-deal input label and the stored {asset_sale_price} token, so the
  * substitution machinery is unchanged. Raw {tokens} typed into limits or notes
- * still work and derive variables too. {carrier_name} is never asked for: it is
- * filled from the verification's carrier field automatically.
+ * still work and derive variables too.
  */
 export function normalizeRequirementRows(raw: Requirement[]): {
   requirements: Requirement[]
@@ -98,7 +97,7 @@ export function normalizeRequirementRows(raw: Requirement[]): {
 } {
   const requirements: Requirement[] = []
   const variables: TemplateVariable[] = []
-  const seen = new Set<string>(['carrier_name'])
+  const seen = new Set<string>()
   let error: string | undefined
   for (const r of raw) {
     const coverage_type = (r.coverage_type ?? '').trim()
@@ -189,9 +188,8 @@ export interface ResolvedTemplate {
 
 /**
  * Substitute variable values into the template rows and serialize to the
- * requirements text the pipeline already understands. `{carrier_name}`-style
- * tokens without a supplied value are left intact for baselineRequirements-style
- * handling; missing REQUIRED template variables throw.
+ * requirements text the pipeline already understands. Tokens without a
+ * supplied value are left intact; missing REQUIRED template variables throw.
  */
 export function resolveTemplate(
   template: RequirementTemplate,

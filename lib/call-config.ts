@@ -35,30 +35,37 @@ export interface ReferenceDetail {
   value: string
 }
 
-/** Org-level identity defaults (app_config), all editable per dispatch. */
+/**
+ * Org-level call defaults (app_config), all editable per dispatch. Two
+ * groups (owner decision 2026-07-27):
+ * - IDENTITY: who the agent is — its name and the languages it can speak.
+ * - LEGITIMACY: who the agent is affiliated with and what they do — the
+ *   client's name, its relationship to the deal, a blurb about the client,
+ *   and a reply email offered when the office wants to verify.
+ * Deal-specific facts (certificate holder, addresses, VINs, policy numbers)
+ * are NEVER org config: they change per COI and live in the per-call
+ * reference details, prefilled from extraction.
+ */
 export interface OrgCallConfig {
+  // Identity
   assistant_name: string
+  languages: string
+  // Legitimacy
   on_behalf_of: string
   relationship_line: string
-  holder_legal_name: string
-  holder_address: string
-  // Legitimacy proof point: only spoken if the office asks for an email.
-  reply_email: string
   on_behalf_of_info: string
-  languages: string
+  reply_email: string
 }
 
 export const DEFAULT_CALL_CONFIG: OrgCallConfig = {
   assistant_name: 'Sarah',
-  on_behalf_of: '',
-  relationship_line: 'the certificate holder, extending credit to the policyholder',
-  holder_legal_name: '',
-  holder_address: '',
-  reply_email: '',
-  on_behalf_of_info: '',
   // English + Spanish at launch (a full pilot call ran in Spanish; the agent
   // mirrors the callee between these two only).
   languages: 'en,es',
+  on_behalf_of: '',
+  relationship_line: 'the certificate holder, extending credit to the policyholder',
+  on_behalf_of_info: '',
+  reply_email: '',
 }
 
 /**
@@ -74,8 +81,8 @@ export interface CallContextFields extends OrgCallConfig {
 }
 
 export const CONTEXT_FIELD_NAMES = [
-  'assistant_name', 'on_behalf_of', 'relationship_line', 'holder_legal_name',
-  'holder_address', 'reply_email', 'on_behalf_of_info', 'languages',
+  'assistant_name', 'languages',
+  'on_behalf_of', 'relationship_line', 'on_behalf_of_info', 'reply_email',
   'insured_name', 'agency_name', 'agent_name',
   'reference_id', 'call_context',
 ] as const
@@ -235,7 +242,6 @@ export function draftFromVerification(input: {
   const { coi, config } = input
   const context: CallContextFields = {
     ...config,
-    holder_legal_name: config.holder_legal_name || (coi?.certificate_holder ?? '').trim(),
     insured_name: (coi?.named_insured ?? '').trim(),
     agency_name: (coi?.producer ?? '').trim(),
     agent_name: (coi?.insurance_company_contact ?? input.insuranceContact?.name ?? '').trim(),
@@ -256,6 +262,11 @@ export function draftFromVerification(input: {
   }
   const addr = (coi?.named_insured_address ?? '').trim()
   if (addr) details.push({ label: 'Insured address', value: addr })
+  // Deal parties are per-COI facts, not org config: the certificate holder
+  // (when this COI names one) rides as an ordinary reference detail the
+  // admin can edit, replace with a loss payee row, or delete.
+  const holder = (coi?.certificate_holder ?? '').trim()
+  if (holder) details.push({ label: 'Certificate holder', value: holder })
   const usdot = (coi?.usdot_number ?? '').trim()
   if (usdot) details.push({ label: 'USDOT number', value: usdot })
   const mc = (coi?.mc_number ?? '').trim()
@@ -301,8 +312,6 @@ export function buildDynamicVariables(
     assistant_name: s(ctx.assistant_name),
     on_behalf_of: s(ctx.on_behalf_of),
     relationship_line: s(ctx.relationship_line),
-    holder_legal_name: s(ctx.holder_legal_name),
-    holder_address: s(ctx.holder_address),
     reply_email: s(ctx.reply_email),
     on_behalf_of_info: s(ctx.on_behalf_of_info),
     insured_name: s(ctx.insured_name),
@@ -338,8 +347,6 @@ const REQUIRED_FIELDS: { field: keyof CallContextFields; label: string }[] = [
 /** Identity-core fields whose emptiness is worth flagging before dial. */
 const LOOKUP_WARN_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'agency_name', label: 'Agency name' },
-  { field: 'holder_legal_name', label: 'Certificate holder name' },
-  { field: 'holder_address', label: 'Certificate holder address' },
 ]
 
 /** Validation: hard blocks disable dispatch; warnings flag risky-but-legal payloads. */

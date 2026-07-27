@@ -14,12 +14,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const supabase = await createClient()
   const { data: v } = await supabase
     .from('my_verifications')
-    .select('display_id, carrier_name, created_at, published_at, case_status, final_report, gap_analysis, call_notes, requirements')
+    .select('display_id, insured_name, created_at, published_at, case_status, final_report, gap_analysis, call_notes, requirements')
     .eq('id', id)
     .maybeSingle()
   if (!v || !v.published_at || v.case_status === 'failed') {
     return new Response('Not found', { status: 404 })
   }
+  // Published cases normally carry the extracted policyholder name; a case
+  // published without extraction falls back to its display id.
+  v.insured_name = v.insured_name || v.display_id
 
   // File names for the "what you submitted" section; RLS scopes to the org.
   const { data: docs } = await supabase

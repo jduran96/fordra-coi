@@ -125,8 +125,8 @@ export async function saveCallConfig(formData: FormData): Promise<{ ok?: boolean
 
   const value: Record<string, string> = {}
   for (const field of [
-    'assistant_name', 'on_behalf_of', 'relationship_line', 'holder_legal_name',
-    'holder_address', 'reply_email', 'on_behalf_of_info', 'languages',
+    'assistant_name', 'languages',
+    'on_behalf_of', 'relationship_line', 'on_behalf_of_info', 'reply_email',
   ]) {
     const v = String(formData.get(field) ?? '').trim()
     if (v) value[field] = v

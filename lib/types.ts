@@ -202,7 +202,7 @@ export interface VerificationCase {
   id: string;
   created_at: string;
   updated_at: string;
-  carrier_name: string | null;
+  insured_name: string | null;
   status: CaseStatus;
   requirements_doc_url: string | null;
   requirements_parsed: Requirement[] | null;

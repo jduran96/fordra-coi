@@ -1,8 +1,11 @@
 /**
  * Deterministic slot-filling conversation for creating a verification from a
  * Slack DM. No LLM in the conversation itself: files and text answers fill
- * slots in a fixed order (COI file, carrier name, insurance requirements,
- * optional rate confirmation). One exception at submit time: a free-text
+ * slots in a fixed order (COI file, insurance standards, the standard's
+ * per-deal variables one at a time, optional additional documents). There is
+ * no carrier-name slot: the deal's display name comes from the COI's named
+ * insured at extraction, and deal specifics ride in the standard's variables.
+ * One exception at submit time: a free-text
  * amendment to a saved standard is merged into its lines by
  * applyStandardAmendment (deterministic append fallback).
  * Session state lives in slack_intake_sessions keyed by (team_id, channel_id).
@@ -54,7 +57,6 @@ interface StoredFile {
 }
 
 interface SessionState {
-  carrier_name?: string
   requirements_text?: string
   /** Saved standard selected by menu number, "yes", or exact name; variables collected one at a time. */
   template_id?: string
@@ -196,12 +198,10 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   // File captions are not answers; only plain text messages fill slots. Submit
   // words are ignored as answers EXCEPT at the standards step, where "yes"
   // accepts the pending saved standard (never stored as free text; see below).
-  const awaitingStandards = hasCoi && !!state.carrier_name && !hasReqs
+  const awaitingStandards = hasCoi && !hasReqs
   if (text && (!isSubmitWord(lower) || awaitingStandards) && (!ev.files || ev.files.length === 0)) {
     const t = selectedTemplate()
-    if (hasCoi && !state.carrier_name) {
-      state.carrier_name = text
-    } else if (hasCoi && state.carrier_name && t && missingVars(t).length > 0) {
+    if (hasCoi && t && missingVars(t).length > 0) {
       state.template_vars = { ...(state.template_vars ?? {}), [missingVars(t)[0].key]: text }
     } else if (awaitingStandards) {
       standardsConsumedReply = true
@@ -259,10 +259,6 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
 
   if (!nowHasCoi) {
     await say('To get started I need the carrier\'s COI. Please upload it here (PDF or image).')
-    return
-  }
-  if (!state.carrier_name) {
-    await say('Received. What is the legal name of this carrier?')
     return
   }
   if (!nowHasReqs) {
@@ -345,10 +341,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   const finalTemplate = selectedTemplate()
   if (finalTemplate) {
     try {
-      const resolved = resolveTemplate(finalTemplate, {
-        carrier_name: state.carrier_name!,
-        ...(state.template_vars ?? {}),
-      })
+      const resolved = resolveTemplate(finalTemplate, state.template_vars ?? {})
       let value = resolved.text
       if (state.template_amendment?.trim()) {
         // Merge the amendment INTO the standard's lines: appending it raw
@@ -373,7 +366,6 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   try {
     ({ verification, docRefs } = await createVerification(svc, {
       orgId: install.org_id,
-      carrierName: state.carrier_name!,
       source: 'slack',
       requirements,
       templateId: finalTemplate?.id,
@@ -396,7 +388,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
 
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
   await say(
-    `Done! Verification request ${verification.display_id ?? ''} created for *${state.carrier_name}*. ` +
+    `Done! Verification request${verification.display_id ? ` *${verification.display_id}*` : ''} created. ` +
     `Our team will review it and publish the results to your Fordra portal: ${base}/app`,
   )
 }

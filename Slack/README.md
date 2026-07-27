@@ -1,8 +1,9 @@
 # Slack intake
 
 Design partners create verification requests by DMing the Fordra Slack app:
-they send a COI, the bot asks for the carrier name and insurance requirements
-(text or document, rate confirmation optional), then it creates a pending
+they send a COI, the bot asks for the insurance standards (a saved standard,
+text, or a document) and each of the standard's per-deal variables, then it
+creates a pending
 verification that shows up as **New** in `/admin` and in the org's portal.
 Intake only in v1: results are viewed in the portal, not posted back to Slack.
 
@@ -48,8 +49,9 @@ Intake only in v1: results are viewed in the portal, not posted back to Slack.
    the events URL with a `url_verification` challenge when you save it.
 2. In `/admin/slack`, generate an install link for a test org and open it;
    approve the install into your workspace.
-3. DM the Fordra app: upload a sample COI PDF, answer the carrier-name prompt,
-   paste requirements text, reply `done`. The request appears as New in `/admin`.
+3. DM the Fordra app: upload a sample COI PDF, pick or paste insurance
+   standards, answer any variable prompts, reply `done`. The request appears
+   as New in `/admin`.
 4. Also try: requirements as a file, rate confirmation attached up front,
    `cancel`, and re-delivery (Slack retries are deduped via `slack_events_seen`).
 5. Clean up test verifications, documents rows, and storage objects afterwards

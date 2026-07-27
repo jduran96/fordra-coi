@@ -96,7 +96,7 @@ export async function runExtractionPipeline(
 
   const { data: v, error: verr } = await supabase
     .from('verifications')
-    .select('id, requirements, carrier_name, template_id, gap_analysis, final_report')
+    .select('id, requirements, template_id, gap_analysis, final_report')
     .eq('id', verificationId)
     .single()
   if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
@@ -160,6 +160,13 @@ export async function runExtractionPipeline(
     requirements_normalized: requirements,
     error_detail: null,
   }
+  // The deal's display name IS the policyholder: every extraction stamps
+  // insured_name from the COI — named insured first, certificate holder
+  // second. Displays fall back to the display id while this is blank.
+  if (coiExtracted) {
+    const coi = coiExtracted as { named_insured?: string; certificate_holder?: string }
+    update.insured_name = (coi.named_insured ?? '').trim() || (coi.certificate_holder ?? '').trim() || ''
+  }
   // The agent contact check is NOT run here: it costs web searches per run,
   // so it has its own button on the admin page (runContactCheck action).
 
@@ -171,7 +178,7 @@ export async function runExtractionPipeline(
     // the full checklist (including condition rows); nothing is merged in globally.
     const gap = coiExtracted && requirements.length
       ? ensureAllRequirementsJudged(
-          await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1], v.carrier_name),
+          await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1]),
           requirements,
         )
       : null

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 interface CallRow extends AiCall {
   verifications: {
     display_id: string | null
-    carrier_name: string | null
+    insured_name: string | null
     orgs: { name: string | null } | null
   } | null
 }
@@ -23,7 +23,7 @@ export default async function AdminCallsPage() {
   const supabase = createServiceClient()
   const { data, error } = await withRetry(() => supabase
     .from('ai_calls')
-    .select('*, verifications(display_id, carrier_name, orgs(name))')
+    .select('*, verifications(display_id, insured_name, orgs(name))')
     .neq('status', 'draft')
     .order('created_at', { ascending: false })
     .limit(200))
@@ -75,7 +75,7 @@ export default async function AdminCallsPage() {
                   </Link>
                 </td>
                 <td style={{ ...td, color: C.txt2 }}>{call.verifications?.orgs?.name ?? ''}</td>
-                <td style={{ ...td, color: C.txt2 }}>{call.verifications?.carrier_name ?? ''}</td>
+                <td style={{ ...td, color: C.txt2 }}>{call.verifications?.insured_name ?? ''}</td>
                 <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5, whiteSpace: 'nowrap' }}>{call.to_number ?? ''}</td>
                 <td style={td}>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: pillColor, background: `color-mix(in oklch, ${pillColor} 12%, transparent)`, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>

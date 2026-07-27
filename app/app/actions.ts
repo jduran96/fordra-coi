@@ -72,8 +72,6 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
   if (!profile) return { error: 'Please sign in again.' }
   if (!profile.org_id) return { error: 'Your account is not linked to an organization yet.' }
 
-  const carrier = String(formData.get('carrier_name') || '').trim()
-  if (!carrier) return { error: 'Carrier name is required.' }
   const requirementsText = String(formData.get('requirements_text') || '').trim()
 
   // Documents arrive via direct-to-storage uploads (prepareUploads above);
@@ -156,8 +154,7 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     const rawDetails = formData.get('template_details')
     const details = rawDetails === null ? t.details : (String(rawDetails).trim() || null)
 
-    // {carrier_name} is auto-filled from the carrier field, never a form input.
-    const values: Record<string, string> = { carrier_name: carrier }
+    const values: Record<string, string> = {}
     for (const v of variables) values[v.key] = String(formData.get(`template_var_${v.key}`) || '')
     try {
       const resolved = resolveTemplate({ ...t, requirements: rows, variables, details }, values)
@@ -201,7 +198,6 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
   try {
     await createVerification(supabase, {
       orgId: profile.org_id,
-      carrierName: carrier,
       source: 'web',
       requirements,
       templateId: templateId || undefined,

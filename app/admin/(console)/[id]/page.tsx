@@ -18,7 +18,7 @@ import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
 import NoteCheckControls from '@/components/NoteCheckControls'
 import ContactCheckTask from '@/components/ContactCheckTask'
-import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, logAdminActivity, deleteAdminActivity } from '../actions'
+import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, updateInsuredName, logAdminActivity, deleteAdminActivity } from '../actions'
 import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
@@ -109,12 +109,11 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   })()
 
   // Per-deal template variable values ride in the same provenance (web keeps
-  // them on the object, API on the { type: 'template' } entry). carrier_name is
-  // auto-filled from the carrier field, not a submitter input, so it is skipped.
+  // them on the object, API on the { type: 'template' } entry).
   const templateVariables = (() => {
     const r = v.requirements as { variables?: Record<string, string> } | { type?: string; variables?: Record<string, string> }[] | null
     const vars = Array.isArray(r) ? r.find(x => x?.type === 'template')?.variables : r?.variables
-    return Object.entries(vars ?? {}).filter(([k]) => k !== 'carrier_name')
+    return Object.entries(vars ?? {})
   })()
 
   const adminStatus = deriveAdminStatus(v)
@@ -167,7 +166,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
       <Link href="/admin" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Queue</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
-        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.carrier_name}</h1>
+        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.insured_name || v.display_id}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>{adminStatus}</span>
         <span style={{ marginLeft: 'auto' }}>
           <ActivityLog
@@ -192,7 +191,37 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             <div style={card()}>
               <SectionTitle small>Submission</SectionTitle>
               <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
-                <FactRow label="Carrier name (as submitted)" value={v.carrier_name || '—'} />
+                <dt style={{ fontSize: 13, color: C.txt3, alignSelf: 'center' }}>Insured name</dt>
+                <dd style={{ margin: 0 }}>
+                  {caseIsClosed ? (
+                    <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500 }}>{v.insured_name || '—'}</span>
+                  ) : (
+                    /* Extraction stamps this from the COI's named insured;
+                       editable here in case it misread. Keyed by the value so
+                       a revalidated save remounts with fresh defaults (React
+                       otherwise restores the stale defaultValue after a form
+                       action). Re-running extraction re-stamps it. */
+                    <form key={String(v.insured_name ?? '')} action={updateInsuredName.bind(null, id)} style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        name="insured_name"
+                        defaultValue={String(v.insured_name ?? '')}
+                        placeholder="Filled from the COI by extraction"
+                        style={{
+                          flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '5px 10px',
+                          fontSize: 13.5, fontWeight: 500, fontFamily: C.sans, color: C.txt,
+                          border: `1.5px solid ${C.border}`, borderRadius: 6, background: C.surface, outline: 'none',
+                        }}
+                      />
+                      <PendingButton pendingLabel="Saving…" style={{
+                        padding: '5px 14px', fontSize: 12, fontWeight: 600, fontFamily: C.sans,
+                        borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent',
+                        color: C.txt2, cursor: 'pointer',
+                      }}>
+                        Save
+                      </PendingButton>
+                    </form>
+                  )}
+                </dd>
                 <FactRow label="Uploaded by" value={uploader?.email ?? (v.source === 'web' ? '—' : `via ${v.source}`)} />
                 <FactRow label="Organization" value={(v.orgs as { name?: string } | null)?.name ?? '—'} />
               </dl>

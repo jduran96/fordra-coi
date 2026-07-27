@@ -12,13 +12,20 @@ import { saveCallConfig } from './actions'
  * global fields fall back to the built-in defaults.
  */
 
-const FIELDS: { field: keyof OrgCallConfig; label: string; hint?: string }[] = [
-  { field: 'assistant_name', label: 'Assistant name' },
+// Identity: who the agent is. Legitimacy: who it is affiliated with and what
+// they do. Deal facts (certificate holder, addresses) are per-COI reference
+// details on the pre-dial screen, never org config.
+const LEGITIMACY_FIELDS: { field: keyof OrgCallConfig; label: string; hint?: string }[] = [
   { field: 'on_behalf_of', label: 'On behalf of', hint: 'The only org name the agent ever speaks' },
-  { field: 'relationship_line', label: 'Relationship line' },
-  { field: 'holder_legal_name', label: 'Certificate holder (legal name)' },
-  { field: 'holder_address', label: 'Certificate holder address' },
-  { field: 'on_behalf_of_info', label: 'About the client (1-2 sentences)' },
+  {
+    field: 'relationship_line', label: 'Relationship to the deal',
+    hint: 'Completes "<On behalf of> is ..." when the office asks why we are calling, e.g. "the certificate holder, extending credit to the policyholder" or "the lender financing the insured equipment"',
+  },
+  {
+    field: 'on_behalf_of_info', label: 'What the client does',
+    hint: '1-2 sentences the agent says if the office asks who <On behalf of> is',
+  },
+  { field: 'reply_email', label: 'Reply email', hint: 'Offered only if the office asks to verify by email' },
 ]
 
 export default function CallConfigCard({ orgs, global, byOrg }: {
@@ -63,44 +70,49 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
         }}
         style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {FIELDS.map(({ field, label, hint }) => (
-            <div key={field}>
-              <label style={labelStyle}>{label}</label>
-              <input
-                name={field}
-                defaultValue={stored[field] ?? ''}
-                style={inputStyle}
-              />
-              {hint && <p style={{ fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }}>{hint}</p>}
+        {/* Identity: who the agent is. */}
+        <div>
+          <p style={sectionTitleStyle}>Identity</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Assistant name</label>
+              <input name="assistant_name" defaultValue={stored.assistant_name ?? ''} style={inputStyle} />
+              <p style={hintStyle}>The name the agent introduces itself with</p>
             </div>
-          ))}
-          <div>
-            <label style={labelStyle}>Languages</label>
-            <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '8px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt }}>
-                <input type="checkbox" checked readOnly disabled />
-                English
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  name="lang_es"
-                  defaultChecked={(stored.languages ?? fallback.languages ?? '').split(',').map(s => s.trim()).includes('es')}
-                />
-                Spanish
-              </label>
+            <div>
+              <label style={labelStyle}>Languages</label>
+              <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '8px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt }}>
+                  <input type="checkbox" checked readOnly disabled />
+                  English
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    name="lang_es"
+                    defaultChecked={(stored.languages ?? fallback.languages ?? '').split(',').map(s => s.trim()).includes('es')}
+                  />
+                  Spanish
+                </label>
+              </div>
             </div>
           </div>
         </div>
-        {/* Legitimacy proof points: optional, only spoken if the office asks. */}
+        {/* Legitimacy: who the agent is affiliated with and what they do. */}
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-          <p style={{ ...labelStyle, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.txt3, marginBottom: 10 }}>Legitimacy</p>
+          <p style={sectionTitleStyle}>Legitimacy</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Reply email</label>
-              <input name="reply_email" defaultValue={stored.reply_email ?? ''} style={inputStyle} />
-            </div>
+            {LEGITIMACY_FIELDS.map(({ field, label, hint }) => (
+              <div key={field}>
+                <label style={labelStyle}>{label}</label>
+                <input
+                  name={field}
+                  defaultValue={stored[field] ?? ''}
+                  style={inputStyle}
+                />
+                {hint && <p style={hintStyle}>{hint}</p>}
+              </div>
+            ))}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -117,5 +129,10 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
 }
 
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.txt2, display: 'block', marginBottom: 4 }
+const hintStyle: React.CSSProperties = { fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+  color: C.txt3, margin: '0 0 10px',
+}
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13.5, fontFamily: C.sans, color: C.txt, background: C.surface, borderRadius: 7, border: `1px solid ${C.border}` }
 const btnStyle = (pending: boolean): React.CSSProperties => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.65 : 1 })

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 interface Row {
   id: string
   display_id: string
-  carrier_name: string
+  insured_name: string
   status: string
   case_status: string | null
   source: string | null
@@ -23,7 +23,7 @@ export default async function PortalDashboard() {
   const supabase = await createClient()
   const { data: rows, error } = await supabase
     .from('my_verifications')
-    .select('id, display_id, carrier_name, status, case_status, source, created_at, published_at')
+    .select('id, display_id, insured_name, status, case_status, source, created_at, published_at')
     .order('created_at', { ascending: false })
   // Fail loudly: rendering "No verifications yet." on a failed read lies.
   if (error) throw new Error(`Could not load verifications: ${error.message}`)
@@ -85,13 +85,13 @@ function VerificationSection({ title, rows, emptyText, first }: {
         <PaginatedTable
           head={
             <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              <th style={th()}>ID</th><th style={th()}>Carrier</th><th style={th()}>Status</th><th style={th()}>Source</th><th style={th()}>Submitted</th>
+              <th style={th()}>ID</th><th style={th()}>Policyholder</th><th style={th()}>Status</th><th style={th()}>Source</th><th style={th()}>Submitted</th>
             </tr>
           }
           rows={rows.map(r => (
             <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
               <td style={td()}><Link href={`/app/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link></td>
-              <td style={td()}>{r.carrier_name}</td>
+              <td style={td()}>{r.insured_name || r.display_id}</td>
               <td style={td()}><Pill status={r.case_status === 'failed' ? 'failed' : r.status} /></td>
               <td style={{ ...td(), color: C.txt3 }}>{sourceLabel(r.source)}</td>
               <td style={{ ...td(), color: C.txt3 }}>{pacificDate(r.created_at)}</td>

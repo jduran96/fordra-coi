@@ -143,7 +143,6 @@ export default function SettingsClient({ templates, starterRows, members, selfId
                 </p>
                 <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '4px 0 0' }}>
                   {t.requirements.length} requirement{t.requirements.length === 1 ? '' : 's'}
-                  {t.variables.length > 0 && ` · asks for ${t.variables.map(v => v.label.toLowerCase()).join(', ')} per deal`}
                 </p>
               </div>
               <button type="button" onClick={() => openEdit(t)} style={pillS(false)}>Edit</button>

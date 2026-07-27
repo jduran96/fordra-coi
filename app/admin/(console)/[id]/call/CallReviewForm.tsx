@@ -28,19 +28,20 @@ interface Props {
   caseIsClosed: boolean
 }
 
+// Identity: who the agent is. Deal parties (certificate holder, loss payee)
+// are per-COI reference details below, not identity fields.
 const IDENTITY_FIELDS: { field: keyof CallContextFields; label: string; hint?: string }[] = [
-  { field: 'assistant_name', label: 'Assistant name' },
-  { field: 'on_behalf_of', label: 'On behalf of', hint: 'The only org name the agent ever speaks' },
-  { field: 'relationship_line', label: 'Relationship line', hint: 'Answers "what is your relationship?"' },
-  { field: 'holder_legal_name', label: 'Certificate holder (legal name)' },
-  { field: 'holder_address', label: 'Certificate holder address' },
-  { field: 'on_behalf_of_info', label: 'About the client (1-2 sentences)' },
+  { field: 'assistant_name', label: 'Assistant name', hint: 'The name the agent introduces itself with' },
 ]
 
-// Legitimacy proof points: optional, only spoken if the office asks
-// (flow nodes G1 / N1q / N6c). Kept out of the primary identity grid.
-const LEGITIMACY_FIELDS: { field: keyof CallContextFields; label: string }[] = [
-  { field: 'reply_email', label: 'Reply email' },
+// Legitimacy: who the agent is affiliated with and what they do. reply_email
+// and reference_id are proof points, only spoken if the office asks
+// (flow nodes G1 / N1q / N6c).
+const LEGITIMACY_FIELDS: { field: keyof CallContextFields; label: string; hint?: string }[] = [
+  { field: 'on_behalf_of', label: 'On behalf of', hint: 'The only org name the agent ever speaks' },
+  { field: 'relationship_line', label: 'Relationship to the deal', hint: 'Completes "<On behalf of> is ..." when the office asks why we are calling' },
+  { field: 'on_behalf_of_info', label: 'What the client does', hint: 'Said if the office asks who <On behalf of> is' },
+  { field: 'reply_email', label: 'Reply email', hint: 'Offered only if the office asks to verify by email' },
   { field: 'reference_id', label: 'Reference ID' },
 ]
 
@@ -162,10 +163,11 @@ export default function CallReviewForm({ verificationId, context: initialContext
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 14 }}>
           <p style={{ ...labelStyle, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.txt3, marginBottom: 10 }}>Legitimacy</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {LEGITIMACY_FIELDS.map(({ field, label }) => (
+            {LEGITIMACY_FIELDS.map(({ field, label, hint }) => (
               <div key={field}>
                 <label style={labelStyle}>{label}</label>
-                <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(false)} />
+                <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(field === 'on_behalf_of' || field === 'relationship_line' ? !context[field].trim() : false)} />
+                {hint && <p style={{ fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }}>{hint}</p>}
               </div>
             ))}
           </div>

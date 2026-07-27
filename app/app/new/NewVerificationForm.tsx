@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { Requirement } from '@/lib/types'
 import { requirementKind } from '@/lib/types'
-import type { RequirementTemplate } from '@/lib/templates'
+import type { RequirementTemplate, TemplateVariable } from '@/lib/templates'
 import { editableRows, normalizeRequirementRows } from '@/lib/templates'
 import { C } from '@/lib/theme'
 import { DropZone, MultiDropZone, ManualRequirementsForm } from '@/components/UploadCards'
@@ -14,30 +14,10 @@ import EditorModal from '@/components/EditorModal'
 import { submitVerification, prepareUploads } from '../actions'
 import { createClient } from '@/lib/supabase/client'
 
-/**
- * Opt-in condition checks offered in manual mode (pre-checked). These replace
- * the old always-on global baseline: the user decides per submission.
- */
-const MANUAL_CHECKS = [
-  {
-    key: 'name_match',
-    label: 'Check the policyholder name matches the carrier',
-    line: (carrier: string) =>
-      `Matching Policyholder Name: the named insured on the COI must be "${carrier}"; minor formatting differences or a DBA explicitly listing the carrier still count as a match`,
-  },
-  {
-    key: 'policy_active',
-    label: 'Check every policy is currently active',
-    line: () =>
-      'Policy Currently Active: every coverage on the COI must be in force today, with the effective date in the past and the expiration date in the future',
-  },
-] as const
-
 export default function NewVerificationForm({ templates }: { templates: RequirementTemplate[] }) {
   const router = useRouter()
   const defaultTemplate = templates.find(t => t.is_default) ?? templates[0] ?? null
 
-  const [carrier, setCarrier] = useState('')
   const [coiFile, setCoiFile] = useState<File | null>(null)
   const [rcsFiles, setRcsFiles] = useState<File[]>([])
   const [templateId, setTemplateId] = useState<string>(defaultTemplate?.id ?? '')
@@ -54,7 +34,6 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const [reqFile, setReqFile] = useState<File | null>(null)
   const [manualReqs, setManualReqs] = useState<Requirement[]>([{ coverage_type: '', minimum_limit: '', notes: '', kind: 'limit' }])
   const [manualNotes, setManualNotes] = useState('')
-  const [manualChecks, setManualChecks] = useState<Record<string, boolean>>({ name_match: true, policy_active: true })
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const [hover, setHover] = useState(false)
@@ -71,19 +50,28 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   // Variables derive live from the (possibly edited) rows, so renaming or
   // adding a Variable row updates the per-deal inputs immediately.
   const normalizedTpl = normalizeRequirementRows(tplRows)
-  const tplVars = normalizedTpl.variables
-  const missingVar = tplVars.find(v => v.required && !varValues[v.key]?.trim())
   const cleanTplRows = normalizedTpl.requirements
   const listRows = tplRows.filter(r => r.coverage_type.trim())
 
-  // A manual row counts when it has a name and either a limit or is a condition.
+  // A manual row counts when it has a name and either a limit or no dollar
+  // amount at all (conditions and variables).
   const cleanReqs = manualReqs.filter(r =>
-    r.coverage_type.trim() && (requirementKind(r) === 'condition' || r.minimum_limit.trim()))
-  const checkedLines = MANUAL_CHECKS.filter(c => manualChecks[c.key])
+    r.coverage_type.trim() && (requirementKind(r) !== 'limit' || r.minimum_limit.trim()))
+  // Manual rows derive per-deal variables exactly like a saved standard does
+  // (a Variable row, or a hand-typed {token} in an amount or note).
+  const normalizedManual = normalizeRequirementRows(manualReqs)
+
+  // The Verification Details inputs for the active mode. Every one is
+  // required to submit.
+  const activeVars: TemplateVariable[] = reqMode === 'template'
+    ? normalizedTpl.variables
+    : reqMode === 'manual' ? normalizedManual.variables : []
+  const missingVar = activeVars.find(v => !varValues[v.key]?.trim())
+
   const reqReady = reqMode === 'template'
-    ? !!template && !normalizedTpl.error && !missingVar && cleanTplRows.length > 0
-    : reqMode === 'upload' ? !!reqFile : (cleanReqs.length > 0 || checkedLines.length > 0)
-  const canSubmit = !!carrier.trim() && !!coiFile && reqReady && !pending
+    ? !!template && !normalizedTpl.error && cleanTplRows.length > 0
+    : reqMode === 'upload' ? !!reqFile : cleanReqs.length > 0
+  const canSubmit = !!coiFile && reqReady && !missingVar && !pending
 
   function pickTemplate(id: string) {
     setTemplateId(id)
@@ -114,20 +102,23 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   }
 
   function serializeStandards(): string {
-    const lines = cleanReqs.map(r => {
+    // Manual rows serialize from their normalized form so Variable rows carry
+    // their {token}, then the per-deal values substitute in — the same text
+    // shape resolveTemplate produces for saved standards.
+    const sub = (s: string) => activeVars.reduce(
+      (acc, v) => acc.replaceAll(`{${v.key}}`, (varValues[v.key] ?? '').trim()), s)
+    const lines = normalizedManual.requirements.map(r => {
       const note = (r.notes ?? '').trim()
       const limit = r.minimum_limit.trim()
-      return `${r.coverage_type.trim()}${limit ? `: ${limit}` : ''}${note ? ` (${note})` : ''}`
+      return sub(`${r.coverage_type.trim()}${limit ? `: ${limit}` : ''}${note ? ` (${note})` : ''}`)
     })
-    for (const c of checkedLines) lines.push(c.line(carrier.trim()))
-    if (manualNotes.trim()) lines.push(`Additional details: ${manualNotes.trim()}`)
+    if (manualNotes.trim()) lines.push(`Additional details: ${sub(manualNotes.trim())}`)
     return lines.join('\n')
   }
 
   async function handleSubmit() {
     setError('')
-    if (!carrier.trim()) return setError('Carrier name is required.')
-    if (!coiFile) return setError('Upload the carrier COI.')
+    if (!coiFile) return setError('Upload the COI.')
     // Mirror the server's caps: every document is 10MB max, and the "any
     // other relevant documents" group is 50MB TOTAL. Files go straight to
     // storage (signed uploads), so no request-body cap applies.
@@ -146,19 +137,16 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
       if (!template) return setError('Pick a saved standard, or switch to entering standards for this deal.')
       if (normalizedTpl.error) return setError(normalizedTpl.error)
       if (cleanTplRows.length === 0) return setError('The selected standard has no requirement rows left. Add at least one.')
-      if (missingVar) return setError(`Enter ${missingVar.label.toLowerCase()} for the selected standard.`)
     } else {
       if (reqMode === 'upload' && !reqFile) return setError('Upload your insurance standards, or switch to manual entry.')
-      if (reqMode === 'manual' && cleanReqs.length === 0 && checkedLines.length === 0) {
-        return setError('Add at least one coverage or condition, or keep one of the standard checks selected.')
+      if (reqMode === 'manual' && cleanReqs.length === 0) {
+        return setError('Add at least one coverage or condition.')
       }
-      if (reqMode === 'manual') {
-        // Descriptions are required: the requirements parser cannot expand a
-        // bare title into a checkable requirement.
-        const noDesc = cleanReqs.find(r => !(r.notes ?? '').trim())
-        if (noDesc) return setError(`Add a description for "${noDesc.coverage_type.trim()}".`)
-      }
+      // Descriptions are required: the requirements parser cannot expand a
+      // bare title into a checkable requirement.
+      if (reqMode === 'manual' && normalizedManual.error) return setError(normalizedManual.error)
     }
+    if (missingVar) return setError(`Enter ${missingVar.label.toLowerCase()} under Verification Details.`)
 
     setPending(true)
 
@@ -190,13 +178,12 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     }
 
     const fd = new FormData()
-    fd.append('carrier_name', carrier.trim())
     fd.append('uploaded_files', JSON.stringify(uploadedRefs))
     if (reqMode === 'template' && template) {
       fd.append('template_id', template.id)
       fd.append('template_rows', JSON.stringify(cleanTplRows))
       fd.append('template_details', tplDetails)
-      for (const v of tplVars) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
+      for (const v of activeVars) fd.append(`template_var_${v.key}`, varValues[v.key] ?? '')
     } else if (!(reqMode === 'upload' && reqFile)) {
       fd.append('requirements_text', serializeStandards())
     }
@@ -215,22 +202,8 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
 
   return (
     <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div>
-        <Label>Carrier name</Label>
-        <input
-          value={carrier}
-          onChange={e => setCarrier(e.target.value)}
-          placeholder="e.g. ACME Trucking LLC"
-          style={{
-            width: '100%', boxSizing: 'border-box', padding: '11px 14px', fontSize: 15,
-            fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
-            background: C.surface, color: C.txt,
-          }}
-        />
-      </div>
-
       <DropZone
-        boxTitle="Carrier's Certificate of Insurance"
+        boxTitle="Certificate of Insurance"
         hint="PDF, JPG, or PNG scan of the COI (ACORD 25), up to 10 MB"
         file={coiFile}
         accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -338,59 +311,36 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
             onChange={setReqFile}
           />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <ManualRequirementsForm rows={manualReqs} onChange={setManualReqs} notes={manualNotes} onNotesChange={setManualNotes} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{
-                fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-                color: C.txt3, fontFamily: C.sans,
-              }}>
-                Standard checks <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(included when checked)</span>
-              </span>
-              {MANUAL_CHECKS.map(c => (
-                <label key={c.key} style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  fontSize: 13, color: C.txt2, fontFamily: C.sans, cursor: 'pointer',
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={!!manualChecks[c.key]}
-                    onChange={e => setManualChecks({ ...manualChecks, [c.key]: e.target.checked })}
-                  />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <ManualRequirementsForm rows={manualReqs} onChange={setManualReqs} notes={manualNotes} onNotesChange={setManualNotes} />
         )}
       </div>
 
-      {reqMode === 'template' && template && tplVars.length > 0 && (
-        <div style={{
-          border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
-          background: C.surface, display: 'flex', flexDirection: 'column', gap: 10,
-        }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: C.txt, fontFamily: C.sans, margin: 0 }}>
-            This standard needs the following for each deal:
-          </p>
-          {tplVars.map(v => (
-            <div key={v.key}>
-              <Label>
-                {v.label}
-                {v.required && <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>}
-              </Label>
-              <input
-                value={varValues[v.key] ?? ''}
-                onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
-                placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
-                style={{
-                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
-                  fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
-                  background: C.surface, color: C.txt,
-                }}
-              />
-            </div>
-          ))}
+      {activeVars.length > 0 && (
+        <div>
+          <Label>Verification Details</Label>
+          <div style={{
+            border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
+            background: C.surface, display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            {activeVars.map(v => (
+              <div key={v.key}>
+                <Label>
+                  {v.label}
+                  <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>
+                </Label>
+                <input
+                  value={varValues[v.key] ?? ''}
+                  onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
+                  placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
+                  style={{
+                    width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
+                    fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
+                    background: C.surface, color: C.txt,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

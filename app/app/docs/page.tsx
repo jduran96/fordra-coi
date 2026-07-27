@@ -20,7 +20,7 @@ export default async function DocsPage() {
   "id": "8f3c1a90-2b4d-4f1e-9c77-1a2b3c4d5e6f",
   "display_id": "VER-1043",
   "status": "completed",
-  "carrier_name": "ACME Trucking LLC",
+  "insured_name": "ACME Trucking LLC",
   "source": "api",
   "documents": [
     { "kind": "coi", "file_name": "coi.pdf" },
@@ -112,7 +112,7 @@ export default async function DocsPage() {
   "id": "8f3c1a90-2b4d-4f1e-9c77-1a2b3c4d5e6f",
   "display_id": "VER-1043",
   "status": "processing",
-  "carrier_name": "ACME Trucking LLC",
+  "insured_name": null,
   "source": "api",
   "documents": [
     { "kind": "coi", "file_name": "coi.pdf" },
@@ -170,7 +170,6 @@ export default async function DocsPage() {
       <Endpoint method="POST" path="/v1/verifications" />
       <P>Start a verification with one request. Include:</P>
       <Ul items={[
-        <><Mono>carrier_name</Mono>: the carrier&apos;s legal name (text, required)</>,
         <><Mono>broker_name</Mono>: your company name (text, required)</>,
         <><Mono>coi</Mono>: the certificate of insurance (file or link, required)</>,
         <><Mono>insurance_standards</Mono>: your insurance requirements (text, file, or link, required unless you send a template)</>,
@@ -186,7 +185,6 @@ export default async function DocsPage() {
   -F additional_documents="https://your-bucket.s3.amazonaws.com/ratecon.pdf?X-Amz-Signature=..."`}</CodeBox>
       <CodeBox title="Sample POST request payload">{`curl -X POST ${BASE}/v1/verifications \\
   -H "Authorization: Bearer `}<Key>sk_live_YOUR_KEY</Key>{`" \\
-  -F carrier_name="ACME Trucking LLC" \\
   -F broker_name="Fordra Financial" \\
   -F coi=@coi.pdf \\
   -F insurance_standards="Auto Liability $1,000,000, Cargo $100,000" \\
@@ -206,7 +204,6 @@ export default async function DocsPage() {
         {' '}<Mono>template_variables</Mono> when starting a verification.</P>
       <CodeBox title="Start a verification from a saved standard">{`curl -X POST ${BASE}/v1/verifications \\
   -H "Authorization: Bearer `}<Key>sk_live_YOUR_KEY</Key>{`" \\
-  -F carrier_name="ACME Trucking LLC" \\
   -F broker_name="Fordra Financial" \\
   -F coi=@coi.pdf \\
   -F template_name="Trucking standard" \\

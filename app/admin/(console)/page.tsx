@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 interface Row {
   id: string
   display_id: string
-  carrier_name: string
+  insured_name: string
   status: string
   source: string
   created_at: string
@@ -35,7 +35,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, carrier_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
+    .select('id, display_id, insured_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -75,7 +75,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
       maxHeight={440}
       head={
         <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Carrier</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
+          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Policyholder</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
           <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
         </tr>
       }
@@ -87,7 +87,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
           {/* Long org/carrier names truncate so Status/Admin never get squeezed
               off; the full value is on hover. */}
           <td style={{ ...td(), ...clip() }} title={r.orgs?.name ?? undefined}>{r.orgs?.name ?? '—'}</td>
-          <td style={{ ...td(), ...clip() }} title={r.carrier_name}>{r.carrier_name}</td>
+          <td style={{ ...td(), ...clip() }} title={r.insured_name}>{r.insured_name || r.display_id}</td>
           <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
           <td style={td()}>
             <AdminStatusPill row={r} />

@@ -20,7 +20,6 @@ export interface VerificationFile {
 
 export interface CreateVerificationInput {
   orgId: string
-  carrierName: string
   verifierCompany?: string
   source: 'web' | 'api' | 'slack'
   /** Stored as-is; web uses { text }, API/Slack use [{ type: 'text', value }]. */
@@ -54,7 +53,9 @@ export async function createVerification(
 ): Promise<{ verification: Record<string, unknown>; docRefs: DocRef[] }> {
   const { data: v, error } = await db.from('verifications').insert({
     org_id: input.orgId,
-    carrier_name: input.carrierName,
+    // The policyholder name; the extraction pipeline stamps it from the COI's
+    // named insured. Blank until then (displays fall back to display_id).
+    insured_name: '',
     ...(input.verifierCompany ? { verifier_company: input.verifierCompany } : {}),
     ...(input.createdBy ? { created_by: input.createdBy } : {}),
     source: input.source,
@@ -122,7 +123,6 @@ export async function createVerification(
     const p = notifyNewVerification({
       verificationId: v.id as string,
       displayId: (v as { display_id?: string }).display_id,
-      carrierName: input.carrierName,
       orgId: input.orgId,
       source: input.source,
     })

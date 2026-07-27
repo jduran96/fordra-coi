@@ -17,7 +17,7 @@ create view my_verifications as
     source,
     status,
     case_status,
-    carrier_name,
+    insured_name,
     verifier_company,
     eta,
     error_detail,

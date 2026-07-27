@@ -26,7 +26,7 @@ interface Report { met?: ReportItem[]; not_met?: ReportItem[]; uncertain?: Repor
 
 export interface ReportPdfInput {
   display_id: string
-  carrier_name: string
+  insured_name: string
   created_at: string
   published_at: string
   final_report: Report | null
@@ -73,7 +73,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     doc.moveDown(0.3)
     doc.font('Helvetica-Bold').fontSize(21).fillColor(INK).text('Verification Report')
     doc.moveDown(0.2)
-    doc.font('Helvetica').fontSize(13).fillColor(INK).text(v.carrier_name)
+    doc.font('Helvetica').fontSize(13).fillColor(INK).text(v.insured_name)
     doc.moveDown(0.3)
     doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(
       `${v.display_id}   ·   Submitted ${pacificDate(v.created_at)}   ·   Published ${pacificDate(v.published_at)}`,
