@@ -20,7 +20,6 @@ const FIELDS: { field: keyof OrgCallConfig; label: string; hint?: string }[] = [
   { field: 'holder_address', label: 'Certificate holder address' },
   { field: 'reply_email', label: 'Reply email' },
   { field: 'on_behalf_of_info', label: 'About the client (1-2 sentences)' },
-  { field: 'languages', label: 'Languages', hint: 'Comma-separated, e.g. "en" or "en,es"' },
 ]
 
 export default function CallConfigCard({ orgs, global, byOrg }: {
@@ -52,6 +51,10 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
           e.preventDefault()
           const fd = new FormData(e.currentTarget)
           fd.set('scope', scope)
+          // Language checkboxes -> the comma-separated languages value the
+          // Retell payload expects. English is always on.
+          fd.set('languages', fd.get('lang_es') ? 'en,es' : 'en')
+          fd.delete('lang_es')
           setMessage(null)
           startTransition(async () => {
             const res = await saveCallConfig(fd)
@@ -68,19 +71,27 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
               <input
                 name={field}
                 defaultValue={stored[field] ?? ''}
-                placeholder={fallback[field] || undefined}
                 style={inputStyle}
               />
               {hint && <p style={{ fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }}>{hint}</p>}
             </div>
           ))}
           <div>
-            <label style={labelStyle}>Email channel</label>
-            <select name="email_enabled" defaultValue={stored.email_enabled ?? ''} style={inputStyle}>
-              <option value="">Use fallback ({fallback.email_enabled === 'true' ? 'on' : 'off'})</option>
-              <option value="false">Off</option>
-              <option value="true">On</option>
-            </select>
+            <label style={labelStyle}>Languages</label>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '8px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt }}>
+                <input type="checkbox" checked readOnly disabled />
+                English
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  name="lang_es"
+                  defaultChecked={(stored.languages ?? fallback.languages ?? '').split(',').map(s => s.trim()).includes('es')}
+                />
+                Spanish
+              </label>
+            </div>
           </div>
           <div>
             <label style={labelStyle}>Entity type</label>

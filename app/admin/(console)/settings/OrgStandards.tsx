@@ -12,8 +12,8 @@ import { saveOrgTemplate, deleteOrgTemplate } from './actions'
 /**
  * Admin-side authoring of an org's insurance-standards templates. Saved rows
  * land in the same requirement_templates table the org edits on /app/settings,
- * so a standard created here shows up there immediately. Mirrors the card
- * styling of app/app/settings/SettingsClient.tsx.
+ * so a standard created here shows up there immediately. Every org is listed
+ * with its standards; "+ New standard" under an org's list adds to that org.
  */
 
 const inputS = {
@@ -41,9 +41,8 @@ export default function OrgStandards({ orgs, templates, starterRows }: {
   templates: RequirementTemplate[]
   starterRows: Requirement[]
 }) {
-  const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? '')
-  // null = closed; 'new' = creating; otherwise the template id being edited.
-  const [editing, setEditing] = useState<string | null>(null)
+  // null = closed; otherwise the org being edited plus 'new' or a template id.
+  const [editing, setEditing] = useState<{ orgId: string; id: string } | null>(null)
   const [name, setName] = useState('')
   const [rows, setRows] = useState<Requirement[]>([])
   const [details, setDetails] = useState('')
@@ -51,18 +50,16 @@ export default function OrgStandards({ orgs, templates, starterRows }: {
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
 
-  const orgTemplates = templates.filter(t => t.org_id === orgId)
-
-  function openNew() {
-    setEditing('new')
+  function openNew(orgId: string, existingCount: number) {
+    setEditing({ orgId, id: 'new' })
     setName('')
     setRows([...starterRows.map(r => ({ ...r })), { ...BLANK_REQUIREMENT }])
     setDetails('')
-    setIsDefault(orgTemplates.length === 0)
+    setIsDefault(existingCount === 0)
     setError('')
   }
-  function openEdit(t: RequirementTemplate) {
-    setEditing(t.id)
+  function openEdit(orgId: string, t: RequirementTemplate) {
+    setEditing({ orgId, id: t.id })
     setName(t.name)
     const editRows = editableRows(t)
     setRows(editRows.length ? editRows : [{ ...BLANK_REQUIREMENT }])
@@ -72,10 +69,11 @@ export default function OrgStandards({ orgs, templates, starterRows }: {
   }
 
   function submit() {
+    if (!editing) return
     setError('')
     const fd = new FormData()
-    if (editing && editing !== 'new') fd.append('id', editing)
-    fd.append('org_id', orgId)
+    if (editing.id !== 'new') fd.append('id', editing.id)
+    fd.append('org_id', editing.orgId)
     fd.append('name', name)
     fd.append('rows', JSON.stringify(rows))
     fd.append('details', details)
@@ -88,63 +86,57 @@ export default function OrgStandards({ orgs, templates, starterRows }: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ flex: 1, maxWidth: 340 }}>
-          <span style={labelS}>Organization</span>
-          <select value={orgId} onChange={e => { setOrgId(e.target.value); setEditing(null) }} style={inputS}>
-            {orgs.length === 0 && <option value="">No orgs yet</option>}
-            {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-        </div>
-        <button type="button" onClick={openNew} disabled={!orgId} style={pillS(true, !orgId)}>+ New standard</button>
-      </div>
-      <p style={{ color: C.txt2, fontFamily: C.sans, fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>
-        When a dollar amount changes deal to deal, set the row&apos;s type to Variable and name the
-        amount (like Asset Sale Price); the org is asked for the number on each new verification.
-      </p>
-
-      {orgId && orgTemplates.length === 0 && editing === null && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {orgs.length === 0 && (
         <div style={cardS}>
-          <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, margin: 0 }}>
-            This org has no saved standards yet.
-          </p>
+          <p style={{ fontSize: 14, color: C.txt2, fontFamily: C.sans, margin: 0 }}>No orgs yet.</p>
         </div>
       )}
 
-      {orgTemplates.map(t => (
-        <div key={t.id} style={{ ...cardS, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: C.txt, fontFamily: C.sans, margin: 0 }}>
-              {t.name}
-              {t.is_default && (
-                <span style={{
-                  marginLeft: 8, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-                  textTransform: 'uppercase', fontFamily: C.mono, color: C.txt,
-                  background: C.lime, borderRadius: 4, padding: '2px 6px',
-                }}>
-                  Default
-                </span>
-              )}
-            </p>
-            <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '4px 0 0' }}>
-              {t.requirements.length} requirement{t.requirements.length === 1 ? '' : 's'}
-              {t.variables.length > 0 && ` · asks for ${t.variables.map(v => v.label.toLowerCase()).join(', ')} per deal`}
-            </p>
+      {orgs.map(org => {
+        const orgTemplates = templates.filter(t => t.org_id === org.id)
+        return (
+          <div key={org.id} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <span style={{ ...labelS, marginBottom: 0 }}>{org.name}</span>
+
+            {orgTemplates.map(t => (
+              <div key={t.id} style={{ ...cardS, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: C.txt, fontFamily: C.sans, margin: 0 }}>
+                    {t.name}
+                  </p>
+                  <p style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.sans, margin: '4px 0 0' }}>
+                    {t.requirements.length} requirement{t.requirements.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => openEdit(org.id, t)} style={pillS(false)}>Edit</button>
+                <button
+                  type="button"
+                  onClick={() => startTransition(async () => { await deleteOrgTemplate(t.id); if (editing?.id === t.id) setEditing(null) })}
+                  style={{ ...pillS(false), color: C.error, borderColor: C.border }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => openNew(org.id, orgTemplates.length)}
+              style={{
+                textAlign: 'left', padding: '14px 20px', fontSize: 13, fontWeight: 600,
+                fontFamily: C.sans, color: C.txt2, background: 'transparent',
+                border: `1.5px dashed ${C.border}`, borderRadius: 12, cursor: 'pointer',
+              }}
+            >
+              + New standard
+            </button>
           </div>
-          <button type="button" onClick={() => openEdit(t)} style={pillS(false)}>Edit</button>
-          <button
-            type="button"
-            onClick={() => startTransition(async () => { await deleteOrgTemplate(t.id); if (editing === t.id) setEditing(null) })}
-            style={{ ...pillS(false), color: C.error, borderColor: C.border }}
-          >
-            Delete
-          </button>
-        </div>
-      ))}
+        )
+      })}
 
       {editing !== null && (
-        <EditorModal title={editing === 'new' ? 'New standard' : 'Edit standard'} onClose={() => setEditing(null)}>
+        <EditorModal title={editing.id === 'new' ? 'New standard' : 'Edit standard'} onClose={() => setEditing(null)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <span style={labelS}>Standard name</span>

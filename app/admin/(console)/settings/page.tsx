@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getExtractionConfig } from '@/lib/config'
@@ -18,8 +19,21 @@ import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/noti
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminSettings() {
+const TABS = [
+  { key: 'standards', label: 'Standards' },
+  { key: 'ocr', label: 'OCR' },
+  { key: 'calling', label: 'Calling' },
+  { key: 'notifications', label: 'Notifications' },
+] as const
+type TabKey = (typeof TABS)[number]['key']
+
+export default async function AdminSettings({ searchParams }: {
+  searchParams: Promise<{ tab?: string }>
+}) {
   await requireAdmin()
+  const rawTab = (await searchParams).tab
+  const tab: TabKey = TABS.some(t => t.key === rawTab) ? (rawTab as TabKey) : 'standards'
+
   const cfg = await getExtractionConfig()
 
   // Service client (admin scope): list every org and every org's templates so
@@ -76,13 +90,30 @@ export default async function AdminSettings() {
   return (
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
       <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Settings</h1>
-      <p style={{ color: C.txt2, fontSize: 14, margin: '4px 0 26px', lineHeight: 1.6 }}>
+      <p style={{ color: C.txt2, fontSize: 14, margin: '4px 0 20px', lineHeight: 1.6 }}>
         Runtime settings for the verification pipeline. Changes apply to the next extraction run;
         already-analyzed verifications keep their stored results.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-        {/* Org insurance standards */}
+      <nav style={{ display: 'flex', gap: 8, marginBottom: 26 }}>
+        {TABS.map(t => (
+          <Link
+            key={t.key}
+            href={`/admin/settings?tab=${t.key}`}
+            style={{
+              padding: '8px 18px', fontSize: 13, fontWeight: 600, fontFamily: C.sans,
+              borderRadius: 9999, textDecoration: 'none',
+              border: t.key === tab ? '1px solid transparent' : `1px solid ${C.border}`,
+              background: t.key === tab ? C.txt : 'transparent',
+              color: t.key === tab ? C.onDark : C.txt2,
+            }}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+
+      {tab === 'standards' && (
         <section>
           <SectionTitle>Org insurance standards</SectionTitle>
           <p style={hintStyle()}>
@@ -95,33 +126,37 @@ export default async function AdminSettings() {
             starterRows={STARTER_REQUIREMENTS.map(r => ({ ...r }))}
           />
         </section>
+      )}
 
-        {/* Prompts */}
-        {prompts.map(p => (
-          <section key={p.which}>
-            <SectionTitle>{p.title}</SectionTitle>
-            <p style={hintStyle()}>{p.hint}{!p.value && ' Currently using the built-in default.'}</p>
-            <form action={savePrompt.bind(null, p.which)} style={{ ...card(), display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <textarea
-                name="prompt"
-                defaultValue={p.value ?? p.def}
-                rows={Math.min(18, Math.max(4, (p.value ?? p.def).split('\n').length + 1))}
-                style={{ ...input(), resize: 'vertical', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5 }}
-              />
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="submit" name="intent" value="save" style={smallBtn()}>Save prompt</button>
-                <button type="submit" name="intent" value="reset" style={{ ...smallBtn(), color: C.txt3 }}>Reset to default</button>
-              </div>
-            </form>
-          </section>
-        ))}
+      {tab === 'ocr' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {prompts.map(p => (
+            <section key={p.which}>
+              <SectionTitle>{p.title}</SectionTitle>
+              <p style={hintStyle()}>{p.hint}{!p.value && ' Currently using the built-in default.'}</p>
+              <form action={savePrompt.bind(null, p.which)} style={{ ...card(), display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <textarea
+                  name="prompt"
+                  defaultValue={p.value ?? p.def}
+                  rows={Math.min(18, Math.max(4, (p.value ?? p.def).split('\n').length + 1))}
+                  style={{ ...input(), resize: 'vertical', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5 }}
+                />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button type="submit" name="intent" value="save" style={smallBtn()}>Save prompt</button>
+                  <button type="submit" name="intent" value="reset" style={{ ...smallBtn(), color: C.txt3 }}>Reset to default</button>
+                </div>
+              </form>
+            </section>
+          ))}
+        </div>
+      )}
 
-        {/* AI call identity config */}
+      {tab === 'calling' && (
         <section>
           <SectionTitle>AI call identity</SectionTitle>
           <p style={hintStyle()}>
-            Who the voice agent says it is calling for. These prefill the pre-dial review screen;
-            everything stays editable per call there. Org overrides fall back to the global default.
+            These prefill the pre-dial review screen; everything stays editable per call there.
+            Org overrides fall back to the global default.
           </p>
           <CallConfigCard
             orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
@@ -129,18 +164,14 @@ export default async function AdminSettings() {
             byOrg={callByOrg}
           />
         </section>
+      )}
 
-        {/* New-submission email alerts */}
+      {tab === 'notifications' && (
         <section>
           <SectionTitle>New-submission email alerts</SectionTitle>
-          <p style={hintStyle()}>
-            Every new verification submission sends an email alert to these addresses
-            (sandbox API submissions excluded). Separate multiple addresses with commas.
-            Leave empty to reset to {DEFAULT_NOTIFICATION_EMAILS.join(', ')}.
-          </p>
-          <NotificationEmails current={notifyEmails} fallback={DEFAULT_NOTIFICATION_EMAILS.join(', ')} />
+          <NotificationEmails current={notifyEmails || DEFAULT_NOTIFICATION_EMAILS.join(', ')} />
         </section>
-      </div>
+      )}
     </div>
   )
 }
