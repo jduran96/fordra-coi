@@ -54,7 +54,7 @@ export default function ContactCheckTask({
           Check phone/email online
         </PendingButton>
         <span style={{ fontSize: 12, color: C.txt3 }}>
-          Runs a web search against the producer on the COI. Logs citing a checked value pick up its tag automatically.
+          Runs a web search against the producer on the COI.
         </span>
       </div>
       {error && <p style={{ fontSize: 13, color: C.error, margin: 0 }}>{error}</p>}

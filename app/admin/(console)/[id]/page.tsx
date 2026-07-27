@@ -23,9 +23,12 @@ import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
 import ActivityLog from './ActivityLog'
-import LiveCallPanel from './LiveCallPanel'
-import PublishCallButton from './PublishCallButton'
-import { ACTIVE_STATUSES, TERMINAL_STATUSES, dispositionLabel, type AiCall } from '@/lib/ai-calls'
+import AiCallLauncher from './AiCallLauncher'
+import RunAnalysisButton from './RunAnalysisButton'
+import { type AiCall } from '@/lib/ai-calls'
+import { getCallConfig } from '@/lib/config'
+import { draftFromVerification, CONTEXT_FIELD_NAMES, type CallContextFields } from '@/lib/call-config'
+import type { COIExtracted } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -127,15 +130,50 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   const coi = (v.coi_extracted ?? null) as COI | null
 
   // AI voice-agent calls for this verification (ai_calls, migration 0032):
-  // dispatch history, live panel for in-flight calls, publish-to-log state.
+  // the launcher's modal covers the whole lifecycle (draft prefill, live
+  // panel, finished call), the table lists dispatched calls.
   const { data: aiCallRows, error: aiCallsErr } = await supabase
     .from('ai_calls')
     .select('*')
     .eq('verification_id', id)
-    .neq('status', 'draft')
     .order('created_at', { ascending: false })
   if (aiCallsErr) throw new Error(`Could not load AI calls: ${aiCallsErr.message}`)
-  const aiCalls = (aiCallRows ?? []) as AiCall[]
+  const allAiRows = (aiCallRows ?? []) as AiCall[]
+  const aiCalls = allAiRows.filter(c => c.status !== 'draft')
+  const aiDraft = allAiRows.find(c => c.status === 'draft') ?? null
+
+  // Pre-dial prefill for the launcher modal: COI extraction + org call config,
+  // overridden by the saved draft's own edits (same merge the old /call page did).
+  const callConfig = await getCallConfig(v.org_id as string | null)
+  const callPrefill = draftFromVerification({
+    displayId: String(v.display_id ?? ''),
+    agentQuestions: v.agent_questions,
+    coi: coi as COIExtracted | null,
+    contactChecks: checks,
+    insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
+    config: callConfig,
+  })
+  const draftInput = (aiDraft?.draft_input ?? null) as (Partial<CallContextFields> & { details_json?: string }) | null
+  // Only known fields survive the merge: drafts saved before a schema change
+  // may carry retired keys that must not leak back into the payload.
+  const draftContext: Partial<CallContextFields> = {}
+  if (draftInput) {
+    for (const name of CONTEXT_FIELD_NAMES) {
+      const val = (draftInput as Record<string, unknown>)[name]
+      if (typeof val === 'string') (draftContext as Record<string, string>)[name] = val
+    }
+  }
+  const callContext: CallContextFields = draftInput ? { ...callPrefill.context, ...draftContext } : callPrefill.context
+  const callQuestions = aiDraft?.questions?.length ? aiDraft.questions : callPrefill.questions
+  const callDetails = (() => {
+    if (!draftInput?.details_json) return callPrefill.details
+    try {
+      const parsed = JSON.parse(draftInput.details_json)
+      return Array.isArray(parsed) ? parsed : callPrefill.details
+    } catch {
+      return callPrefill.details
+    }
+  })()
 
   // The review rows: prefer the admin's saved assessment, then the automated
   // analysis, then the org's parsed requirements so a fully manual review is
@@ -277,16 +315,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <SectionTitle>OCR Analysis</SectionTitle>
-            <form action={runExtraction.bind(null, id)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-              {/* Checked: re-extract the documents (incl. field locations for the
-                  customer report) without touching the current requirement checks
-                  or summary. Unchecked: regenerate them and drop the manual copy. */}
-              {v.coi_extracted && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: 'pointer', userSelect: 'none' }}>
-                  <input type="checkbox" name="keep_assessment" defaultChecked style={{ accentColor: C.txt }} />
-                  Keep requirement checks &amp; summary
-                </label>
-              )}
+            <form action={runExtraction.bind(null, id)} style={{ marginLeft: 'auto' }}>
               <PendingButton pendingLabel="Extracting… (can take a minute)" style={smallBtn()}>
                 {v.coi_extracted ? 'Re-run extraction' : 'Run extraction'}
               </PendingButton>
@@ -295,173 +324,123 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {!v.coi_extracted && <Muted>Not extracted yet. Run extraction to parse the COI & requirements.</Muted>}
             <JsonCard title="Requirements (normalized)" data={v.requirements_normalized} />
-            <JsonCard title="Coverage gap analysis" data={v.gap_analysis} />
             <JsonCard title="COI extracted" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} />
           </div>
         </section>
         ) },
 
-        { label: 'Calls', content: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-        {/* Who to call (from the COI) and what to ask them */}
+        { label: 'Outreach', content: (
         <section>
+          {/* Who to call (from the COI) + the contact web check, one section.
+              The check is the ONE place a contact web search runs (manually
+              triggered, never part of extraction — each run spends web
+              searches). Prefilled from the COI, values editable; every run is
+              kept as history and contact logs inherit tags by citing a
+              checked value. */}
           <SectionTitle>Call prep</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {coi
               ? <InsurerCard coi={coi} />
               : <Muted>Run extraction (OCR tab) to pull the insurer contact off the COI.</Muted>}
-            <QuestionsCard questions={(Array.isArray(v.agent_questions) ? v.agent_questions : []) as string[]} extracted={!!v.coi_extracted} />
-          </div>
-        </section>
-
-        {/* Agent contact check: the ONE place a contact web search runs
-            (manually triggered, never part of extraction — each run spends
-            web searches). Prefilled from the COI, values editable. Every run
-            is kept as history; contact logs below inherit their tags by
-            citing a checked value. */}
-        <section>
-          <SectionTitle>Agent contact check</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-            {!v.coi_extracted ? (
+            {!!v.coi_extracted && (
               <div style={card()}>
-                <Muted>Run extraction first; the check searches the producer named on the COI.</Muted>
-              </div>
-            ) : (
-              <>
+                <SectionTitle small>Contact check</SectionTitle>
                 {!caseIsClosed && (
-                  <div style={card()}>
-                    <ContactCheckTask
-                      defaultPhone={contactValue(coi?.insurance_company_phone)}
-                      defaultEmail={contactValue(coi?.insurance_company_email)}
-                      runAction={runOnlineContactCheck.bind(null, id)}
-                    />
+                  <ContactCheckTask
+                    defaultPhone={contactValue(coi?.insurance_company_phone)}
+                    defaultEmail={contactValue(coi?.insurance_company_email)}
+                    runAction={runOnlineContactCheck.bind(null, id)}
+                  />
+                )}
+                {checks.length > 0 && (
+                  <div style={{ marginTop: 12, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          <th style={checkTh}>Checked</th><th style={checkTh}>Phone</th><th style={checkTh}>Email</th><th style={checkTh}>Verdict</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {checks.slice().reverse().map(e => (
+                          <tr key={e.checked_at} style={{ borderTop: `1px solid ${C.border}` }}>
+                            <td style={{ ...checkTd, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(e.checked_at)}</td>
+                            <td style={checkTd}>{contactValue(e.phone) ? <>{contactValue(e.phone)}<NoteStatusChip status={e.phone_status} /></> : '—'}</td>
+                            <td style={{ ...checkTd, overflowWrap: 'anywhere' }}>{contactValue(e.email) ? <>{contactValue(e.email)}<NoteStatusChip status={e.email_status} /></> : '—'}</td>
+                            <td style={checkTd}>{e.legitimacy ? <LegitimacyChip verdict={e.legitimacy} /> : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-                {checks.length === 0 ? (
-                  <Muted>No online checks yet. A checked phone/email tags every contact log that cites it.</Muted>
-                ) : (
-                  <>
-                    <CheckEntryCard entry={checks[checks.length - 1]}
-                      controls={!caseIsClosed && (
-                        /* Keyed by content: remount on fresh data after a save
-                           (React 19 stale-defaultValue workaround). */
-                        <NoteCheckControls
-                          key={JSON.stringify(checks[checks.length - 1])}
-                          check={checks[checks.length - 1]}
-                          saveAction={saveContactCheckEdit.bind(null, id, checks[checks.length - 1].checked_at)}
-                        />
-                      )} />
-                    {checks.length > 1 && (
-                      <details>
-                        <summary style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>
-                          Previous checks ({checks.length - 1})
-                        </summary>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                          {checks.slice(0, -1).reverse().map(e => (
-                            <CheckEntryCard key={e.checked_at} entry={e}
-                              controls={!caseIsClosed && (
-                                <NoteCheckControls
-                                  key={JSON.stringify(e)}
-                                  check={e}
-                                  saveAction={saveContactCheckEdit.bind(null, id, e.checked_at)}
-                                />
-                              )} />
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* AI verification calls: pre-dial review gate + dispatch history.
-            Each dispatched row keeps the exact approved payload as the audit
-            record; publishing copies summary + transcript into the contact
-            log below as an ordinary editable note. */}
-        <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <SectionTitle>AI Calls</SectionTitle>
-            {!caseIsClosed && (
-              <Link href={`/admin/${id}/call`} style={{ ...smallBtn(), marginLeft: 'auto', textDecoration: 'none', display: 'inline-block' }}>
-                {aiCalls.some(c => ACTIVE_STATUSES.includes(c.status)) ? 'View live call' : 'Review and dispatch AI call'}
-              </Link>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-            {aiCalls.length === 0 && <Muted>No AI calls yet. The review screen prefills the number and questions from the extraction.</Muted>}
-            {aiCalls.map(call => {
-              const active = ACTIVE_STATUSES.includes(call.status)
-              const terminal = TERMINAL_STATUSES.includes(call.status)
-              const summary = (call.call_analysis?.call_summary ?? '').trim()
-              const pillColor = active ? C.warn
-                : call.status === 'completed' ? C.ok
-                : call.status === 'approved' ? C.neutral
-                : C.error
-              const pillLabel = call.status === 'in_progress' ? 'On the call'
-                : call.status === 'dispatched' ? 'Ringing'
-                : call.status.charAt(0).toUpperCase() + call.status.slice(1)
-              return (
-                <div key={call.id} style={card()}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: pillColor, background: `color-mix(in oklch, ${pillColor} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>
-                      {pillLabel}
-                    </span>
-                    {call.to_number && <span style={{ fontFamily: C.mono, fontSize: 13, color: C.txt }}>{call.to_number}</span>}
-                    <span style={{ fontSize: 13, color: C.txt3 }}>{pacificDateTime(call.approved_at ?? call.created_at)}</span>
-                    {call.approved_by && <span style={{ fontSize: 12.5, color: C.txt3 }}>approved by {call.approved_by}</span>}
-                    {terminal && dispositionLabel(call) && (
-                      <span style={{ fontSize: 12.5, color: C.txt2 }}>{dispositionLabel(call)}</span>
-                    )}
-                    {typeof call.duration_ms === 'number' && call.duration_ms > 0 && (
-                      <span style={{ fontSize: 12.5, color: C.txt3, fontFamily: C.mono }}>
-                        {Math.floor(call.duration_ms / 60000)}:{String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}
-                      </span>
-                    )}
-                  </div>
-                  {call.error && <p style={{ fontSize: 13, color: C.error, margin: '10px 0 0' }}>{call.error}</p>}
-                  {active && (
+                {/* The latest run's write-up + sources, editable in place
+                    (statuses/blurb edits propagate to logs citing the value).
+                    Keyed by content: remount on fresh data after a save
+                    (React 19 stale-defaultValue workaround). */}
+                {checks.length > 0 && (() => {
+                  const latest = checks[checks.length - 1]
+                  return (
                     <div style={{ marginTop: 12 }}>
-                      <LiveCallPanel
-                        verificationId={id}
-                        aiCallId={call.id}
-                        initial={{ status: call.status, transcript: call.transcript ?? '', durationMs: call.duration_ms, startedAt: call.started_at, error: call.error }}
-                      />
-                    </div>
-                  )}
-                  {!active && summary && (
-                    <p style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, margin: '10px 0 0', whiteSpace: 'pre-wrap' }}>{summary}</p>
-                  )}
-                  {!active && call.transcript?.trim() && (
-                    <details style={{ marginTop: 10 }}>
-                      <summary style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, cursor: 'pointer' }}>View transcript</summary>
-                      <div style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere', marginTop: 8, paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>{call.transcript.trim()}</div>
-                    </details>
-                  )}
-                  {terminal && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
-                      {call.recording_url && (
-                        <a href={call.recording_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: C.txt2 }}>Recording</a>
+                      {latest.blurb && (
+                        <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: 0 }}>{latest.blurb}</p>
                       )}
-                      {call.published_note_at ? (
-                        <span style={{ fontSize: 12.5, color: C.txt3 }}>Published to contact log · {pacificDateTime(call.published_note_at)}</span>
-                      ) : (!caseIsClosed && (call.transcript || summary) && (
-                        <PublishCallButton verificationId={id} aiCallId={call.id} />
-                      ))}
+                      <p style={{ fontSize: 12, color: C.txt3, margin: '6px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                        {latest.sources.length > 0 && (
+                          <>Sources: {latest.sources.map((s, i) => (
+                            <span key={i}>{i > 0 && ' · '}<a href={s} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(s)}</a></span>
+                          ))} · </>
+                        )}
+                        latest check {pacificDateTime(latest.checked_at)}
+                        {latest.edited_at && <> · edited {pacificDateTime(latest.edited_at)}</>}
+                        {latest.usage && <> · {usageLine(latest.usage)}</>}
+                      </p>
+                      {!caseIsClosed && (
+                        <NoteCheckControls
+                          key={JSON.stringify(latest)}
+                          check={latest}
+                          saveAction={saveContactCheckEdit.bind(null, id, latest.checked_at)}
+                        />
+                      )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+        </section>
+        ) },
+
+        { label: 'AI', content: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        {/* AI verification calls: the launcher modal is the whole lifecycle
+            (pre-dial review gate → live call + kill switch → summary/
+            transcript + add-to-contact-log); the table is the audit history. */}
+        <section>
+          <SectionTitle>AI Calls</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <AiCallLauncher
+              verificationId={id}
+              context={callContext}
+              questions={callQuestions}
+              details={callDetails}
+              numbers={callPrefill.numbers}
+              coiPhone={coi?.insurance_company_phone ?? ''}
+              draftId={aiDraft?.id ?? null}
+              caseIsClosed={caseIsClosed}
+              calls={aiCalls}
+            />
           </div>
         </section>
 
-        {/* Insurer contact log (calls, emails, texts) */}
+        {/* Insurer contact log (calls, emails, texts): input first, entries below. */}
         <section>
           <SectionTitle>Insurer Contact Log</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {caseIsClosed ? (
+              <Muted>This case is closed. Click Edit Status below to reopen it before adding contact logs.</Muted>
+            ) : (
+              <CallNoteForm action={saveCallNote.bind(null, id)} />
+            )}
             {notes.length === 0 && <Muted>No contact logs yet.</Muted>}
             {/* One card per contact: who/when/how header on top, the summary
                 and transcript spread across the full width beneath — long
@@ -543,23 +522,22 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 )}
               </div>
             )})}
-            {caseIsClosed ? (
-              <Muted>This case is closed. Click Edit Status below to reopen it before adding contact logs.</Muted>
-            ) : (
-              <CallNoteForm action={saveCallNote.bind(null, id)} />
-            )}
           </div>
         </section>
         </div>
         ) },
 
         { label: 'Analysis', content: (
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <SectionTitle>Assessment</SectionTitle>
-          <p style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>
-            Set a verdict and evidence for each requirement, write the summary, then save a draft
-            or publish. Publishing releases exactly this assessment to the customer.
-          </p>
+          {/* Generates verdicts + draft summary from the OCR extraction AND
+              the contact log — deliberately its own step, never part of Run
+              extraction. Each run replaces the draft below. */}
+          {!caseIsClosed && (
+            <span style={{ marginLeft: 'auto' }}>
+              <RunAnalysisButton verificationId={id} hasDraft={!!v.final_report || !!v.gap_analysis} />
+            </span>
+          )}
         </div>
         ) },
       ]}
@@ -585,24 +563,16 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   )
 }
 
+/** Who to call: the producer (agency) named on the COI. Everything else the
+ *  COI says lives on the OCR tab; this card is only the outreach target. */
 function InsurerCard({ coi }: { coi: COI }) {
   const facts: [string, string | undefined][] = [
-    ['Policyholder', coi.named_insured],
-    ['Policyholder address', coi.named_insured_address],
-    ['Policyholder phone', coi.named_insured_phone],
-    ['Policyholder email', coi.named_insured_email],
-    ['USDOT number', coi.usdot_number],
-    ['MC number', coi.mc_number],
+    ['Producer', coi.producer],
+    ['Producer address', coi.insurance_company_address],
+    ['Producer phone', coi.insurance_company_phone],
+    ['Producer email', coi.insurance_company_email],
+    ['Contact name', coi.insurance_company_contact],
     ['Insurance company(s)', coi.insurance_company],
-    ['Insurer contact name(s)', coi.insurance_company_contact],
-    ['Producer (agency)', coi.producer],
-    ['Address', coi.insurance_company_address],
-    ['Phone', coi.insurance_company_phone],
-    ['Email', coi.insurance_company_email],
-    ['Certificate holder', coi.certificate_holder],
-    ['Additional insured(s)', coi.additional_insured],
-    ['Loss payee(s)', coi.loss_payee],
-    ['Other named parties', coi.other_named_parties],
   ]
   const shown = facts.filter(([, val]) => !!val?.trim())
   if (!shown.length) return null
@@ -614,79 +584,6 @@ function InsurerCard({ coi }: { coi: COI }) {
           <FactRow key={label} label={label} value={val!} />
         ))}
       </dl>
-    </div>
-  )
-}
-
-/**
- * One run from the online-check history: the values that were checked, their
- * web verdicts, the customer-facing blurb, and sources. The values render as
- * plain selectable text so the admin can copy-paste them straight into the
- * contact log dialog — a pasted value inherits this run's tag automatically.
- */
-function CheckEntryCard({ entry, controls }: { entry: ContactCheckEntry; controls?: React.ReactNode }) {
-  const phone = contactValue(entry.phone)
-  const email = contactValue(entry.email)
-  return (
-    <div style={card()}>
-      {entry.legitimacy && <LegitimacyChip verdict={entry.legitimacy} />}
-      <p style={{ fontSize: 13, color: C.txt3, margin: entry.legitimacy ? '8px 0 0' : 0 }}>
-        {phone && (
-          <span>Phone: <span style={{ color: C.txt, userSelect: 'all' as const }}>{phone}</span><NoteStatusChip status={entry.phone_status} /></span>
-        )}
-        {phone && email && <span style={{ margin: '0 8px' }}>|</span>}
-        {email && (
-          <span>Email: <span style={{ color: C.txt, userSelect: 'all' as const, overflowWrap: 'anywhere' }}>{email}</span><NoteStatusChip status={entry.email_status} /></span>
-        )}
-      </p>
-      {/* Agency-level findings exist only on runs of the two-pronged check;
-          older history entries simply skip these rows. */}
-      {(entry.website_status || entry.external_confirmation) && (
-        <p style={{ fontSize: 13, color: C.txt3, margin: '6px 0 0' }}>
-          {entry.website_status && (
-            <span>
-              Their website:{' '}
-              <span style={{ color: C.txt }}>
-                {entry.website_status === 'aligns' ? 'matches the logged info'
-                  : entry.website_status === 'differs' ? 'shows different info'
-                  : 'not found'}
-              </span>
-              {entry.website_url && (
-                <>{' '}(<a href={entry.website_url} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(entry.website_url)}</a>)</>
-              )}
-            </span>
-          )}
-          {entry.website_status && entry.external_confirmation && <span style={{ margin: '0 8px' }}>|</span>}
-          {entry.external_confirmation && (
-            <span>
-              Outside source:{' '}
-              <span style={{ color: C.txt }}>
-                {entry.external_confirmation === 'confirmed' ? 'confirmed name + contact' : 'no confirmation found'}
-              </span>
-            </span>
-          )}
-        </p>
-      )}
-      {entry.blurb && (
-        <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '8px 0 0' }}>{entry.blurb}</p>
-      )}
-      <p style={{ fontSize: 12, color: C.txt3, margin: '6px 0 0', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
-        {entry.sources.length > 0 && (
-          <>Sources:{' '}
-            {entry.sources.map((s, i) => (
-              <span key={i}>
-                {i > 0 && ' · '}
-                <a href={s} target="_blank" rel="noreferrer" style={{ color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{hostOf(s)}</a>
-              </span>
-            ))}
-            {' · '}
-          </>
-        )}
-        checked {pacificDateTime(entry.checked_at)}
-        {entry.edited_at && <> · edited {pacificDateTime(entry.edited_at)}</>}
-        {entry.usage && <> · {usageLine(entry.usage)}</>}
-      </p>
-      {controls}
     </div>
   )
 }
@@ -793,26 +690,6 @@ function groupCoiExtracted(coi: Record<string, unknown>) {
   return out
 }
 
-/** Call prep produced by extraction: what to ask the insurer to resolve the gaps. */
-function QuestionsCard({ questions, extracted }: { questions: string[]; extracted: boolean }) {
-  return (
-    <div style={card()}>
-      <SectionTitle small>Questions for the insurer</SectionTitle>
-      {questions.length === 0 ? (
-        <Muted>{extracted
-          ? 'None generated. Re-run extraction to generate call questions from the gap analysis.'
-          : 'Run extraction first; questions are generated from the gap analysis.'}</Muted>
-      ) : (
-        <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {questions.map((q, i) => (
-            <li key={i} style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.55 }}>{q}</li>
-          ))}
-        </ol>
-      )}
-    </div>
-  )
-}
-
 function JsonCard({ title, data }: { title: string; data: unknown }) {
   return (
     <div style={card()}>
@@ -832,5 +709,6 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <p style={{ color: C.txt3, fontSize: 13.5, margin: 0 }}>{children}</p>
 }
 const card = () => ({ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 })
+const checkTh: React.CSSProperties = { padding: '8px 12px', fontWeight: 600 }
+const checkTd: React.CSSProperties = { padding: '8px 12px', verticalAlign: 'middle' }
 const smallBtn = () => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: 'pointer' })
-const primaryBtn = () => ({ padding: '8px 20px', background: C.earthy, color: C.onDark, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer' })

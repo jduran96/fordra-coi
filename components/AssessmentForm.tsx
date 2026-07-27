@@ -75,6 +75,20 @@ export default function AssessmentForm({
     <form action={submit} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <input type="hidden" name="row_count" value={rows.length} />
       <div style={{ display: bodyVisible ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
+      {/* Summary first (owner decision 2026-07-27), the per-requirement
+          verdicts follow under their own heading. */}
+      <div>
+        <h3 style={heading}>Summary</h3>
+        <textarea
+          name="narrative_summary"
+          defaultValue={summaryDefault}
+          rows={4}
+          placeholder="Overall verdict in plain language: what passed, what did not, what remains unconfirmed…"
+          disabled={closed}
+          style={{ ...input(), width: '100%', resize: 'vertical' }}
+        />
+      </div>
+      <h3 style={{ ...heading, margin: 0 }}>Gap Analysis</h3>
       {rows.map((item, i) => (
         <div key={item.key} style={{ paddingBottom: 14, borderBottom: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input type="hidden" name={`req_${i}_requirement`} value={JSON.stringify(item.requirement)} />
@@ -121,17 +135,6 @@ export default function AssessmentForm({
         </div>
       ))}
       {!closed && <button type="button" onClick={addRow} style={{ ...smallBtn(), alignSelf: 'flex-start' }}>+ Add requirement</button>}
-      <div>
-        <h3 style={{ fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Summary</h3>
-        <textarea
-          name="narrative_summary"
-          defaultValue={summaryDefault}
-          rows={4}
-          placeholder="Overall verdict in plain language: what passed, what did not, what remains unconfirmed…"
-          disabled={closed}
-          style={{ ...input(), width: '100%', resize: 'vertical' }}
-        />
-      </div>
       </div>
       {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
       {closed ? (
@@ -234,6 +237,7 @@ function NotifyUserChoice({ submitterEmail, slackNotifiable }: { submitterEmail:
   )
 }
 
+const heading: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }
 const input = () => ({ padding: '9px 11px', fontSize: 14, fontFamily: C.sans, border: `1px solid ${C.border}`, borderRadius: 7, outline: 'none', background: C.surface, color: C.txt, boxSizing: 'border-box' as const })
 const smallBtn = () => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: 'pointer' })
 const primaryBtn = () => ({ padding: '8px 20px', background: C.earthy, color: C.onDark, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer' })

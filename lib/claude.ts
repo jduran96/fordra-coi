@@ -341,22 +341,21 @@ export async function extractCOIFields(
   return claudeJSON<COIExtracted>(system, messages, 4096);
 }
 
-// ─── 4. Gap analysis ─────────────────────────────────────────────────────────
+// ─── 4. Assessment (verdicts + summary) ──────────────────────────────────────
 
-export async function analyzeGaps(
-  requirements: Requirement[],
-  extracted: COIExtracted,
-): Promise<GapAnalysis> {
-  const allRequirements = requirements
-  const system = `You are a COI compliance analyst for a trucking freight factoring company.
-Today's date is ${new Date().toISOString().slice(0, 10)} — use it when judging whether policy dates are current.
+/** Default system prompt for the Analysis-tab assessment; admin-editable on
+ *  /admin/settings (app_config key prompt_assessment). The current date is
+ *  appended in code so the stored override never goes stale. */
+export const DEFAULT_ASSESSMENT_PROMPT = `You are a COI compliance analyst for a company that verifies certificates of insurance.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
-- "met": The COI clearly satisfies the requirement with explicit evidence.
-- "not_met": The COI clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage).
-- "uncertain": The COI has relevant but ambiguous information, OCR could not confirm, or the requirement depends on endorsements not visible.
-Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...] }
-Each item: { "requirement": <requirement object>, "status": string, "evidence": string }
-evidence: ONE plain-English sentence, second person, under 25 words. No raw field names, no jargon.
+- "met": The evidence clearly satisfies the requirement.
+- "not_met": The evidence clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage).
+- "uncertain": The evidence is relevant but ambiguous, OCR could not confirm, or the requirement depends on endorsements not visible.
+Evidence comes from TWO sources: the extracted certificate, and the insurer contact log (the verifier's phone calls and emails with the insurance agent, when provided). An insurer's explicit confirmation or contradiction in the contact log outweighs what the certificate alone shows: it can move a requirement to met or not_met. When a verdict rests on the contact log, say so in the evidence sentence and set "insurer_confirmation" on that item to "call" or "email" (matching how the insurer was reached). Never invent contact-log evidence; omit insurer_confirmation when the log says nothing about that requirement.
+Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...], "narrative_summary": string }
+Each item: { "requirement": <requirement object>, "status": string, "evidence": string, "insurer_confirmation"?: "call" | "email" }
+narrative_summary: TWO sentences maximum, second person. State the overall verdict, then note every requirement that is still not met or unresolved — including any policyholder-name mismatch. Do not omit a failed or unconfirmed check, and do not call something resolved unless the evidence says so. No lists, no jargon.
+evidence: EXACTLY ONE plain-English sentence, second person, under 25 words. Never two sentences. No raw field names, no jargon.
 CRITICAL — the evidence MUST be consistent with the status; never contradict it or hedge:
 - status "met": affirm satisfaction plainly, e.g. "You require $500k CGL; the policy provides $1,000,000 per occurrence, which satisfies it." Do NOT raise doubts, do NOT mention unresolved concerns, do NOT defer to any "uncertain" note, do NOT trail off.
 - status "not_met": state plainly what falls short, e.g. "You require $1M cargo; the policy shows only $100,000."
@@ -367,15 +366,39 @@ Physical damage insured amount: COIs often state no explicit limit on the physic
 Some requirements are qualitative conditions (no minimum_limit) whose pass criteria are spelled out in their "notes" field — judge those strictly by the notes.
 Each requirement must appear EXACTLY ONCE across the three arrays. If the evidence is mixed (e.g. one coverage is active and another is expired), choose the single most severe status (not_met over uncertain over met) and explain the split in the evidence sentence. Never place the same requirement in two arrays.`;
 
+/**
+ * Judge the COI against the requirements using everything gathered so far:
+ * the extracted certificate AND the admin's insurer contact log (calls,
+ * emails). Run on demand from the Analysis tab — never as part of extraction
+ * (owner decision 2026-07-27): extraction only gathers context; this produces
+ * the verdicts + draft summary the admin edits and publishes.
+ */
+export async function assessVerification(
+  requirements: Requirement[],
+  extracted: COIExtracted,
+  contactLog: string,
+  promptOverride?: string,
+): Promise<FinalReport> {
+  const allRequirements = requirements
+  const system = `${(promptOverride?.trim() || DEFAULT_ASSESSMENT_PROMPT)}
+Today's date is ${new Date().toISOString().slice(0, 10)} — use it when judging whether policy dates are current.`;
+
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Requirements:\n${JSON.stringify(allRequirements, null, 2)}\n\nExtracted COI data:\n${JSON.stringify(extracted, null, 2)}\n\nClassify each requirement now.`,
+      content: [
+        `Requirements:\n${JSON.stringify(allRequirements, null, 2)}`,
+        `Extracted COI data:\n${JSON.stringify(extracted, null, 2)}`,
+        contactLog.trim()
+          ? `Insurer contact log (the verifier's calls/emails with the insurance agent, oldest first):\n<contact_log>\n${contactLog.trim()}\n</contact_log>`
+          : 'No insurer contact log entries yet: judge from the certificate alone.',
+        'Classify each requirement and write the narrative_summary now.',
+      ].join('\n\n'),
     },
   ];
 
-  const gap = await claudeJSON<GapAnalysis>(system, messages, 2048);
-  return dedupeGapAnalysis(gap);
+  const report = await claudeJSON<FinalReport>(system, messages, 3072);
+  return { ...dedupeGapAnalysis(report), narrative_summary: report.narrative_summary ?? '' };
 }
 
 /**
@@ -586,48 +609,17 @@ Output rules:
   }
 }
 
-// ─── 5. Generate agent questions ──────────────────────────────────────────────
-
-export async function generateAgentQuestions(gaps: GapAnalysis, namedInsured?: string): Promise<string[]> {
-  const mandatory = [
-    `Is the COI for ${namedInsured || 'the carrier'} still active and in force?`,
-    'Can you list all cargo types and situations covered under this policy?',
-  ];
-
-  if (!gaps.uncertain.length) return mandatory;
-
-  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company.
-The goal is to confirm coverage items that could not be determined from the Certificate of Insurance alone.
-Each question must be:
-- 20 words or fewer (fewer is better)
-- Answerable by an insurance company agent (not the trucking company or insured) — do NOT ask about the carrier's operations, equipment, routes, or business practices
-- About insurance coverage, policy terms, endorsements, limits, or effective dates only
-- Specific and answerable with a yes/no or a single concrete value
-- Reference the coverage type or policy by name if known
-Return ONLY a valid JSON array of question strings. Maximum 6 questions. No prose.
-Before returning, review your list: remove any duplicate or near-duplicate questions, remove any question an insurance agent cannot answer, then finalize at most 6 questions.`;
-
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Uncertain items that require agent confirmation:\n${JSON.stringify(gaps.uncertain, null, 2)}\n\nGenerate concise questions to resolve these items only.`,
-    },
-  ];
-
-  const generated = await claudeJSON<string[]>(system, messages, 1024);
-  return [...mandatory, ...generated];
-}
+// ─── 5. Insurer call questions ───────────────────────────────────────────────
 
 /**
- * Admin-pipeline variant: one question per requirement in the org's standards
- * (not just the uncertain ones), each worded around what OCR already read off
- * the COI (e.g. "The certificate shows X as the named insured — are there
- * other insured parties?"). Used only by runExtractionPipeline.
- * (generateAgentQuestions above is the legacy demo variant, kept for reference.)
+ * One question per requirement in the org's standards (not just the uncertain
+ * ones), each worded around what OCR already read off the COI (e.g. "The
+ * certificate shows X as the named insured — are there other insured
+ * parties?"). Used only by runExtractionPipeline; the questions prefill the
+ * AI call's question list.
  */
 export async function generateInsurerQuestions(
   requirements: Requirement[],
-  gaps: GapAnalysis | null,
   coi: COIExtracted | null,
 ): Promise<string[]> {
   const mandatory = [
@@ -635,83 +627,39 @@ export async function generateInsurerQuestions(
   ];
   if (!requirements.length) return mandatory;
 
-  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to verify a Certificate of Insurance against a customer's insurance requirements.
+  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to independently verify a Certificate of Insurance against a customer's insurance standards.
 
-Draft questions in the same order the requirements are given, covering every requirement — including ones the certificate appears to satisfy (those become confirmation questions). Usually one question per requirement; a requirement that bundles several facts gets one question per fact.
+The questions come from the STANDARDS, and only the standards: every detail the standards require gets confirmed with the insurer, in the order the standards are given — including details the certificate already appears to satisfy. The insurer's answers are compared against the certificate AFTERWARDS, so the questions must be independent of what the certificate shows: never assume, mention, or probe anything as present, absent, or mismatched on the certificate, and never reveal the required threshold.
 
-Ground each question in what was already read from the certificate:
-- If the certificate shows a relevant value, reference it ("The certificate shows $1,000,000 per occurrence for Auto Liability — is that the current limit?").
-- If a value conflicts with the requirement, name what was seen and probe the discrepancy ("We see ACME LLC as the named insured — are there other insured parties on the policy?").
-- If the certificate is silent on the requirement, ask directly whether the policy includes it.
+Phrase every question OPEN, so the agent states the value themselves:
+- "What is the per-occurrence limit on the Automobile Liability policy?" — NOT "Is the limit $1,000,000?" and NOT "The certificate shows $1,000,000 — is that current?"
+- "Who is the named insured on the policy?" — NOT "Is ACME LLC the named insured?"
+- Yes/no phrasing is fine only for existence checks the standard demands ("Is a loss payee endorsement on the policy?").
+
+Certificate details may appear ONLY to identify what you are asking about — a coverage name, a specific vehicle or VIN the standard concerns, a policy number — never as the answer.
 
 Each question must be:
 - 25 words or fewer
 - ATOMIC: exactly one fact per question, answerable with a yes/no or a
   single concrete value. Never join two checks with "and" (loss payee
   and additional insured are TWO questions; limit and deductible are
-  TWO questions). If a requirement bundles several facts, split it into
-  one question per fact, keeping requirement order.
+  TWO questions). If a standard bundles several facts, split it into
+  one question per fact, keeping standard order.
 - Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
 - About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
 
-Return ONLY a valid JSON array of question strings, in requirement order. No prose.`;
+Return ONLY a valid JSON array of question strings, in standard order. No prose.`;
 
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
       content: [
-        `Customer requirements (one question per row, in order):\n${JSON.stringify(requirements, null, 2)}`,
-        gaps ? `Automated comparison of the certificate against these requirements (status + evidence per requirement):\n${JSON.stringify(gaps, null, 2)}` : '',
-        coi ? `Fields read from the certificate:\n${JSON.stringify(coi, null, 2)}` : '',
+        `Customer insurance standards (one or more questions per row, in order):\n${JSON.stringify(requirements, null, 2)}`,
+        coi ? `Fields read from the certificate (for identifying coverages/assets only — never reveal values as answers):\n${JSON.stringify(coi, null, 2)}` : '',
       ].filter(Boolean).join('\n\n'),
     },
   ];
 
   const generated = await claudeJSON<string[]>(system, messages, 2048);
   return [...mandatory, ...generated];
-}
-
-// ─── 6. Parse call transcript ─────────────────────────────────────────────────
-
-export async function parseTranscript(
-  transcript: string,
-  questions: string[],
-): Promise<Record<string, string>> {
-  const system = `You are parsing a phone call transcript between a COI verifier and an insurance agent.
-Extract the agent's answer to each question asked during the call.
-Return ONLY a valid JSON object where each key is the exact question text and the value is the agent's answer.
-If a question was not addressed, set its value to "Not addressed in call."
-If the agent was uncertain, capture their exact words.`;
-
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Questions asked:\n${JSON.stringify(questions, null, 2)}\n\nCall transcript:\n<transcript>\n${transcript}\n</transcript>\n\nExtract each answer now.`,
-    },
-  ];
-
-  return claudeJSON<Record<string, string>>(system, messages, 2048);
-}
-
-// ─── 7. Generate final report ─────────────────────────────────────────────────
-
-export async function generateFinalReport(
-  gapAnalysis: GapAnalysis,
-  callAnswers: Record<string, string>,
-): Promise<FinalReport> {
-  const system = `You are writing a final insurance compliance report for a freight factoring company.
-You have a gap analysis from a COI review and answers obtained from a follow-up call with the insurance agent.
-Update the status of previously uncertain or unmet items using the call answers.
-Write a narrative_summary of 2–4 sentences (under ~55 words). State the overall verdict, then note EVERY requirement that is still not met or unresolved after the call — including any policyholder-name mismatch. Do not omit a failed or unconfirmed check, and do not call something resolved unless the evidence says so. No lists, no jargon.
-Return ONLY valid JSON: { "met": [...], "not_met": [...], "uncertain": [...], "narrative_summary": string }
-Each item has the same shape as the input gap items. Update the "evidence" field to reflect the call answers where applicable.`;
-
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Original gap analysis:\n${JSON.stringify(gapAnalysis, null, 2)}\n\nAnswers from insurance agent call:\n${JSON.stringify(callAnswers, null, 2)}\n\nProduce the final report.`,
-    },
-  ];
-
-  return claudeJSON<FinalReport>(system, messages, 2048);
 }

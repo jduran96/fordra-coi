@@ -6,6 +6,7 @@ import {
   DEFAULT_COI_EXTRACTION_PROMPT,
   DEFAULT_DOC_TEXT_PROMPT,
   DEFAULT_REQUIREMENTS_PARSING_PROMPT,
+  DEFAULT_ASSESSMENT_PROMPT,
 } from '@/lib/claude'
 import { STARTER_REQUIREMENTS, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
@@ -85,14 +86,18 @@ export default async function AdminSettings({ searchParams }: {
       value: cfg.promptRequirementsParsing,
       def: DEFAULT_REQUIREMENTS_PARSING_PROMPT,
     },
+    {
+      which: 'assessment',
+      title: 'Analysis (verdicts + summary)',
+      hint: 'System prompt for the Analysis tab\'s Run analysis button: judges each requirement from the extracted COI and the contact log, and writes the draft summary. Keep the JSON output section intact.',
+      value: cfg.promptAssessment,
+      def: DEFAULT_ASSESSMENT_PROMPT,
+    },
   ]
 
   return (
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
-      <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Settings</h1>
-      <p style={{ color: C.txt2, fontSize: 14, margin: '4px 0 20px', lineHeight: 1.6 }}>
-        Runtime settings for the verification pipeline. Changes apply to the next extraction run.
-      </p>
+      <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: '0 0 20px', fontWeight: 400 }}>Settings</h1>
 
       {/* Same segmented control as /app/settings and the /app/new mode picker. */}
       <nav style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}`, marginBottom: 26 }}>

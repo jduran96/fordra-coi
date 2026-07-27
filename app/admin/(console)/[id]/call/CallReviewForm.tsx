@@ -26,6 +26,9 @@ interface Props {
   coiPhone: string
   draftId: string | null
   caseIsClosed: boolean
+  /** Called with the ai_calls row id once a dispatch succeeds (the launcher
+   *  modal advances to the live-call view). */
+  onDispatched?: (callId: string) => void
 }
 
 // Identity: who the agent is. Deal parties (certificate holder, loss payee)
@@ -51,7 +54,7 @@ const LOOKUP_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'agent_name', label: 'Agent name' },
 ]
 
-export default function CallReviewForm({ verificationId, context: initialContext, questions: initialQuestions, details: initialDetails, numbers, coiPhone, draftId, caseIsClosed }: Props) {
+export default function CallReviewForm({ verificationId, context: initialContext, questions: initialQuestions, details: initialDetails, numbers, coiPhone, draftId, caseIsClosed, onDispatched }: Props) {
   const router = useRouter()
   const [context, setContext] = useState<CallContextFields>(initialContext)
   const [questions, setQuestions] = useState<AiCallQuestion[]>(initialQuestions)
@@ -306,7 +309,20 @@ export default function CallReviewForm({ verificationId, context: initialContext
           <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: C.txt2 }}>This places a real, billed call to <span style={{ fontFamily: C.mono }}>{e164}</span>.</span>
             <button type="button" disabled={pending}
-              onClick={() => { setConfirming(false); run(() => approveAndDispatchCall(verificationId, buildFormData()), 'Call dispatched.') }}
+              onClick={() => {
+                setConfirming(false)
+                setMessage(null)
+                startTransition(async () => {
+                  const res = await approveAndDispatchCall(verificationId, buildFormData())
+                  if (res && 'error' in res && res.error) {
+                    setMessage({ kind: 'error', text: res.error })
+                  } else {
+                    setMessage({ kind: 'ok', text: 'Call dispatched.' })
+                    router.refresh()
+                    if (res && 'callId' in res && res.callId) onDispatched?.(res.callId)
+                  }
+                })
+              }}
               style={primaryBtn(pending)}>
               {pending ? 'Dispatching...' : 'Confirm dispatch'}
             </button>

@@ -1,8 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, analyzeGaps, generateInsurerQuestions } from '@/lib/claude'
+import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
-import type { GapAnalysis, Requirement } from '@/lib/types'
+import type { ContactNote, FinalReport, GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -20,25 +20,6 @@ async function docToText(bytes: ArrayBuffer, mime: string, prompt?: string): Pro
     return value.trim()
   }
   return extractTextFromFile(Buffer.from(bytes).toString('base64'), mime, prompt)
-}
-
-/**
- * What a re-run does to the verification's assessment (the requirement-check
- * verdicts + summary the customer reads):
- * - 'refresh' (default): regenerate gap_analysis + insurer questions; the
- *   admin's final_report is left alone. Original behavior.
- * - 'keep': re-extract the documents (COI fields incl. locations, standards
- *   text) but do NOT touch an existing assessment — gap_analysis, insurer
- *   questions, and final_report all stay. When there is no assessment yet,
- *   behaves like 'refresh' (there is nothing to keep).
- * - 'overwrite': regenerate gap_analysis + questions AND clear the admin's
- *   final_report, so the fresh automated verdicts become the visible copy.
- */
-export type AssessmentMode = 'refresh' | 'keep' | 'overwrite'
-
-const hasItems = (g: unknown): boolean => {
-  const gg = g as { met?: unknown[]; not_met?: unknown[]; uncertain?: unknown[] } | null
-  return !!gg && [(gg.met ?? []), (gg.not_met ?? []), (gg.uncertain ?? [])].some(a => Array.isArray(a) && a.length > 0)
 }
 
 /**
@@ -69,12 +50,11 @@ function ensureAllRequirementsJudged(gap: GapAnalysis, requirements: Requirement
  *  finished extraction, so it degrades to null rather than throwing. */
 async function questionsFor(
   requirements: Requirement[],
-  gap: GapAnalysis | null,
   coiExtracted: unknown,
 ): Promise<string[] | null> {
   if (!requirements.length || !coiExtracted) return null
   try {
-    return await generateInsurerQuestions(requirements, gap, coiExtracted as Parameters<typeof generateInsurerQuestions>[2])
+    return await generateInsurerQuestions(requirements, coiExtracted as Parameters<typeof generateInsurerQuestions>[1])
   } catch (e) {
     console.error('insurer question generation failed', e)
     return null
@@ -82,27 +62,28 @@ async function questionsFor(
 }
 
 /**
- * The OCR/analysis pipeline body, callable from the admin route (which raises
+ * The OCR pipeline body, callable from the admin route (which raises
  * maxDuration — Claude vision on a PDF regularly exceeds the default limit).
  * Caller must have verified admin.
+ *
+ * Extraction ONLY gathers context (owner decision 2026-07-27): COI fields,
+ * standards text, normalized requirements, insurer call questions, and the
+ * insured name. It never writes gap_analysis or final_report — the verdicts
+ * + summary come from runAssessmentPipeline below, run on demand from the
+ * Analysis tab once calls/logs are in.
  */
-export async function runExtractionPipeline(
-  verificationId: string,
-  opts: { assessment?: AssessmentMode } = {},
-): Promise<void> {
+export async function runExtractionPipeline(verificationId: string): Promise<void> {
   const supabase = createServiceClient()
   // Admin-editable prompts (/admin/settings); defaults apply when unset.
   const cfg = await getExtractionConfig()
 
   const { data: v, error: verr } = await supabase
     .from('verifications')
-    .select('id, requirements, template_id, gap_analysis, final_report')
+    .select('id, requirements, template_id, case_status')
     .eq('id', verificationId)
     .single()
   if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
 
-  // 'keep' only means something when an assessment exists to keep.
-  const keepAssessment = opts.assessment === 'keep' && (hasItems(v.gap_analysis) || hasItems(v.final_report))
   const { data: docs, error: derr } = await supabase
     .from('documents')
     .select('id, kind, storage_path, mime_type')
@@ -170,34 +151,71 @@ export async function runExtractionPipeline(
   // The agent contact check is NOT run here: it costs web searches per run,
   // so it has its own button on the admin page (runContactCheck action).
 
-  if (!keepAssessment) {
-    // A kept assessment also keeps its case_status (a published case must not
-    // fall back to "ocr_complete" just because its extraction was refreshed).
-    update.case_status = 'ocr_complete'
-    // Requirements are entirely org-owned: templates and submitted standards carry
-    // the full checklist (including condition rows); nothing is merged in globally.
-    const gap = coiExtracted && requirements.length
-      ? ensureAllRequirementsJudged(
-          await analyzeGaps(requirements, coiExtracted as Parameters<typeof analyzeGaps>[1]),
-          requirements,
-        )
-      : null
-    update.gap_analysis = gap
-    update.agent_questions = await questionsFor(requirements, gap, coiExtracted)
-    // Overwrite: the fresh automated verdicts become the visible copy, so the
-    // admin's previous manual assessment (checks + summary) is dropped.
-    if (opts.assessment === 'overwrite') update.final_report = null
-  } else {
-    // The assessment is kept, but the insurer questions must still track the
-    // CURRENT standards (one question per requirement, additions and removals
-    // included), grounded in the kept verdicts. On failure, keep the old
-    // questions rather than wiping them.
-    const regenerated = await questionsFor(requirements, (v.gap_analysis ?? null) as GapAnalysis | null, coiExtracted)
-    if (regenerated) update.agent_questions = regenerated
-  }
+  // Insurer call questions track the CURRENT standards on every run (one per
+  // requirement, additions and removals included); they prefill the AI call.
+  // On failure, keep the old questions rather than wiping them.
+  const regenerated = await questionsFor(requirements, coiExtracted)
+  if (regenerated) update.agent_questions = regenerated
+
+  // Only advance from the initial state: a case already assessed or published
+  // must not fall back to "ocr_complete" because its extraction re-ran.
+  if (!v.case_status || v.case_status === 'pending') update.case_status = 'ocr_complete'
 
   const { error: werr } = await supabase.from('verifications').update(update).eq('id', verificationId)
   // Never drop finished Claude analysis on the floor: the docs are already
   // stamped processed, so a swallowed write here leaves inconsistent state.
   if (werr) throw new Error(`Could not save the extraction results: ${werr.message}`)
+}
+
+/**
+ * Serialize the insurer contact log for the assessment model: who was
+ * reached, how, when, the admin's summary, and the transcript (capped so a
+ * long call still fits the context).
+ */
+function contactLogText(notes: ContactNote[]): string {
+  return notes.map(n => {
+    const who = (n.contact?.name ?? '').trim() || 'Unnamed contact'
+    const how = (n.contact_method ?? '').trim() || 'contact'
+    const summary = (n.summary_text ?? n.text ?? '').trim()
+    const transcript = (n.transcript ?? '').trim()
+    const lines = [`[${n.at}] ${how} with ${who}`]
+    if (summary) lines.push(`Summary: ${summary}`)
+    if (transcript) lines.push(`Transcript:\n${transcript.slice(0, 8000)}`)
+    return lines.join('\n')
+  }).join('\n\n')
+}
+
+/**
+ * The Analysis-tab assessment: judge the COI against the requirements using
+ * the extraction output AND the insurer contact log, then write the verdicts
+ * as gap_analysis and the editable draft (rows + narrative summary) as
+ * final_report. Rerunnable; each run replaces the current draft. The customer
+ * sees nothing until the admin publishes. Caller must have verified admin.
+ */
+export async function runAssessmentPipeline(verificationId: string): Promise<void> {
+  const supabase = createServiceClient()
+  // Admin-editable prompt (/admin/settings); the default applies when unset.
+  const cfg = await getExtractionConfig()
+  const { data: v, error: verr } = await supabase
+    .from('verifications')
+    .select('id, coi_extracted, requirements_normalized, call_notes')
+    .eq('id', verificationId)
+    .single()
+  if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
+
+  const requirements = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
+  if (!v.coi_extracted) throw new Error('Run extraction first: the assessment judges the extracted COI.')
+  if (!requirements.length) throw new Error('No parsed requirements to judge. Run extraction first.')
+
+  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  const report = ensureAllRequirementsJudged(
+    await assessVerification(requirements, v.coi_extracted as Parameters<typeof assessVerification>[1], contactLogText(notes), cfg.promptAssessment),
+    requirements,
+  ) as FinalReport
+
+  const { error: werr } = await supabase.from('verifications').update({
+    gap_analysis: { met: report.met, not_met: report.not_met, uncertain: report.uncertain },
+    final_report: report,
+  }).eq('id', verificationId)
+  if (werr) throw new Error(`Could not save the assessment: ${werr.message}`)
 }

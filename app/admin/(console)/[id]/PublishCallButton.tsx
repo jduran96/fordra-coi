@@ -25,7 +25,7 @@ export default function PublishCallButton({ verificationId, aiCallId }: {
           })
         }}
         style={{ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.65 : 1 }}>
-        {pending ? 'Publishing...' : 'Publish to contact log'}
+        {pending ? 'Adding...' : 'Add to contact log'}
       </button>
       {error && <span style={{ fontSize: 12.5, color: C.error }}>{error}</span>}
     </span>

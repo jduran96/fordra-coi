@@ -132,7 +132,6 @@ export async function saveCallDraft(verificationId: string, formData: FormData):
     console.error('saveCallDraft failed', error)
     return { error: 'Could not save the draft. Please retry.' }
   }
-  revalidatePath(`/admin/${verificationId}/call`)
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -151,7 +150,6 @@ export async function rejectCallDraft(verificationId: string, draftId: string, f
     console.error('rejectCallDraft failed', error)
     return { error: 'Could not reject the draft. Please retry.' }
   }
-  revalidatePath(`/admin/${verificationId}/call`)
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -237,16 +235,14 @@ export async function approveAndDispatchCall(verificationId: string, formData: F
       .update({ status: 'dispatched', retell_call_id: retellCallId, updated_at: new Date().toISOString() })
       .eq('id', saved.id)
     if (error) console.error('approveAndDispatchCall: dispatched update failed', error)
-    revalidatePath(`/admin/${verificationId}/call`)
-    revalidatePath(`/admin/${verificationId}`)
+      revalidatePath(`/admin/${verificationId}`)
     return { callId: saved.id }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
     await supabase.from('ai_calls')
       .update({ status: 'failed', error: detail.slice(0, 500), updated_at: new Date().toISOString() })
       .eq('id', saved.id)
-    revalidatePath(`/admin/${verificationId}/call`)
-    revalidatePath(`/admin/${verificationId}`)
+      revalidatePath(`/admin/${verificationId}`)
     return { error: `The call could not be placed: ${detail}` }
   }
 }
@@ -276,7 +272,6 @@ export async function stopAiCall(verificationId: string, aiCallId: string): Prom
   }
   await syncAiCall(supabase, { ...call, stopped_by: admin.email ?? '' })
   await logActivity(supabase, verificationId, admin.email ?? '', 'note', 'AI call stopped by admin')
-  revalidatePath(`/admin/${verificationId}/call`)
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -336,6 +331,5 @@ export async function publishAiCallNote(verificationId: string, aiCallId: string
     console.error('publishAiCallNote failed', werr)
     return { error: 'Could not publish to the contact log. Please retry.' }
   }
-  revalidatePath(`/admin/${verificationId}/call`)
   revalidatePath(`/admin/${verificationId}`)
 }

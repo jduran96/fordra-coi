@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
-import { runExtractionPipeline } from '@/lib/extraction'
+import { runExtractionPipeline, runAssessmentPipeline } from '@/lib/extraction'
 import { verifyLoggedContact } from '@/lib/claude'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
@@ -19,19 +19,15 @@ import { contactValue, deriveLegitimacy, noteCheckFromRegistry, normalizePhone, 
 import type { COIExtracted, ContactCheckEntry, ContactNote, ExternalConfirmation, NoteContactCheck, OnlineListingStatus, WebsiteStatus } from '@/lib/types'
 
 /**
- * Run OCR/extraction on a verification's documents and store the parsed analysis.
- * The pipeline body lives in lib/extraction.ts, shared with the dedicated
- * /api/admin/run-extraction route (raised maxDuration on Vercel — Claude vision
- * regularly exceeds the default limit; prefer the route in production).
+ * Run OCR/extraction on a verification's documents: COI fields, standards
+ * text, normalized requirements, call questions, insured name. Context only —
+ * verdicts + summary come from runAnalysis below. The admin detail page
+ * exports maxDuration = 300 to cover the Claude vision calls.
  */
-export async function runExtraction(verificationId: string, formData?: FormData) {
+export async function runExtraction(verificationId: string) {
   await requireAdmin()
-  // "Keep requirement checks & summary" checkbox: checked re-extracts the
-  // documents without touching an existing assessment; unchecked regenerates
-  // the checks and drops the manual summary so the fresh copy shows.
-  const assessment = formData?.get('keep_assessment') === 'on' ? 'keep' : 'overwrite'
   try {
-    await runExtractionPipeline(verificationId, { assessment })
+    await runExtractionPipeline(verificationId)
   } catch (e) {
     // Record why extraction died (error_detail was previously never written
     // by anything), then let the error surface to the admin.
@@ -41,6 +37,26 @@ export async function runExtraction(verificationId: string, formData?: FormData)
       .eq('id', verificationId)
       .then(() => {}, () => {})
     throw e
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Generate the assessment (requirement verdicts + draft summary) from the
+ * extraction output and the insurer contact log. Its own button on the
+ * Analysis tab — never part of extraction. Each run replaces the current
+ * draft rows and summary; the admin edits and publishes from there.
+ */
+export async function runAnalysis(verificationId: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  if (await caseClosed(supabase, verificationId)) {
+    return { error: 'This case is closed. Click Edit Status in the Assessment section to reopen it first.' }
+  }
+  try {
+    await runAssessmentPipeline(verificationId)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'The assessment failed. Please retry.' }
   }
   revalidatePath(`/admin/${verificationId}`)
 }
