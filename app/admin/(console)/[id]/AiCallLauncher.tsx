@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { C } from '@/lib/theme'
 import { pacificDateTime } from '@/lib/dates'
 import EditorModal from '@/components/EditorModal'
@@ -161,7 +162,26 @@ function CallView({ verificationId, caseIsClosed, call, callId }: {
   call: AiCall | null
   callId: string
 }) {
+  const router = useRouter()
   const terminal = !!call && TERMINAL_STATUSES.includes(call.status)
+  const hasAnalysis = !!call?.call_analysis
+
+  // Retell's summary lands up to a minute AFTER the call ends, and the live
+  // panel stops polling at the terminal status. The status endpoint syncs
+  // analysis for terminal rows when polled (the webhook only covers
+  // production), so keep polling while this view waits on the summary.
+  useEffect(() => {
+    if (!terminal || hasAnalysis) return
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/admin/calls/${callId}/status`, { cache: 'no-store' })
+        if (res.ok && (await res.json()).hasAnalysis) router.refresh()
+      } catch {
+        // Transient poll failure: try again next tick.
+      }
+    }, 5000)
+    return () => clearInterval(t)
+  }, [terminal, hasAnalysis, callId, router])
   if (!terminal) {
     return (
       <LiveCallPanel
