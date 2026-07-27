@@ -1,8 +1,15 @@
+import 'server-only';
 import Retell from 'retell-sdk';
 
 // Server-only: RETELL_API_KEY never reaches the client, and every caller of
 // the dispatch/stop functions below sits behind requireAdmin().
-const client = new Retell({ apiKey: process.env.RETELL_API_KEY! });
+// Lazy: the SDK constructor throws on a missing key, so instantiating at
+// module scope would crash every importer at load time instead of failing
+// the one Retell call that actually needs the key.
+let _client: Retell | undefined;
+function client(): Retell {
+  return (_client ??= new Retell({ apiKey: process.env.RETELL_API_KEY! }));
+}
 
 export async function verifyWebhookSignature(rawBody: string, signature: string): Promise<boolean> {
   return Retell.verify(rawBody, process.env.RETELL_WEBHOOK_SECRET!, signature);
@@ -23,7 +30,7 @@ export async function createAiVerificationCall(params: {
   if (!fromNumber || !agentId) {
     throw new Error('RETELL_FROM_NUMBER and RETELL_AGENT_ID must be set to dispatch calls.');
   }
-  const call = await client.call.createPhoneCall({
+  const call = await client().call.createPhoneCall({
     from_number: fromNumber,
     to_number: params.toNumber,
     override_agent_id: agentId,
@@ -34,12 +41,12 @@ export async function createAiVerificationCall(params: {
 
 /** Current Retell state of one call (status, transcript, analysis, recording). */
 export async function retrieveCall(callId: string) {
-  return client.call.retrieve(callId);
+  return client().call.retrieve(callId);
 }
 
 /** Kill switch: ask Retell to end an ongoing call immediately. */
 export async function stopCall(callId: string): Promise<void> {
-  await client.call.stop(callId);
+  await client().call.stop(callId);
 }
 
 /** The agent id calls are dispatched to (recorded per call for the audit trail). */

@@ -302,3 +302,27 @@ every send is recorded in the admin activity log ("Notified <email>: …").
   each must sit behind `requireAdmin()` and the per-action opt-in.
 - Leave an audit trail per send (activity log), so "how many emails went out
   and who authorized them" is always answerable.
+
+## 17. Every admin detail page dies with "Something went wrong" after a client component imports a server lib
+
+**Symptom:** every /admin/[id] page (or any page) hits the error boundary;
+the browser console shows a module-evaluation error from a server SDK, e.g.
+`RetellError: The RETELL_API_KEY environment variable is missing` thrown from
+`new Retell(...)` inside a `_next/static` chunk (seen live 2026-07-27, broken
+by the AI-call rework).
+
+**Root cause:** a `'use client'` component imported value-level exports from a
+lib that (transitively) instantiates a server SDK at module scope
+(`AiCallLauncher.tsx` -> `lib/ai-calls.ts` -> `lib/retell.ts` ->
+`new Retell(...)`). The SDK lands in the browser bundle where server env vars
+are undefined, and the module-scope constructor throws during hydration,
+killing the whole page.
+
+**Fix (in place — keep the contract):** pure types/mappers live in
+`lib/ai-call-shared.ts` (client-safe); `lib/ai-calls.ts` and `lib/retell.ts`
+start with `import 'server-only'`, which makes this mistake a build-time error
+(Next handles the import natively, no package install needed). The Retell
+client is lazily instantiated inside `client()`. When adding any new lib that
+reads server env or instantiates an SDK: mark it `import 'server-only'`, never
+instantiate clients at module scope, and give client components a separate
+shared module for the pure parts.
