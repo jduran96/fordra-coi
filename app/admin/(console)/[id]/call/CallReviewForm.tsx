@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { Fragment, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { C } from '@/lib/theme'
 import {
@@ -180,10 +180,6 @@ export default function CallReviewForm({ verificationId, context: initialContext
       {/* 2. Question editor: plain text rows + blocker toggle */}
       <section style={card()}>
         <Title>Questions</Title>
-        <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 12px' }}>
-          The agent asks each question exactly as written, in this order. Write them the way you would say them on the phone.
-          Blocker questions are asked first; a negative answer (policy not active, vehicle not listed) ends the call immediately.
-        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {questions.map((q, i) => (
             <div key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 12, background: C.paper }}>
@@ -215,32 +211,32 @@ export default function CallReviewForm({ verificationId, context: initialContext
       {/* 3. Identity core + generic reference details the agent may state */}
       <section style={card()}>
         <Title>Reference details</Title>
-        <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 12px' }}>
-          Facts the agent may state to help the office find the account, prefilled from the COI extraction.
-          Add whatever the deal needs (one row per VIN, MC number, invoice ref). Long identifiers automatically
-          get a spoken form; the agent leads with the last four and gives more only if asked. Anything not
-          listed here, the agent says it does not have.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+        {/* One two-column grid, Title | Value. The first rows are the identity
+            core (fixed titles — they dispatch as their own variables); below
+            them the free-form detail rows with editable titles. The trailing
+            28px column keeps the ✕ buttons from misaligning the values. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 28px', gap: 8, alignItems: 'center' }}>
+          <span style={{ ...labelStyle, marginBottom: 0 }}>Title</span>
+          <span style={{ ...labelStyle, marginBottom: 0 }}>Value</span>
+          <span />
           {LOOKUP_FIELDS.map(({ field, label }) => (
-            <div key={field}>
-              <label style={labelStyle}>{label}</label>
+            <Fragment key={field}>
+              <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500, paddingLeft: 2 }}>{label}</span>
               <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(!context[field].trim())} />
-            </div>
+              <span />
+            </Fragment>
           ))}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {details.map((d, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input value={d.label} placeholder="Label (e.g. VIN, 2019 Freightliner)"
+            <Fragment key={i}>
+              <input value={d.label} placeholder="Title (e.g. VIN, 2019 Freightliner)"
                 onChange={e => { setDetails(prev => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x))); setConfirming(false) }}
-                style={{ ...fieldStyle(!d.label.trim()), width: 280, flexShrink: 0 }} />
+                style={fieldStyle(!d.label.trim())} />
               <input value={d.value} placeholder="Value"
                 onChange={e => { setDetails(prev => prev.map((x, j) => (j === i ? { ...x, value: e.target.value } : x))); setConfirming(false) }}
-                style={{ ...fieldStyle(!d.value.trim()), flex: 1 }} />
+                style={fieldStyle(!d.value.trim())} />
               <button type="button" onClick={() => { setDetails(prev => prev.filter((_, j) => j !== i)); setConfirming(false) }}
                 style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove detail">✕</button>
-            </div>
+            </Fragment>
           ))}
         </div>
         <button type="button" onClick={() => setDetails(prev => [...prev, { label: '', value: '' }])}
@@ -269,9 +265,6 @@ export default function CallReviewForm({ verificationId, context: initialContext
             <input value={manualNumber} onChange={e => { setManualNumber(e.target.value); setNumberChoice('manual'); setConfirming(false) }}
               placeholder="(555) 555-0100" style={{ ...fieldStyle(false), width: 190 }} />
           </label>
-          <p style={{ fontSize: 12.5, color: C.txt3, margin: '4px 0 0' }}>
-            Will dial: <span style={{ fontFamily: C.mono, color: e164 ? C.txt : C.error }}>{e164 ?? 'not a valid number yet'}</span>
-          </p>
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { C } from '@/lib/theme'
 
 /**
@@ -22,8 +22,15 @@ export default function EditorModal({ title, onClose, children, maxWidth = 880 }
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // A text-selection drag that starts in a field and ends over the backdrop
+  // fires a click on the backdrop; only close when the press STARTED there too.
+  const pressedBackdrop = useRef(false)
+
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{
+    <div
+      onMouseDown={e => { pressedBackdrop.current = e.target === e.currentTarget }}
+      onClick={e => { if (e.target === e.currentTarget && pressedBackdrop.current) onClose() }}
+      style={{
       position: 'fixed', inset: 0, background: 'rgba(20,20,19,0.45)',
       backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24,
