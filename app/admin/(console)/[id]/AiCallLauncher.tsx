@@ -53,6 +53,26 @@ export default function AiCallLauncher({ verificationId, context, questions, det
         </div>
       )}
 
+      {/* An in-flight call always keeps a live panel mounted on the page, not
+          just in the modal: the panel's 5s poll is what persists Retell's
+          state (the webhook is prod-only redundancy), so with the modal
+          closed the row would otherwise stay "in progress" forever, block
+          the one-in-flight dispatch guard, and never receive its summary.
+          Skipped only while the modal is showing the same call (no double poll). */}
+      {activeCall && modal?.mode !== 'call' && (
+        <LiveCallPanel
+          verificationId={verificationId}
+          aiCallId={activeCall.id}
+          initial={{
+            status: activeCall.status,
+            transcript: activeCall.transcript ?? '',
+            durationMs: activeCall.duration_ms,
+            startedAt: activeCall.started_at,
+            error: activeCall.error,
+          }}
+        />
+      )}
+
       {calls.length > 0 && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: C.sans }}>
