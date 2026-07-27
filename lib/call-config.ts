@@ -42,12 +42,10 @@ export interface OrgCallConfig {
   relationship_line: string
   holder_legal_name: string
   holder_address: string
+  // Legitimacy proof point: only spoken if the office asks for an email.
   reply_email: string
-  email_enabled: 'true' | 'false'
   on_behalf_of_info: string
-  callback_number: string
   languages: string
-  entity_type: 'agency' | 'carrier' | 'mga'
 }
 
 export const DEFAULT_CALL_CONFIG: OrgCallConfig = {
@@ -57,13 +55,10 @@ export const DEFAULT_CALL_CONFIG: OrgCallConfig = {
   holder_legal_name: '',
   holder_address: '',
   reply_email: '',
-  email_enabled: 'false',
   on_behalf_of_info: '',
-  callback_number: '',
   // English + Spanish at launch (a full pilot call ran in Spanish; the agent
   // mirrors the callee between these two only).
   languages: 'en,es',
-  entity_type: 'agency',
 }
 
 /**
@@ -80,8 +75,7 @@ export interface CallContextFields extends OrgCallConfig {
 
 export const CONTEXT_FIELD_NAMES = [
   'assistant_name', 'on_behalf_of', 'relationship_line', 'holder_legal_name',
-  'holder_address', 'reply_email', 'email_enabled', 'on_behalf_of_info',
-  'callback_number', 'languages', 'entity_type',
+  'holder_address', 'reply_email', 'on_behalf_of_info', 'languages',
   'insured_name', 'agency_name', 'agent_name',
   'reference_id', 'call_context',
 ] as const
@@ -310,7 +304,6 @@ export function buildDynamicVariables(
     holder_legal_name: s(ctx.holder_legal_name),
     holder_address: s(ctx.holder_address),
     reply_email: s(ctx.reply_email),
-    email_enabled: ctx.email_enabled === 'true' ? 'true' : 'false',
     on_behalf_of_info: s(ctx.on_behalf_of_info),
     insured_name: s(ctx.insured_name),
     agency_name: s(ctx.agency_name),
@@ -321,7 +314,6 @@ export function buildDynamicVariables(
     // the rest run in the main question loop.
     gate_questions: renderQuestions(questions.filter(q => q.blocker)),
     questions: renderQuestions(questions.filter(q => !q.blocker)),
-    entity_type: s(ctx.entity_type) || 'agency',
     call_context: ctx.call_context === 'resumed' ? 'resumed' : 'new',
     languages: s(ctx.languages) || 'en',
   }
@@ -338,11 +330,8 @@ const REQUIRED_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'on_behalf_of', label: 'On behalf of' },
   { field: 'relationship_line', label: 'Relationship line' },
   { field: 'insured_name', label: 'Insured name' },
-  { field: 'reference_id', label: 'Reference ID' },
-  // callback_number intentionally NOT required: return-call handling was
-  // removed 2026-07-24 (no inbound agent on the number); the flow no longer
-  // speaks it anywhere.
-  { field: 'entity_type', label: 'Entity type' },
+  // reference_id and reply_email intentionally NOT required: legitimacy proof
+  // points, spoken only if the office asks (flow nodes G1/N1q/N6c).
   { field: 'languages', label: 'Languages' },
 ]
 
@@ -376,9 +365,6 @@ export function validateDispatch(input: {
   const realQuestions = questions.filter(q => q.text.trim())
   if (realQuestions.length === 0) blocks.push('Add at least one question.')
 
-  // email_enabled no longer gates anything in the flow (email-channel
-  // promises were removed 2026-07-24); a blank reply_email is a warning below.
-
   for (const { field, label } of LOOKUP_WARN_FIELDS) {
     if (!String(context[field] ?? '').trim()) warnings.push(`${label} is blank. The agent will say it does not have it if asked.`)
   }
@@ -389,9 +375,6 @@ export function validateDispatch(input: {
   const emptyRows = details.filter(d => d.label.trim() && !d.value.trim()).length
   if (emptyRows > 0) {
     warnings.push(`${emptyRows} reference detail row${emptyRows > 1 ? 's have' : ' has'} a label but no value; the agent will not receive ${emptyRows > 1 ? 'them' : 'it'}.`)
-  }
-  if (!context.reply_email.trim()) {
-    warnings.push('Reply email is blank. The agent cannot give an email address if the office asks for one.')
   }
   const coiE164 = input.coiPhone ? normalizeE164(input.coiPhone) : null
   if (e164 && coiE164 && e164 !== coiE164) {

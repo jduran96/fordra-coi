@@ -614,9 +614,10 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
       prod dispatch, then delete the old demo agent `agent_7b8d16eae5151a12b4545ad591`
       ("COI Validation - v1", still live in Retell).
     - **Callback-number caveat:** the outbound number `+13055207762` has NO inbound agent
-      bound. Until the §6.4 inbound callback agent exists, `callback_number` in the admin
-      call config must be a human-answered line, or callbacks invited by the voicemail
-      script and N8 closing line go nowhere.
+      bound; the flow invites no callbacks. `callback_number`, `email_enabled`, and
+      `entity_type` were deleted end-to-end 2026-07-27 (owner decision): removed from
+      `OrgCallConfig`, the dispatch payload, both admin UIs, and the flow's declared
+      default variables (flow v8 draft; publish the agent to make it live).
     - **Spanish (added 2026-07-24, owner decision — en + es only, no other languages):**
       agent `language: ['en-US','es-419']`; five es static nodes (`node-n1-es` disclosure,
       `node-n2-es`, `node-n3-es`, `node-n4b-es` re-disclosure, `node-n9-es` goodbye) with

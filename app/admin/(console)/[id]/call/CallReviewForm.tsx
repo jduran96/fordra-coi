@@ -34,10 +34,14 @@ const IDENTITY_FIELDS: { field: keyof CallContextFields; label: string; hint?: s
   { field: 'relationship_line', label: 'Relationship line', hint: 'Answers "what is your relationship?"' },
   { field: 'holder_legal_name', label: 'Certificate holder (legal name)' },
   { field: 'holder_address', label: 'Certificate holder address' },
-  { field: 'reply_email', label: 'Reply email' },
   { field: 'on_behalf_of_info', label: 'About the client (1-2 sentences)' },
-  // callback_number intentionally absent: return-call handling was removed
-  // from the flow (no inbound agent); the payload no longer carries it.
+]
+
+// Legitimacy proof points: optional, only spoken if the office asks
+// (flow nodes G1 / N1q / N6c). Kept out of the primary identity grid.
+const LEGITIMACY_FIELDS: { field: keyof CallContextFields; label: string }[] = [
+  { field: 'reply_email', label: 'Reply email' },
+  { field: 'reference_id', label: 'Reference ID' },
 ]
 
 const LOOKUP_FIELDS: { field: keyof CallContextFields; label: string }[] = [
@@ -137,15 +141,33 @@ export default function CallReviewForm({ verificationId, context: initialContext
               {hint && <p style={{ fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }}>{hint}</p>}
             </div>
           ))}
-          {/* email_enabled has no UI: dead in the flow since 2026-07-24, the
-              dispatch payload still sends it as 'false'. */}
           <div>
-            <label style={labelStyle}>Entity type</label>
-            <select value={context.entity_type} onChange={e => setField('entity_type', e.target.value)} style={fieldStyle(false)}>
-              <option value="agency">Agency</option>
-              <option value="carrier">Carrier</option>
-              <option value="mga">MGA</option>
-            </select>
+            <label style={labelStyle}>Languages</label>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '8px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt }}>
+                <input type="checkbox" checked readOnly disabled />
+                English
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={context.languages.split(',').map(s => s.trim()).includes('es')}
+                  onChange={e => setField('languages', e.target.checked ? 'en,es' : 'en')}
+                />
+                Spanish
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 14 }}>
+          <p style={{ ...labelStyle, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.txt3, marginBottom: 10 }}>Legitimacy</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {LEGITIMACY_FIELDS.map(({ field, label }) => (
+              <div key={field}>
+                <label style={labelStyle}>{label}</label>
+                <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(false)} />
+              </div>
+            ))}
           </div>
         </div>
       </section>

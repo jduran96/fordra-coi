@@ -42,8 +42,6 @@ function parseContext(formData: FormData): CallContextFields {
     ctx[name] = String(formData.get(name) ?? '').trim()
   }
   const fields = ctx as unknown as CallContextFields
-  fields.email_enabled = ctx.email_enabled === 'true' ? 'true' : 'false'
-  fields.entity_type = ctx.entity_type === 'carrier' || ctx.entity_type === 'mga' ? ctx.entity_type : 'agency'
   fields.call_context = ctx.call_context === 'resumed' ? 'resumed' : 'new'
   return fields
 }

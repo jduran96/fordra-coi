@@ -18,7 +18,6 @@ const FIELDS: { field: keyof OrgCallConfig; label: string; hint?: string }[] = [
   { field: 'relationship_line', label: 'Relationship line' },
   { field: 'holder_legal_name', label: 'Certificate holder (legal name)' },
   { field: 'holder_address', label: 'Certificate holder address' },
-  { field: 'reply_email', label: 'Reply email' },
   { field: 'on_behalf_of_info', label: 'About the client (1-2 sentences)' },
 ]
 
@@ -93,14 +92,15 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
               </label>
             </div>
           </div>
-          <div>
-            <label style={labelStyle}>Entity type</label>
-            <select name="entity_type" defaultValue={stored.entity_type ?? ''} style={inputStyle}>
-              <option value="">Use fallback ({fallback.entity_type})</option>
-              <option value="agency">Agency</option>
-              <option value="carrier">Carrier</option>
-              <option value="mga">MGA</option>
-            </select>
+        </div>
+        {/* Legitimacy proof points: optional, only spoken if the office asks. */}
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+          <p style={{ ...labelStyle, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.txt3, marginBottom: 10 }}>Legitimacy</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Reply email</label>
+              <input name="reply_email" defaultValue={stored.reply_email ?? ''} style={inputStyle} />
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
