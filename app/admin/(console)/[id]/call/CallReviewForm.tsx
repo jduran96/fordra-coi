@@ -137,13 +137,8 @@ export default function CallReviewForm({ verificationId, context: initialContext
               {hint && <p style={{ fontSize: 11.5, color: C.txt3, margin: '3px 0 0' }}>{hint}</p>}
             </div>
           ))}
-          <div>
-            <label style={labelStyle}>Email channel</label>
-            <select value={context.email_enabled} onChange={e => setField('email_enabled', e.target.value)} style={fieldStyle(false)}>
-              <option value="false">Off (a colleague will follow up)</option>
-              <option value="true">On (agent may promise the reply email)</option>
-            </select>
-          </div>
+          {/* email_enabled has no UI: dead in the flow since 2026-07-24, the
+              dispatch payload still sends it as 'false'. */}
           <div>
             <label style={labelStyle}>Entity type</label>
             <select value={context.entity_type} onChange={e => setField('entity_type', e.target.value)} style={fieldStyle(false)}>
