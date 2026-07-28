@@ -371,3 +371,38 @@ shared module for the pure parts.
 Always via `retell-sdk` (`scripts/retell-client.mjs`), never raw fetch —
 legacy paths trigger deprecation emails to the workspace owner (entry in
 HANDOFF "CONFIGURE THE RETELL AGENT VIA THE API").
+
+## 19. Voice agent talks to phone menus / narrates stage directions (IVR)
+
+**Symptom:** call transcripts show the agent speaking to an automated menu:
+answering it, saying "Press one for English" out loud, or literally reading
+its own instructions ("[Stay silent and wait for the menu to...]"). Repeated
+menus then hit a dead-end edge and the agent hangs up without reaching anyone.
+
+**Root cause (learned over three live failures, 2026-07-28):** a conversation
+node ALWAYS generates a spoken response when entered or on its turn — no
+prompt wording ("say nothing", "stay silent") reliably suppresses it, and the
+model narrates bracketed stage directions instead, which TTS speaks. Any flow
+design that lets a keypad menu be heard while a conversation node is current
+will eventually talk to the menu. Also: global nodes are never evaluated on
+the call's FIRST user utterance, so the opener is always spoken over the
+initial greeting/menu — platform behavior, harmless, don't fight it.
+
+**Fix (in place since flow v15 — keep this shape):** keypad menus never touch
+a talking node. `node-ivr-press` (press_digit, silent by nature) is a GLOBAL
+node whose condition matches any "press a digit" audio including language
+menus and replays; successive menus ping-pong between it and its mirror
+`node-ivr-press-b` (the API rejects self-edges). The conversation navigator
+`node-ivr` is global only for NON-keypad automation (say-menus, recordings,
+voicemail greetings) where speaking is correct. Dead-end edges require
+repeats AFTER digits were pressed.
+
+**Test before publishing, never on live insurers:** run
+`node scripts/retell-test-ivr.mjs --version=<draft flow version>` — it
+simulates the Colstan after-hours keypad IVR plus a human-receptionist
+control via Retell's tests API (works on DRAFT versions, so publish only
+after it passes) and statically scans transcripts for narration. Gotchas
+baked into the script: test-run status starts as 'pending' (not in the SDK
+enum); the simulated caller needs a strong model (claude-4.6-sonnet) or it
+will not follow its own state machine; `skip_response_edge` conditions must
+be the literal string 'Skip response'; `cool_down` must be >= 1.

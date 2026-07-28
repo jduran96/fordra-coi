@@ -5,7 +5,31 @@
 
 ## ⏱️ START HERE (as of 2026-07-28 — AI pre-dial: master question list, split holder + VIN details, insurer labels)
 
-**2026-07-28 session, round 3 (owner-directed, pushed to prod):**
+**2026-07-28 session, round 4 (owner-directed after a third live IVR failure):**
+
+- **Flow v15 published: keypad menus never touch a talking node** — and the
+  fix was proven in SIMULATION before publishing, per owner directive. The
+  v14 keypad press worked live, but the global navigator then yanked control
+  back from the keypad node and SPOKE its stage directions ("[Stay silent
+  and wait...]"): a conversation node always generates speech, and no prompt
+  wording suppresses it. v15 restructures: `node-ivr-press` (press_digit) is
+  itself a GLOBAL node for any "press a digit" audio; successive menus
+  ping-pong between it and new mirror `node-ivr-press-b` (API rejects
+  self-edges); the conversation navigator is global only for NON-keypad
+  automation. Full write-up: repeat-bugs skill entry 19.
+- **New reusable test harness: `scripts/retell-test-ivr.mjs`** — simulates
+  the Colstan after-hours keypad IVR + a human-receptionist control against
+  ANY flow version (drafts included) via Retell's tests API
+  (`client.tests`), judges with per-scenario metrics, and statically scans
+  transcripts for narration/voiced presses. Both scenarios pass on v15;
+  the harness reproduced the live bug on the pre-fix draft. Run it before
+  publishing ANY flow change.
+- Known cosmetic remainder (platform behavior, not fixable in the flow):
+  the opener is always spoken over the initial greeting because global
+  nodes are not evaluated on the first user utterance. Harmless — menus
+  ignore speech and the press node takes over one turn later.
+
+**2026-07-28 session, round 3 (pushed to prod):**
 
 - **Flow v14 published: keypad menu is NEVER a dead end.** The v13 fix below
   half-worked on the owner's retry (call_9a7b6b1c340bf50e51928085a1b): the
