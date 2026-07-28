@@ -7,6 +7,19 @@
 
 **2026-07-28 session, round 3 (owner-directed, pushed to prod):**
 
+- **Flow v14 published: keypad menu is NEVER a dead end.** The v13 fix below
+  half-worked on the owner's retry (call_9a7b6b1c340bf50e51928085a1b): the
+  navigator stayed silent as instructed, but its single edge evaluation still
+  chose dead-end over keypad because the menu had already played three times,
+  satisfying v13's repeat clause. v14 removes the repeat-based escape from
+  the navigator entirely: its dead-end edge fires ONLY for voice-only menus
+  with no digits to press ("Never pick this while the menu is telling the
+  caller to press any digit"), the press edge explicitly covers replays
+  ("pressing the digit is always the right move on a keypad menu"), and the
+  instruction opens with "a keypad menu is NEVER a dead end". The keypad
+  node's own dead-end edge keeps the three-repeats clause (there, repeats
+  after presses mean digits are not registering, a genuine dead end).
+
 - **Flow v13 published: IVR language-menu fix.** Live failure (Colstan,
   call_c00702e563613fda911c08d7f0f, v12): the menu said "For English, press
   one", the global IVR navigator caught it a turn late (globals never fire on
