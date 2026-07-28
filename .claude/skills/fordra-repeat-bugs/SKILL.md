@@ -326,3 +326,43 @@ client is lazily instantiated inside `client()`. When adding any new lib that
 reads server env or instantiates an SDK: mark it `import 'server-only'`, never
 instantiate clients at module scope, and give client components a separate
 shared module for the pure parts.
+
+## 18. Retell agent/flow edits fail, no-op, or "error" on publish
+
+**Symptom:** one of these, while changing the live voice agent:
+- `HTTP 400: Cannot update published conversation flow` from
+  `conversationFlow.update`.
+- An `agent.update` / flow edit appears to succeed but live calls don't change.
+- The publish step "fails" with `SyntaxError: Unexpected end of JSON input`
+  even though the version actually went live.
+
+**Root cause:** Retell's versioning model, rediscovered every session:
+- Published versions are IMMUTABLE. You cannot update a flow whose latest
+  version is published; you must cut a draft first.
+- Edits without an explicit version target can silently no-op (the historic
+  `update-agent` without `?version=` gotcha).
+- Nothing reaches live calls until an explicit agent publish — drafts sit
+  invisible forever.
+- The publish endpoint returns an EMPTY 2xx body, which the SDK tries to
+  JSON.parse; the resulting SyntaxError is cosmetic, not a failed publish.
+
+**Fix (canonical edit sequence, 2026-07-28):**
+1. Preflight: `agent.getVersions()` + `conversationFlow.retrieve()` (no
+   version = latest). Assert latest is the version you expect and is
+   published; ABORT if a newer draft exists (a parallel session owns it).
+   Back up the flow JSON to disk before any change.
+2. `agent.createVersion(agentId, { base_version: N })` — this cascades a
+   draft flow version too. Read the draft flow version off the returned
+   agent's `response_engine.version`.
+3. `conversationFlow.update(flowId, { version: <draftFlowVersion>, ...body })`
+   — always pass `version`; update() is a merge, send only changed top-level
+   fields.
+4. Verify the draft: re-retrieve with `{ version }` and assert every intended
+   change landed (script the asserts; see `update-flow-v11.mjs` pattern in
+   HANDOFF).
+5. Publish with `node scripts/retell-publish-agent.mjs` (it already swallows
+   the empty-body SyntaxError and confirms via a versions re-read). Trust the
+   re-read, not the publish call's error.
+Always via `retell-sdk` (`scripts/retell-client.mjs`), never raw fetch —
+legacy paths trigger deprecation emails to the workspace owner (entry in
+HANDOFF "CONFIGURE THE RETELL AGENT VIA THE API").

@@ -49,6 +49,7 @@ export interface ReferenceDetail {
 export interface OrgCallConfig {
   // Identity
   assistant_name: string
+  assistant_last_name: string
   languages: string
   // Legitimacy
   on_behalf_of: string
@@ -59,6 +60,10 @@ export interface OrgCallConfig {
 
 export const DEFAULT_CALL_CONFIG: OrgCallConfig = {
   assistant_name: 'Sarah',
+  // Insurer front desks routinely require a first AND last name before helping
+  // (Progressive refused a first-name-only caller, 2026-07-28); the opener
+  // still uses the first name alone, the full name is for when a rep asks.
+  assistant_last_name: 'Mitchell',
   // English + Spanish at launch (a full pilot call ran in Spanish; the agent
   // mirrors the callee between these two only).
   languages: 'en,es',
@@ -81,7 +86,7 @@ export interface CallContextFields extends OrgCallConfig {
 }
 
 export const CONTEXT_FIELD_NAMES = [
-  'assistant_name', 'languages',
+  'assistant_name', 'assistant_last_name', 'languages',
   'on_behalf_of', 'relationship_line', 'on_behalf_of_info', 'reply_email',
   'insured_name', 'agency_name', 'agent_name',
   'reference_id', 'call_context',
@@ -310,6 +315,7 @@ export function buildDynamicVariables(
   const s = (v: unknown) => String(v ?? '').trim()
   return {
     assistant_name: s(ctx.assistant_name),
+    assistant_last_name: s(ctx.assistant_last_name),
     on_behalf_of: s(ctx.on_behalf_of),
     relationship_line: s(ctx.relationship_line),
     reply_email: s(ctx.reply_email),
@@ -336,6 +342,8 @@ export interface ValidationResult {
 /** Variables that must never be blank (a blank one gets spoken as braces). */
 const REQUIRED_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'assistant_name', label: 'Assistant name' },
+  // Required since the Progressive refusal: reps demand a first and last name.
+  { field: 'assistant_last_name', label: 'Assistant last name' },
   { field: 'on_behalf_of', label: 'On behalf of' },
   { field: 'relationship_line', label: 'Relationship line' },
   { field: 'insured_name', label: 'Insured name' },

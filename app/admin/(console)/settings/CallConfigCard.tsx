@@ -75,9 +75,14 @@ export default function CallConfigCard({ orgs, global, byOrg }: {
           <p style={sectionTitleStyle}>Identity</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={labelStyle}>Assistant name</label>
+              <label style={labelStyle}>Assistant first name</label>
               <input name="assistant_name" defaultValue={stored.assistant_name ?? ''} style={inputStyle} />
               <p style={hintStyle}>The name the agent introduces itself with</p>
+            </div>
+            <div>
+              <label style={labelStyle}>Assistant last name</label>
+              <input name="assistant_last_name" defaultValue={stored.assistant_last_name ?? ''} style={inputStyle} />
+              <p style={hintStyle}>Given when a rep asks for a first and last name</p>
             </div>
             <div>
               <label style={labelStyle}>Languages</label>

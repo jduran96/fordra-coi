@@ -56,5 +56,9 @@ rationale + roadmap). Quick orientation:
   actions only (`app/admin/(console)/[id]/call/actions.ts`); records in the `ai_calls` table
   (service-role only, no authenticated grants); payload builder + validation in
   `lib/call-config.ts` (its variable names must match the Retell agent's `{{variables}}`).
+  **All Retell traffic goes through `retell-sdk`, never a raw `fetch` to `api.retellai.com`** —
+  hand-rolled paths land on deprecated endpoints and trigger emails to the workspace owner.
+  Agent publish and call listing have committed tooling: `scripts/retell-publish-agent.mjs`,
+  `scripts/retell-list-calls.mjs` (details + the deprecation history in HANDOFF.md).
 - Clean up any test rows + storage objects written to the live DB during testing.
 - Anthropic/Claude work: consult the `claude-api` skill; default model `claude-sonnet-4-6`.

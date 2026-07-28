@@ -34,7 +34,8 @@ interface Props {
 // Identity: who the agent is. Deal parties (certificate holder, loss payee)
 // are per-COI reference details below, not identity fields.
 const IDENTITY_FIELDS: { field: keyof CallContextFields; label: string; hint?: string }[] = [
-  { field: 'assistant_name', label: 'Assistant name', hint: 'The name the agent introduces itself with' },
+  { field: 'assistant_name', label: 'Assistant first name', hint: 'The name the agent introduces itself with' },
+  { field: 'assistant_last_name', label: 'Assistant last name', hint: 'Given when a rep asks for a first and last name' },
 ]
 
 // Legitimacy: who the agent is affiliated with and what they do. reply_email

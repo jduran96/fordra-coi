@@ -606,6 +606,24 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
     3. **Always back up before updating**: `conversationFlow.retrieve(id)` → write the JSON to
        disk → then `update()`. `update()` is a merge, so passing only `{nodes}` leaves
        `global_prompt` / `default_dynamic_variables` / settings untouched.
+    4. **Never `fetch()` `api.retellai.com` by hand — always go through `retell-sdk`.** Retell
+       versions and renames paths constantly and emails the workspace owner about every legacy
+       hit. Two "action required" deprecation notices arrived 2026-07-27 caused purely by
+       throwaway `node -e` fetch one-liners from a prior session: `POST /publish-agent/:id`
+       (deprecated 07-20; now `POST /publish-agent-version/:id`, and `version` is a **required**
+       body field — the old implicit "publish the latest" behaviour is gone) and
+       `POST /v2/list-calls` (deprecated 06-15; now `POST /v3/list-calls`, which returns
+       `{items, pagination_key, has_more}` instead of a bare array, moves agent filtering to
+       `filter_criteria.agent[]`, and omits transcript/recording fields). The SDK already
+       targets the current paths — no app code ever used the legacy ones. Use the committed
+       scripts below instead of improvising.
+    - **Operator scripts** (`scripts/retell-*.mjs`, shared env loader + client in
+      `scripts/retell-client.mjs`; run with plain `node`, no npm alias):
+      `node scripts/retell-publish-agent.mjs` publishes the newest unpublished draft (no-ops
+      cleanly when there is none; `--version=N` / `--description=...` to be explicit) and
+      `node scripts/retell-list-calls.mjs [--limit=N] [--all-agents] [--json]` lists recent
+      calls. **Flow and agent edits only ever create a draft** — nothing reaches live calls
+      until the publish step runs.
     - Live IDs: agent `agent_e581fdc4114615fa088b0690ec`, flow
       `conversation_flow_283618e37c0c`. Auth from `RETELL_API_KEY` in `.env.local`.
     - **Env cutover done locally 2026-07-24** (`RETELL_AGENT_ID` → v5 agent;
@@ -617,7 +635,7 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
       bound; the flow invites no callbacks. `callback_number`, `email_enabled`, and
       `entity_type` were deleted end-to-end 2026-07-27 (owner decision): removed from
       `OrgCallConfig`, the dispatch payload, both admin UIs, and the flow's declared
-      default variables (flow v8 draft; publish the agent to make it live).
+      default variables (went live 2026-07-28 with the agent v10 publish).
     - **Spanish (added 2026-07-24, owner decision — en + es only, no other languages):**
       agent `language: ['en-US','es-419']`; five es static nodes (`node-n1-es` disclosure,
       `node-n2-es`, `node-n3-es`, `node-n4b-es` re-disclosure, `node-n9-es` goodbye) with
@@ -648,18 +666,68 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
     - Reference build scripts (16 conversation nodes + 32 edges + both globals, then the
       3-node IVR cluster) are in this session's scratchpad as `build-flow.mjs` and
       `add-ivr.mjs`; re-derive from the live flow JSON if they are gone.
-    - **IVR cluster (3 nodes, built 2026-07-24):** `node-ivr` "IVR navigator" is a GLOBAL
-      node whose entrance condition is "a machine answered" (recorded greeting, numbered
-      menu, automated attendant, hold music; explicitly not a live person greeting), so it
-      also catches a machine reached after a transfer. It speaks intents at conversational
-      menus ("verify a certificate of insurance") and routes keypad menus to `node-ivr-press`
-      "IVR keypad", a `press_digit` node with `delay_ms: 1000` whose instruction picks the
-      digit for certificates / commercial lines / customer service / operator, defaulting to
-      0. That node loops back to the navigator so multi-level menus work. Give-up path is
-      `node-ivr-fail`, an end node that hangs up silently after a repeated menu or five
-      selections, so the app's retry matrix redials rather than burning the 25-minute cap.
-      A human at any point routes to N1, which still delivers the disclosure. Retell's own
-      `ivr_option` stays **null** (auto-hangup-on-IVR off) — this flow does the navigating.
+    - **IVR cluster (4 nodes, built 2026-07-24, voicemail path added 2026-07-28):**
+      `node-ivr` "IVR navigator" is a GLOBAL node whose entrance condition is "a machine
+      answered" (recorded greeting, numbered menu, "press" instructions, automated
+      attendant, hold music; explicitly not a live person greeting — and a receptionist-style
+      "Thank you for calling..." that continues into menu options IS a machine), so it also
+      catches a machine reached after a transfer. It speaks intents at conversational menus
+      ("verify a certificate of insurance") and routes keypad menus to `node-ivr-press`
+      "IVR keypad", a `press_digit` node with `delay_ms: 1000` whose preference order is
+      certificates / commercial lines, then customer service / operator, then a
+      leave-a-message or voicemail option; 0 only as last resort. That node loops back to
+      the navigator so multi-level menus work. When a menu offers no matching option but
+      does offer voicemail, or a voicemail greeting/tone plays (`edge-ivr-vm` /
+      `edge-ivr-press-vm`), the flow enters `node-ivr-vm` "NVM Leave voicemail", an end
+      node with `speak_during_execution: true` whose static text is the SAME approved
+      message as the agent's `voicemail_option` — it leaves the message and hangs up. This
+      is the backstop for Retell's native voicemail detection, which with `voicemail_option`
+      set runs only the first 3 minutes of the call (`voicemail_detection_timeout_ms` is
+      silently DROPPED by the API for voicemail_option agents — do not try to set it).
+      Give-up path is `node-ivr-fail`, an end node that hangs up silently after a repeated
+      menu or five selections **when no leave-a-message option was offered**, so the app's
+      retry matrix redials rather than burning the 25-minute cap. A human at any point
+      routes to N1, which still delivers the disclosure. Retell's own `ivr_option` stays
+      **null** (auto-hangup-on-IVR off, and its only action is hangup anyway) — this flow
+      does the navigating. Known limit: N1's static opener can still fire once at a machine
+      whose greeting ends before the navigator's condition matches (partial-transcript
+      race); the navigator recovers on the next menu playback. 2026-07-28 change scripts:
+      `update-ivr-voicemail.py` + `finish-agent-publish.py` (session scratchpad; re-derive
+      from live flow JSON if gone). Gotcha learned then: `update-agent` WITHOUT `?version=`
+      silently no-ops on drafts — always pass `?version=N`, and note agent v10 / flow v10
+      (published 2026-07-28) also shipped the holder_*→insured_name flow cleanup that had
+      sat unpublished in the v10 draft since 2026-07-27.
+    - **v11 (published 2026-07-28, Progressive-call postmortem):** a real
+      Progressive call failed because their rep required a first AND last name, the agent
+      was scripted to say "I don't have a last name", the refusal exit spoke N9's "that's
+      all I needed", and the opener replayed 4x at Progressive's conversational IVR bot.
+      Three fixes, all in flow v11 / agent draft v11:
+      1. **Full name:** new dynamic variable `assistant_last_name` (flow default
+         `Mitchell`; app default persona is now "Sarah Mitchell"). `global_prompt` and G1
+         answer a full-name request with `{{assistant_name}} {{assistant_last_name}}`;
+         the "no last name" lines are gone. App side: `assistant_last_name` added to
+         `OrgCallConfig` / `CONTEXT_FIELD_NAMES` / `buildDynamicVariables`, required by
+         `validateDispatch`, editable in both admin UIs. The opener still uses the first
+         name only.
+      2. **Honest refusal close:** new `node-n9b` "N9b Unable to proceed" ("Understood.
+         Thanks for your time anyway. Goodbye." + es equivalent). All refusal/decline
+         edges (N1/N1es/N1q/N4/N4b/N4bes/N4c negatives, gate refuse, new `edge-n6-refuse`)
+         now land there; N9 "that's all I needed" is reserved for completed paths
+         (`edge-n5-done`, `edge-n6c-done`, narrowed `edge-n6-done`) and answered blockers
+         (`edge-gate-fail`).
+      3. **IVR bot loop:** `edge-ivr-human` and navigator step 7 now count ONLY a live
+         human as "reached a person" — a conversational insurer bot stays in the
+         navigator (answer routing questions, "lienholder", confirm read-backs, never
+         re-deliver the opener). Previously "an assistant capable of real conversation"
+         bounced to N1's static opener on every IVR reprompt.
+      Gotcha: published flow versions are immutable ("Cannot update published
+      conversation flow") — cut a draft first with `agent.createVersion({base_version})`
+      (it cascades a draft flow version), then `conversationFlow.update` with
+      `version: <draft>`. Change script: `update-flow-v11.mjs` (session scratchpad;
+      backup `flow-live-backup.json` alongside). Second gotcha: the publish
+      endpoint answers with an empty body, which the SDK JSON.parses — the
+      publish script now swallows that SyntaxError and trusts its version
+      re-read instead.
 - **`/app`** (customer portal): nav = **Verifications** + **API Docs**. Verifications = history
   table + "New verification" button; first-time users (no org) see a "contact admin (727) 729-9594"
   screen. `/app/new` = manual upload. **API Docs** = admin-provisioned-key notice + hand-written
