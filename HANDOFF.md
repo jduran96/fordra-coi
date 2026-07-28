@@ -5,7 +5,27 @@
 
 ## ⏱️ START HERE (as of 2026-07-28 — AI pre-dial: master question list, split holder + VIN details, insurer labels)
 
-**2026-07-28 session, round 2 (owner-directed, pushed to prod):**
+**2026-07-28 session, round 3 (owner-directed, pushed to prod):**
+
+- **Flow v13 published: IVR language-menu fix.** Live failure (Colstan,
+  call_c00702e563613fda911c08d7f0f, v12): the menu said "For English, press
+  one", the global IVR navigator caught it a turn late (globals never fire on
+  the very first user turn, so the opener was spoken over the menu — platform
+  behavior, unchanged), and then the navigator SPOKE "Press one for English"
+  (a conversation node cannot send DTMF; language menus matched none of its
+  preferences) and dead-ended after two replays. Fixes: navigator rule 0 (a
+  language menu is always answered first, English; keypad language menus =
+  stay silent) + explicit "you cannot press digits by speaking"; keypad node
+  presses English first; the navigator→keypad edge now covers language menus;
+  both dead-end edges tightened to "repeated at least three times AND nothing
+  worth pressing" so the press edge wins. Backup of v12 flow in the session
+  scratchpad.
+- **UI trims:** the master Questions editor intro paragraph removed (owner);
+  the live-call panel no longer shows "Waiting for the conversation to
+  start..." while a call is active (transcript area just stays empty until
+  words arrive).
+
+**2026-07-28 session, round 2 (pushed to prod):**
 
 - **The pre-dial modal no longer edits questions.** Owner: the master list is
   the single place; the modal is about reference details. `CallReviewForm`'s

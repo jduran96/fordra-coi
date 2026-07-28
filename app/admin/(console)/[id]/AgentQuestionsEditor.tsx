@@ -82,10 +82,6 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
-      <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 12px' }}>
-        The question list for this verification&apos;s AI calls. Blocker questions are asked first; a negative answer ends the call.
-        Every call dials with this list; save your edits here before dispatching.
-      </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {questions.length === 0 && (
           <p style={{ fontSize: 13.5, color: C.txt3, margin: 0 }}>No questions yet. Add one, or regenerate from the standards.</p>

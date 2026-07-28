@@ -118,7 +118,7 @@ export default function LiveCallPanel({ verificationId, aiCallId, initial }: {
       {stopError && <p style={{ fontSize: 13, color: C.error, margin: '8px 0 0' }}>{stopError}</p>}
       {state.error && <p style={{ fontSize: 13, color: C.error, margin: '8px 0 0' }}>{state.error}</p>}
       <div ref={transcriptRef} style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, paddingLeft: 12, borderLeft: `2px solid ${C.border}` }}>
-        {state.transcript || (active ? 'Waiting for the conversation to start...' : 'No transcript.')}
+        {state.transcript || (active ? '' : 'No transcript.')}
       </div>
     </div>
   )
