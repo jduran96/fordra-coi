@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
 import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
+import { isCuratedQuestionList } from '@/lib/call-config'
 import type { ContactNote, FinalReport, GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -80,7 +81,7 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
 
   const { data: v, error: verr } = await supabase
     .from('verifications')
-    .select('id, requirements, template_id, case_status')
+    .select('id, requirements, template_id, case_status, agent_questions')
     .eq('id', verificationId)
     .single()
   if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
@@ -154,9 +155,14 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
 
   // Insurer call questions track the CURRENT standards on every run (one per
   // requirement, additions and removals included); they prefill the AI call.
-  // On failure, keep the old questions rather than wiping them.
-  const regenerated = await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
-  if (regenerated) update.agent_questions = regenerated
+  // EXCEPT once the admin has hand-edited the list (object-shaped entries):
+  // curated lists are never overwritten — the AI tab's Regenerate button is
+  // the explicit way back (owner decision 2026-07-28). On generation failure,
+  // keep the old questions rather than wiping them.
+  if (!isCuratedQuestionList(v.agent_questions)) {
+    const regenerated = await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
+    if (regenerated) update.agent_questions = regenerated
+  }
 
   // Only advance from the initial state: a case already assessed or published
   // must not fall back to "ocr_complete" because its extraction re-ran.

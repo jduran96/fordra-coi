@@ -49,16 +49,19 @@ const LEGITIMACY_FIELDS: { field: keyof CallContextFields; label: string; hint?:
   { field: 'reference_id', label: 'Reference ID' },
 ]
 
-const LOOKUP_FIELDS: { field: keyof CallContextFields; label: string }[] = [
+// Insurer name/contact are optional: many calls have no contact person, and a
+// blank one just means the agent says it does not have it — so no warn border.
+// The labels are UI-only; the dispatch variables stay agency_name/agent_name
+// (renaming those means a Retell dashboard change).
+const LOOKUP_FIELDS: { field: keyof CallContextFields; label: string; optional?: boolean }[] = [
   { field: 'insured_name', label: 'Insured name' },
-  { field: 'agency_name', label: 'Agency name' },
-  { field: 'agent_name', label: 'Agent name' },
+  { field: 'agency_name', label: 'Insurer name', optional: true },
+  { field: 'agent_name', label: 'Insurer contact', optional: true },
 ]
 
-export default function CallReviewForm({ verificationId, context: initialContext, questions: initialQuestions, details: initialDetails, numbers, coiPhone, draftId, caseIsClosed, onDispatched }: Props) {
+export default function CallReviewForm({ verificationId, context: initialContext, questions, details: initialDetails, numbers, coiPhone, draftId, caseIsClosed, onDispatched }: Props) {
   const router = useRouter()
   const [context, setContext] = useState<CallContextFields>(initialContext)
-  const [questions, setQuestions] = useState<AiCallQuestion[]>(initialQuestions)
   const [details, setDetails] = useState<ReferenceDetail[]>(initialDetails)
   const [numberChoice, setNumberChoice] = useState<string>(numbers.length ? numbers[0].number : 'manual')
   const [manualNumber, setManualNumber] = useState('')
@@ -82,24 +85,9 @@ export default function CallReviewForm({ verificationId, context: initialContext
     setContext(prev => ({ ...prev, [field]: value }))
     setConfirming(false)
   }
-  const setQuestion = (i: number, patch: Partial<AiCallQuestion>) => {
-    setQuestions(prev => prev.map((q, j) => (j === i ? { ...q, ...patch } : q)))
-    setConfirming(false)
-  }
-  const moveQuestion = (i: number, dir: -1 | 1) => {
-    setQuestions(prev => {
-      const next = [...prev]
-      const j = i + dir
-      if (j < 0 || j >= next.length) return prev
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return next
-    })
-  }
-
   const buildFormData = () => {
     const fd = new FormData()
     for (const [k, v] of Object.entries(context)) fd.set(k, v)
-    fd.set('questions_json', JSON.stringify(questions))
     fd.set('details_json', JSON.stringify(details))
     fd.set('to_number', toNumber)
     fd.set('number_source', numberChoice === 'manual' ? 'manual' : (chosen?.source ?? 'manual'))
@@ -178,35 +166,14 @@ export default function CallReviewForm({ verificationId, context: initialContext
         </div>
       </section>
 
-      {/* 2. Question editor: plain text rows + blocker toggle */}
+      {/* 2. Questions live in the master list (AI tab); the dispatch action
+          reads them from the verification, so this modal only points there. */}
       <section style={card()}>
         <Title>Questions</Title>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {questions.map((q, i) => (
-            <div key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 12, background: C.paper }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: C.txt3, paddingTop: 9, fontFamily: C.mono }}>{i + 1}.</span>
-                <textarea value={q.text} rows={2} onChange={e => setQuestion(i, { text: e.target.value })}
-                  style={{ ...fieldStyle(!q.text.trim()), resize: 'vertical', flex: 1 }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <button type="button" onClick={() => moveQuestion(i, -1)} disabled={i === 0} style={tinyBtn(i === 0)} aria-label="Move up">↑</button>
-                  <button type="button" onClick={() => moveQuestion(i, 1)} disabled={i === questions.length - 1} style={tinyBtn(i === questions.length - 1)} aria-label="Move down">↓</button>
-                </div>
-                <button type="button" onClick={() => { setQuestions(prev => prev.filter((_, j) => j !== i)); setConfirming(false) }} style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove">✕</button>
-              </div>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginLeft: 24, fontSize: 12.5, color: q.blocker ? C.error : C.txt2, cursor: 'pointer', userSelect: 'none', fontWeight: q.blocker ? 600 : 400 }}>
-                <input type="checkbox" checked={!!q.blocker}
-                  onChange={e => setQuestion(i, { blocker: e.target.checked || undefined })}
-                  style={{ accentColor: C.error }} />
-                Blocker: a negative answer ends the call
-              </label>
-            </div>
-          ))}
-        </div>
-        <button type="button" onClick={() => setQuestions(prev => [...prev, { text: '' }])}
-          style={{ ...btn(), marginTop: 10 }}>
-          Add question
-        </button>
+        <p style={{ fontSize: 13.5, color: C.txt2, margin: 0 }}>
+          This call asks the {questions.filter(q => q.text.trim()).length} questions from the master list in the AI tab
+          {questions.some(q => q.blocker) ? `, ${questions.filter(q => q.blocker).length} of them blockers asked first` : ''}. Edit them there before dispatching.
+        </p>
       </section>
 
       {/* 3. Identity core + generic reference details the agent may state */}
@@ -220,10 +187,10 @@ export default function CallReviewForm({ verificationId, context: initialContext
           <span style={{ ...labelStyle, marginBottom: 0 }}>Title</span>
           <span style={{ ...labelStyle, marginBottom: 0 }}>Value</span>
           <span />
-          {LOOKUP_FIELDS.map(({ field, label }) => (
+          {LOOKUP_FIELDS.map(({ field, label, optional }) => (
             <Fragment key={field}>
               <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500, paddingLeft: 2 }}>{label}</span>
-              <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(!context[field].trim())} />
+              <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(!optional && !context[field].trim())} />
               <span />
             </Fragment>
           ))}

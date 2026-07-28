@@ -3,7 +3,78 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-22 late — branded emails, per-requirement insurer confirmation)
+## ⏱️ START HERE (as of 2026-07-28 — AI pre-dial: master question list, split holder + VIN details, insurer labels)
+
+**2026-07-28 session, round 2 (owner-directed, pushed to prod):**
+
+- **The pre-dial modal no longer edits questions.** Owner: the master list is
+  the single place; the modal is about reference details. `CallReviewForm`'s
+  Questions section is now a one-line pointer ("This call asks the N questions
+  from the master list in the AI tab"); the form no longer sends
+  `questions_json`. Dispatch and draft saves are SERVER-AUTHORITATIVE on
+  questions: `loadAgentQuestions` (call/actions.ts) re-reads
+  `verifications.agent_questions` at action time and normalizes blockers-first,
+  so a master edit always reaches the next dial. The round-1 write-back
+  (`syncAgentQuestions`) and draft question syncs are gone — `ai_calls.questions`
+  is now purely the dispatch-time audit snapshot; page.tsx always prefills the
+  modal's count/validation from the master list, never the draft.
+- **Retell flow v12 published** (agent + flow version 12, via the canonical
+  createVersion → update(version) → verify → publish sequence; backup of v11
+  in the session scratchpad). Owner wording:
+  - Openers (en + es), N4b re-disclosure (en + es), voicemail: "digital
+    assistant" removed — now "Hi, I'm {{assistant_name}} from {{on_behalf_of}}
+    calling on a recorded line to verify a certificate of insurance from
+    {{insured_name}}." (opener also switched from agency_name to insured_name).
+  - Pressed-for-identity answers (G1, N1q, and the global prompt's two canned
+    lines): "I'm a digital assistant and an authorized representative of
+    {{on_behalf_of}}." The never-claim-to-be-human rule is unchanged; the
+    disclosure now surfaces only when asked.
+  - `disclosurePreview` (lib/call-config.ts) mirrors the new opener (takes
+    insured_name now).
+
+**2026-07-28 session, round 1 (superseded in part by round 2 above):**
+
+- **Master question list on the AI tab** (owner ask: pre-dial question edits
+  vanished after each call). New "Questions" section above "AI Calls"
+  (`AgentQuestionsEditor.tsx`) edits `verifications.agent_questions` in place:
+  add/edit/delete/reorder + per-question Blocker toggle, Save questions,
+  Regenerate from standards (two-step confirm). TWO SHAPES now live in
+  `agent_questions`: generated lists stay `string[]` (blockers inferred by the
+  keyword regex); admin-saved lists store `{text, blocker}` objects — the
+  object shape itself marks the list curated (`isCuratedQuestionList`,
+  lib/call-config.ts), and `runExtractionPipeline` SKIPS regeneration for
+  curated lists (Regenerate is the explicit way back; repeat-bugs entry 13
+  updated). Pre-dial modal edits write back to the master list on Save draft
+  and on dispatch (`syncAgentQuestions` in call/actions.ts), and master-list
+  saves push into any open draft row, so there is only ever one current list.
+  `defaultQuestionsFromAgentQuestions` normalizes both shapes and stable-sorts
+  blockers first. Safe shape change: nothing customer-side or /v1 reads
+  `agent_questions` (grep-verified; it is only exposed unrendered in the
+  post-publish view).
+- **Blockers first in generation**: `DEFAULT_INSURER_QUESTIONS_PROMPT` now
+  orders blocker questions (policy active, VIN pair) at the start of the
+  array. No `app_config` prompt override existed at ship time (checked), so
+  the new default is live.
+- **Reference details are data-driven** (owner: stop rekeying Dakota details
+  every call). Extraction now splits the Certificate Holder box into
+  `certificate_holder_name` + `certificate_holder_address` (legacy
+  `certificate_holder` kept verbatim) and reads every 17-char VIN on the
+  certificate into `vehicle_vins` (COIExtracted additions, prompt + schema in
+  lib/claude.ts). `draftFromVerification` (now also takes `requirements`)
+  prefans rows only when a value exists: policy numbers, insured address,
+  holder name + holder address (fallback to the old single mashed row for
+  pre-rerun extractions), one VIN row per VIN found on the COI OR in the
+  submitted standards (`collectVins`, VIN regex excludes I/O/Q), USDOT, MC.
+  Old verifications need an extraction re-run to pick up the split/VINs.
+- **"Insurer name" / "Insurer contact"** replace the "Agency name" / "Agent
+  name" labels on the pre-dial form (UI-only: dispatch variables stay
+  `agency_name`/`agent_name` — renaming those is a Retell dashboard change).
+  Both are now truly optional: no warn border when blank and
+  `LOOKUP_WARN_FIELDS` is empty (owner 2026-07-28: many calls have no contact
+  person; a blank just means the agent says it does not have it). Prefill
+  unchanged (producer box), owner-decided.
+
+## Previous (as of 2026-07-22 late — branded emails, per-requirement insurer confirmation)
 
 **2026-07-22 late session (owner-approved on localhost, deployed to prod):**
 

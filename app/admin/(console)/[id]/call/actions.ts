@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { adminInitials } from '@/lib/admin-activity'
 import { createAiVerificationCall, stopCall, configuredAgentId } from '@/lib/retell'
 import {
-  buildDynamicVariables, normalizeE164, validateDispatch,
+  buildDynamicVariables, defaultQuestionsFromAgentQuestions, normalizeE164, validateDispatch,
   type AiCallQuestion, type CallContextFields, type ReferenceDetail, CONTEXT_FIELD_NAMES,
 } from '@/lib/call-config'
 import {
@@ -15,7 +15,9 @@ import {
 } from '@/lib/ai-calls'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
 import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
-import type { ContactCheckEntry } from '@/lib/types'
+import { generateInsurerQuestions } from '@/lib/claude'
+import { getExtractionConfig } from '@/lib/config'
+import type { COIExtracted, ContactCheckEntry, Requirement } from '@/lib/types'
 
 /**
  * AI call dispatch actions (voice spec v5 §10). Every mutation here begins
@@ -91,6 +93,73 @@ async function logActivity(
   if (error) console.error('ai-call activity log failed', error)
 }
 
+/**
+ * Persist the master question list on the verification itself (the AI tab's
+ * editor). Curated lists are stored as {text, blocker} objects — the shape
+ * itself marks them hand-edited, so runExtractionPipeline stops regenerating
+ * over them. Dispatch reads THIS list at dial time (the pre-dial modal does
+ * not edit questions), so a saved edit reaches every future call.
+ */
+export async function saveAgentQuestions(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const questions = parseQuestions(formData)
+  if (!questions) return { error: 'Could not read the question list. Please retry.' }
+  const { error } = await supabase.from('verifications')
+    .update({ agent_questions: questions })
+    .eq('id', verificationId)
+  if (error) {
+    console.error('saveAgentQuestions failed', error)
+    return { error: 'Could not save the questions. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * Rebuild the question list from the CURRENT standards + COI, discarding any
+ * hand edits (the editor confirms first). Writes the generated string[] shape,
+ * so extraction re-runs resume keeping it current.
+ */
+export async function regenerateAgentQuestions(verificationId: string): Promise<{ error?: string } | void> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const { data: v, error } = await supabase.from('verifications')
+    .select('requirements_normalized, coi_extracted')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !v) return { error: 'Could not load this verification. Please retry.' }
+  const requirements = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
+  try {
+    const cfg = await getExtractionConfig()
+    const questions = await generateInsurerQuestions(requirements, (v.coi_extracted ?? null) as COIExtracted | null, cfg.promptInsurerQuestions)
+    const { error: werr } = await supabase.from('verifications')
+      .update({ agent_questions: questions })
+      .eq('id', verificationId)
+    if (werr) throw werr
+  } catch (e) {
+    console.error('regenerateAgentQuestions failed', e)
+    return { error: 'Could not regenerate the questions. Please retry.' }
+  }
+  revalidatePath(`/admin/${verificationId}`)
+}
+
+/**
+ * The master question list as it will dial: loaded from the verification and
+ * normalized (blockers first). Server-authoritative — the modal never sends
+ * questions, so a master-list edit always reaches the next dispatch.
+ */
+async function loadAgentQuestions(
+  supabase: ReturnType<typeof createServiceClient>,
+  verificationId: string,
+): Promise<AiCallQuestion[] | null> {
+  const { data, error } = await supabase.from('verifications')
+    .select('agent_questions')
+    .eq('id', verificationId)
+    .maybeSingle()
+  if (error || !data) return null
+  return defaultQuestionsFromAgentQuestions(data.agent_questions)
+}
+
 /** Save the review form as the verification's draft (one draft row per verification). */
 export async function saveCallDraft(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   const admin = await requireAdmin()
@@ -98,10 +167,10 @@ export async function saveCallDraft(verificationId: string, formData: FormData):
   if (await caseClosed(supabase, verificationId)) return { error: CLOSED_ERROR }
 
   const context = parseContext(formData)
-  const questions = parseQuestions(formData)
-  if (!questions) return { error: 'Could not read the question list. Please retry.' }
   const details = parseDetails(formData)
   if (!details) return { error: 'Could not read the reference details. Please retry.' }
+  const questions = await loadAgentQuestions(supabase, verificationId)
+  if (!questions) return { error: 'Could not load the question list. Please retry.' }
   const toNumber = String(formData.get('to_number') || '').trim()
   const numberSource = String(formData.get('number_source') || 'manual')
 
@@ -164,10 +233,10 @@ export async function approveAndDispatchCall(verificationId: string, formData: F
   if (await caseClosed(supabase, verificationId)) return { error: CLOSED_ERROR }
 
   const context = parseContext(formData)
-  const questions = parseQuestions(formData)
-  if (!questions) return { error: 'Could not read the question list. Please retry.' }
   const details = parseDetails(formData)
   if (!details) return { error: 'Could not read the reference details. Please retry.' }
+  const questions = await loadAgentQuestions(supabase, verificationId)
+  if (!questions) return { error: 'Could not load the question list. Please retry.' }
   const toNumberRaw = String(formData.get('to_number') || '').trim()
   const numberSource = String(formData.get('number_source') || 'manual')
 

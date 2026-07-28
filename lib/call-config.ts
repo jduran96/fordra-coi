@@ -1,4 +1,4 @@
-import type { COIExtracted, ContactCheckEntry, OnlineListingStatus } from '@/lib/types'
+import type { COIExtracted, ContactCheckEntry, OnlineListingStatus, Requirement } from '@/lib/types'
 
 /**
  * Pure builders + validators for the AI call dispatch payload. Deliberately
@@ -210,19 +210,40 @@ export function renderReferenceDetails(details: ReferenceDetail[]): string {
 }
 
 /**
- * Existing OCR question strings, verbatim, one per row. Questions about
- * policy-active status or the VIN are pre-marked as blockers (the two fatal
- * checks per the owner); the admin can flip any of them on the review screen.
+ * The stored agent_questions list, normalized. Two shapes coexist:
+ * generated lists are plain strings (blockers inferred by keyword — policy
+ * active/in force and VIN, the two fatal checks per the owner); curated lists
+ * store {text, blocker} objects whose flags are trusted as saved. Either way
+ * blockers sort to the front (stable), matching the gate-first call flow.
  */
 export function defaultQuestionsFromAgentQuestions(raw: unknown): AiCallQuestion[] {
   if (!Array.isArray(raw)) return []
-  return raw
-    .filter((q): q is string => typeof q === 'string' && !!q.trim())
-    .map(q => {
-      const text = q.trim()
-      const blocker = /\b(active|expired?|in force|cancell?ed)\b/i.test(text) || /\bvin\b/i.test(text)
-      return blocker ? { text, blocker } : { text }
+  const normalized = raw
+    .map((q): AiCallQuestion | null => {
+      if (typeof q === 'string') {
+        const text = q.trim()
+        if (!text) return null
+        const blocker = /\b(active|expired?|in force|cancell?ed)\b/i.test(text) || /\bvin\b/i.test(text)
+        return blocker ? { text, blocker } : { text }
+      }
+      if (q && typeof q === 'object' && typeof (q as { text?: unknown }).text === 'string') {
+        const text = (q as { text: string }).text.trim()
+        if (!text) return null
+        return (q as { blocker?: unknown }).blocker === true ? { text, blocker: true } : { text }
+      }
+      return null
     })
+    .filter((q): q is AiCallQuestion => !!q)
+  return [...normalized.filter(q => q.blocker), ...normalized.filter(q => !q.blocker)]
+}
+
+/**
+ * True when agent_questions was saved by the admin editor (object entries)
+ * rather than generated (plain strings). Curated lists survive extraction
+ * re-runs: runExtractionPipeline checks this before regenerating.
+ */
+export function isCuratedQuestionList(raw: unknown): boolean {
+  return Array.isArray(raw) && raw.some(q => !!q && typeof q === 'object')
 }
 
 /** Render the question list into a plain numbered list. */
@@ -230,9 +251,35 @@ export function renderQuestions(questions: AiCallQuestion[]): string {
   return questions.map((q, i) => `${i + 1}. ${q.text.trim()}`).join('\n')
 }
 
-/** The N1 disclosure line exactly as the agent will speak it. */
-export function disclosurePreview(ctx: Pick<CallContextFields, 'assistant_name' | 'on_behalf_of'>): string {
-  return `Hi, this is ${ctx.assistant_name || '(assistant name)'}, a digital assistant calling on behalf of ${ctx.on_behalf_of || '(on behalf of)'}, on a recorded line.`
+/** The N1 opening line exactly as the agent will speak it (owner wording
+ *  2026-07-28: no "digital assistant" up front — that disclosure moves to the
+ *  who-are-you answer, given only when the office asks). */
+export function disclosurePreview(ctx: Pick<CallContextFields, 'assistant_name' | 'on_behalf_of' | 'insured_name'>): string {
+  return `Hi, I'm ${ctx.assistant_name || '(assistant name)'} from ${ctx.on_behalf_of || '(on behalf of)'} calling on a recorded line to verify a certificate of insurance from ${ctx.insured_name || '(insured name)'}.`
+}
+
+/** A 17-character VIN (I, O, Q are never used in VINs). */
+const VIN_RE = /\b[A-HJ-NPR-Z0-9]{17}\b/g
+
+/** Every distinct VIN found in the COI extraction and the submitted standards. */
+export function collectVins(coi: COIExtracted | null, requirements: Requirement[]): string[] {
+  const vins = new Set<string>()
+  for (const v of coi?.vehicle_vins ?? []) {
+    const trimmed = String(v ?? '').trim().toUpperCase()
+    if (VIN_RE.test(trimmed)) vins.add(trimmed)
+    VIN_RE.lastIndex = 0
+  }
+  // Standards routinely carry the VIN of the financed vehicle in the row title
+  // or notes; the COI may also bury one in its free-text terms.
+  const haystacks = [
+    ...requirements.flatMap(r => [r.coverage_type, r.minimum_limit, r.notes ?? '']),
+    coi?.additional_terms ?? '',
+    ...(coi?.coverages ?? []).map(c => c.raw_notes ?? ''),
+  ]
+  for (const text of haystacks) {
+    for (const m of String(text ?? '').toUpperCase().matchAll(VIN_RE)) vins.add(m[0])
+  }
+  return [...vins]
 }
 
 /** Prefill the editable context + questions + details + number panel from stored data. */
@@ -240,6 +287,7 @@ export function draftFromVerification(input: {
   displayId: string
   agentQuestions: unknown
   coi: COIExtracted | null
+  requirements: Requirement[]
   contactChecks: ContactCheckEntry[]
   insuranceContact: { name?: string; phone?: string; email?: string } | null
   config: OrgCallConfig
@@ -254,9 +302,14 @@ export function draftFromVerification(input: {
     call_context: 'new',
   }
 
-  // Prefill reference details from the extraction; the admin edits/adds rows
-  // freely (e.g. one VIN row per vehicle — the extraction has no VIN field).
+  // Prefill reference details, one row per fact found on the COI extraction or
+  // in the submitted standards — a row appears only when its value exists; the
+  // admin edits/adds/removes rows freely.
   const details: ReferenceDetail[] = []
+  const push = (label: string, value: string | undefined) => {
+    const v = (value ?? '').trim()
+    if (v) details.push({ label, value: v })
+  }
   const seenPolicy = new Set<string>()
   for (const c of coi?.coverages ?? []) {
     const num = (c.policy_number ?? '').trim()
@@ -265,17 +318,21 @@ export function draftFromVerification(input: {
     const type = (c.type ?? '').trim()
     details.push({ label: type ? `Policy number (${type})` : 'Policy number', value: num })
   }
-  const addr = (coi?.named_insured_address ?? '').trim()
-  if (addr) details.push({ label: 'Insured address', value: addr })
+  push('Insured address', coi?.named_insured_address)
   // Deal parties are per-COI facts, not org config: the certificate holder
-  // (when this COI names one) rides as an ordinary reference detail the
-  // admin can edit, replace with a loss payee row, or delete.
-  const holder = (coi?.certificate_holder ?? '').trim()
-  if (holder) details.push({ label: 'Certificate holder', value: holder })
-  const usdot = (coi?.usdot_number ?? '').trim()
-  if (usdot) details.push({ label: 'USDOT number', value: usdot })
-  const mc = (coi?.mc_number ?? '').trim()
-  if (mc) details.push({ label: 'MC number', value: mc })
+  // (when this COI names one) rides as ordinary reference details the admin
+  // can edit, replace with a loss payee row, or delete. Newer extractions
+  // split the holder box into name + address; older ones have one string.
+  const holderName = (coi?.certificate_holder_name ?? '').trim()
+  if (holderName) {
+    push('Certificate holder', holderName)
+    push('Certificate holder address', coi?.certificate_holder_address)
+  } else {
+    push('Certificate holder', coi?.certificate_holder)
+  }
+  for (const vin of collectVins(coi, input.requirements)) push('VIN', vin)
+  push('USDOT number', coi?.usdot_number)
+  push('MC number', coi?.mc_number)
 
   const numbers: NumberCandidate[] = []
   const seen = new Set<string>()
@@ -352,10 +409,11 @@ const REQUIRED_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'languages', label: 'Languages' },
 ]
 
-/** Identity-core fields whose emptiness is worth flagging before dial. */
-const LOOKUP_WARN_FIELDS: { field: keyof CallContextFields; label: string }[] = [
-  { field: 'agency_name', label: 'Agency name' },
-]
+/** Identity-core fields whose emptiness is worth flagging before dial.
+ *  Insurer name/contact (agency_name / agent_name variables) are deliberately
+ *  NOT here: many calls have no contact person, and a blank just means the
+ *  agent says it does not have it (owner decision 2026-07-28). */
+const LOOKUP_WARN_FIELDS: { field: keyof CallContextFields; label: string }[] = []
 
 /** Validation: hard blocks disable dispatch; warnings flag risky-but-legal payloads. */
 export function validateDispatch(input: {

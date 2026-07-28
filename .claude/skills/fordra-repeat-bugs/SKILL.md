@@ -234,7 +234,12 @@ unrecoverable.
 - `ensureAllRequirementsJudged` (`lib/extraction.ts`) appends any requirement
   the gap model failed to judge to `uncertain` — never silently dropped.
 - Insurer questions regenerate from CURRENT requirements on every re-run,
-  keep mode included, so added/removed standards propagate.
+  keep mode included, so added/removed standards propagate — UNLESS the admin
+  has hand-edited the list (object-shaped `agent_questions`, see
+  `isCuratedQuestionList` in lib/call-config.ts; owner decision 2026-07-28).
+  A curated list is never regenerated over; the AI tab's "Regenerate from
+  standards" button is the explicit way to re-derive, so a standard added
+  after curation reaches the questions only via that button or a hand edit.
 - The admin assessment appends normalized requirements missing from the saved
   rows as Unconfirmed rows (label/notes match). Legacy assessments can show a
   one-time renamed-row duplicate — remove one; never hide a standard instead.

@@ -91,6 +91,14 @@ export interface COIExtracted {
   /** Every other person/entity named anywhere on the cert (drivers, operators,
    *  DBAs, endorsement parties) with where each was found — the owner-operator hook. */
   other_named_parties?: string;
+  /** Certificate Holder box split into entity name and address; the legacy
+   *  certificate_holder keeps the whole box verbatim. Older extractions lack
+   *  the split — re-run extraction to backfill. */
+  certificate_holder_name?: string;
+  certificate_holder_address?: string;
+  /** Every 17-character VIN printed anywhere on the certificate. Older
+   *  extractions lack it. */
+  vehicle_vins?: string[];
   coverages: COICoverage[];
   /** Where key regions sit on the original document, for report highlighting.
    *  Older extractions lack it; re-run extraction to backfill. */
@@ -209,7 +217,10 @@ export interface VerificationCase {
   coi_doc_url: string | null;
   coi_extracted: COIExtracted | null;
   gap_analysis: GapAnalysis | null;
-  agent_questions: string[] | null;
+  /** Generated lists are plain strings; admin-curated lists store objects
+   *  (the shape itself marks the list as hand-edited — see
+   *  isCuratedQuestionList in lib/call-config.ts). */
+  agent_questions: (string | { text: string; blocker?: boolean })[] | null;
   insurance_agent_phone: string | null;
   retell_call_id: string | null;
   call_transcript: string | null;

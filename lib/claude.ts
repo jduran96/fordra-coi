@@ -258,6 +258,8 @@ These identity fields matter: they confirm the certificate belongs to the right 
 - insurance_company_contact: The name(s) of any contact person printed for the producer/agent or insurer (e.g. the "Contact Name" box on ACORD 25). Comma separate multiple names. Use "" if none shown.
 - loss_payee: Any entity named as loss payee anywhere on the certificate (Description of Operations, certificate holder box wording like "loss payee", endorsement lists). Copy the entity name(s) exactly; comma separate multiple. Use "" if none stated.
 - additional_insured: Any entity named as additional insured, whether in a dedicated box, the Description of Operations, or an endorsement list. Comma separate multiple. Use "" if none stated.
+- certificate_holder_name / certificate_holder_address: The Certificate Holder box, SPLIT into the entity name (first line(s): the legal entity, e.g. "Dakota Financial LLC") and its mailing address (the remaining lines). certificate_holder keeps the whole box verbatim as before. Use "" for either part if not shown.
+- vehicle_vins: Every 17-character Vehicle Identification Number printed anywhere on the certificate (Description of Operations, vehicle or equipment schedules, remarks). Copy each character by character, exactly as printed. Use [] if none.
 - other_named_parties: OWNER-OPERATOR SEARCH — many certificates are issued under a fleet or program policy where the actual operator is NOT the named insured. Search the ENTIRE document for every other person or business named anywhere: scheduled drivers, listed operators, DBA names, lessees, parties in the Description of Operations, endorsement schedules, or remarks. For each, give the name and where it appears, e.g. "John Delgado (listed as scheduled driver); JD Hauling LLC (DBA in Description of Operations)". Use "" if none.
 - policy_number: Read each alphanumeric character by character. Do not truncate, guess, or normalize. Note ambiguous characters (0 vs O, 1 vs l) in raw_notes.
 - conditions_and_exceptions (per coverage): Types of goods or cargo covered, situations covered, exclusions, sub-limits, endorsements, or any restrictions on the coverage. Copy relevant text verbatim. Use "" if none stated.
@@ -285,6 +287,9 @@ Return ONLY a valid JSON object — no prose, no markdown:
   "insurance_company_contact": string,
   "named_insured_state": string,
   "certificate_holder": string,
+  "certificate_holder_name": string,
+  "certificate_holder_address": string,
+  "vehicle_vins": [string],
   "additional_insured": string,
   "loss_payee": string,
   "other_named_parties": string,
@@ -613,7 +618,9 @@ Output rules:
 
 export const DEFAULT_INSURER_QUESTIONS_PROMPT = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to independently verify a Certificate of Insurance against a customer's insurance standards.
 
-The questions come from the STANDARDS, and only the standards: EXACTLY ONE question per standard row, in the order the rows are given — including rows the certificate already appears to satisfy. Never split one row into several questions, and never merge two rows into one. If a row bundles several facts, ask one open question that lets the agent state them all ("What are the per-occurrence limit and deductible on the Automobile Liability policy?" is ONE question for one bundled row).
+The questions come from the STANDARDS, and only the standards: EXACTLY ONE question per standard row — including rows the certificate already appears to satisfy. Never split one row into several questions, and never merge two rows into one. If a row bundles several facts, ask one open question that lets the agent state them all ("What are the per-occurrence limit and deductible on the Automobile Liability policy?" is ONE question for one bundled row).
+
+ORDER: blocker questions first, then everything else. A blocker is a question whose negative answer would end the call immediately — the policy not being active or in force, a required vehicle or VIN not listed on the policy. Put all blocker questions at the START of the array (the VIN pair below is a blocker), then the remaining questions in the order the standard rows are given.
 
 Every question GATHERS information: the agent states the value, we never provide it. The insurer's answers are compared against the certificate AFTERWARDS, so never reveal, assume, or probe any value we hold — no names, amounts, dates, or thresholds from the standards or the certificate.
 - "Who are all the insured parties listed on the policy?" — NOT "Is ACME LLC the named insured?"
@@ -632,7 +639,7 @@ Each question must be:
 - Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
 - About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
 
-Return ONLY a valid JSON array of question strings, in standard order. No prose.`;
+Return ONLY a valid JSON array of question strings, blockers first, then standard order. No prose.`;
 
 /**
  * One question per requirement in the org's standards (not just the uncertain
@@ -658,7 +665,7 @@ export async function generateInsurerQuestions(
     {
       role: 'user',
       content: [
-        `Customer insurance standards (exactly one question per row in order; two for a VIN row):\n${JSON.stringify(requirements, null, 2)}`,
+        `Customer insurance standards (exactly one question per row, blockers first; two for a VIN row):\n${JSON.stringify(requirements, null, 2)}`,
         coi ? `Fields read from the certificate (for identifying coverages/assets only — never reveal values as answers):\n${JSON.stringify(coi, null, 2)}` : '',
       ].filter(Boolean).join('\n\n'),
     },

@@ -24,11 +24,12 @@ import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
 import ActivityLog from './ActivityLog'
 import AiCallLauncher from './AiCallLauncher'
+import AgentQuestionsEditor from './AgentQuestionsEditor'
 import RunAnalysisButton from './RunAnalysisButton'
 import { type AiCall } from '@/lib/ai-calls'
 import { getCallConfig } from '@/lib/config'
 import { draftFromVerification, CONTEXT_FIELD_NAMES, type CallContextFields } from '@/lib/call-config'
-import type { COIExtracted } from '@/lib/types'
+import type { COIExtracted, Requirement as RequirementRow } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 // Run-extraction (a server action on this page) makes 2-3 Claude calls incl.
@@ -149,6 +150,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     displayId: String(v.display_id ?? ''),
     agentQuestions: v.agent_questions,
     coi: coi as COIExtracted | null,
+    requirements: (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as RequirementRow[],
     contactChecks: checks,
     insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
     config: callConfig,
@@ -164,7 +166,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     }
   }
   const callContext: CallContextFields = draftInput ? { ...callPrefill.context, ...draftContext } : callPrefill.context
-  const callQuestions = aiDraft?.questions?.length ? aiDraft.questions : callPrefill.questions
+  // Questions always come from the master list (the AI tab editor), never the
+  // draft: the modal no longer edits them and dispatch re-reads the master.
+  const callQuestions = callPrefill.questions
   const callDetails = (() => {
     if (!draftInput?.details_json) return callPrefill.details
     try {
@@ -412,6 +416,21 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
         { label: 'AI', content: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        {/* Master question list: edits persist on the verification and prefill
+            every new call. Keyed by the data so a revalidated save remounts
+            with fresh state (same React 19 staleness fix as AssessmentForm). */}
+        <section>
+          <SectionTitle>Questions</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <AgentQuestionsEditor
+              key={JSON.stringify(callPrefill.questions)}
+              verificationId={id}
+              questions={callPrefill.questions}
+              caseIsClosed={caseIsClosed}
+            />
+          </div>
+        </section>
+
         {/* AI verification calls: the launcher modal is the whole lifecycle
             (pre-dial review gate → live call + kill switch → summary/
             transcript + add-to-contact-log); the table is the audit history. */}
