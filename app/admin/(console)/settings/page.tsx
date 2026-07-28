@@ -7,6 +7,7 @@ import {
   DEFAULT_DOC_TEXT_PROMPT,
   DEFAULT_REQUIREMENTS_PARSING_PROMPT,
   DEFAULT_ASSESSMENT_PROMPT,
+  DEFAULT_INSURER_QUESTIONS_PROMPT,
 } from '@/lib/claude'
 import { STARTER_REQUIREMENTS, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
 import { C } from '@/lib/theme'
@@ -92,6 +93,13 @@ export default async function AdminSettings({ searchParams }: {
       hint: 'System prompt for the Analysis tab\'s Run analysis button: judges each requirement from the extracted COI and the contact log, and writes the draft summary. Keep the JSON output section intact.',
       value: cfg.promptAssessment,
       def: DEFAULT_ASSESSMENT_PROMPT,
+    },
+    {
+      which: 'insurer_questions',
+      title: 'Insurer call questions',
+      hint: 'System prompt that drafts the insurer call questions from the parsed standards on each extraction run: one gathering question per standard row, two for a VIN row. Output must stay a JSON array of question strings.',
+      value: cfg.promptInsurerQuestions,
+      def: DEFAULT_INSURER_QUESTIONS_PROMPT,
     },
   ]
 

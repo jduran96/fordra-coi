@@ -11,6 +11,7 @@ export const CONFIG_KEYS = {
   promptDocTextExtraction: 'prompt_doc_text_extraction',// string — instruction for rate con / standards text OCR
   promptRequirementsParsing: 'prompt_requirements_parsing', // string — system prompt for requirements parsing
   promptAssessment: 'prompt_assessment',                // string — system prompt for the Analysis-tab assessment
+  promptInsurerQuestions: 'prompt_insurer_questions',   // string — system prompt for the insurer call questions
 } as const
 
 export interface ExtractionConfig {
@@ -18,6 +19,7 @@ export interface ExtractionConfig {
   promptDocTextExtraction?: string
   promptRequirementsParsing?: string
   promptAssessment?: string
+  promptInsurerQuestions?: string
 }
 
 /** Load all extraction-related config overrides in one query. */
@@ -33,6 +35,7 @@ export async function getExtractionConfig(): Promise<ExtractionConfig> {
     promptDocTextExtraction: (map.get(CONFIG_KEYS.promptDocTextExtraction) as string | undefined) || undefined,
     promptRequirementsParsing: (map.get(CONFIG_KEYS.promptRequirementsParsing) as string | undefined) || undefined,
     promptAssessment: (map.get(CONFIG_KEYS.promptAssessment) as string | undefined) || undefined,
+    promptInsurerQuestions: (map.get(CONFIG_KEYS.promptInsurerQuestions) as string | undefined) || undefined,
   }
 }
 

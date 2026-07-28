@@ -13,6 +13,7 @@ const PROMPT_KEYS: Record<string, string> = {
   doc_text: CONFIG_KEYS.promptDocTextExtraction,
   requirements: CONFIG_KEYS.promptRequirementsParsing,
   assessment: CONFIG_KEYS.promptAssessment,
+  insurer_questions: CONFIG_KEYS.promptInsurerQuestions,
 }
 
 /** Save or reset one of the OCR prompts. Empty text or intent=reset restores the default. */

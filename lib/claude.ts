@@ -611,50 +611,54 @@ Output rules:
 
 // ─── 5. Insurer call questions ───────────────────────────────────────────────
 
+export const DEFAULT_INSURER_QUESTIONS_PROMPT = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to independently verify a Certificate of Insurance against a customer's insurance standards.
+
+The questions come from the STANDARDS, and only the standards: EXACTLY ONE question per standard row, in the order the rows are given — including rows the certificate already appears to satisfy. Never split one row into several questions, and never merge two rows into one. If a row bundles several facts, ask one open question that lets the agent state them all ("What are the per-occurrence limit and deductible on the Automobile Liability policy?" is ONE question for one bundled row).
+
+Every question GATHERS information: the agent states the value, we never provide it. The insurer's answers are compared against the certificate AFTERWARDS, so never reveal, assume, or probe any value we hold — no names, amounts, dates, or thresholds from the standards or the certificate.
+- "Who are all the insured parties listed on the policy?" — NOT "Is ACME LLC the named insured?"
+- "What is the per-occurrence limit on the Automobile Liability policy?" — NOT "Is the limit $1,000,000?" and NOT "The certificate shows $1,000,000 — is that current?"
+- Prefer exhaustive-list phrasing ("Who are all…", "What vehicles are listed…") so the agent enumerates rather than confirms.
+- Yes/no phrasing is fine only for existence checks the standard demands ("Is a loss payee endorsement on the policy?").
+
+Certificate or standard details may appear ONLY to identify what you are asking about — a coverage name, a policy number — never as the answer.
+
+THE ONE EXCEPTION — a standard row that contains a VIN. That row alone produces exactly TWO consecutive questions, and the full VIN is never spoken:
+1. "Is a vehicle with a VIN ending in {last 4 digits of the VIN} listed on the policy?"
+2. "Can you confirm the first 4 digits of that VIN?"
+
+Each question must be:
+- 25 words or fewer
+- Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
+- About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
+
+Return ONLY a valid JSON array of question strings, in standard order. No prose.`;
+
 /**
  * One question per requirement in the org's standards (not just the uncertain
- * ones), each worded around what OCR already read off the COI (e.g. "The
- * certificate shows X as the named insured — are there other insured
- * parties?"). Used only by runExtractionPipeline; the questions prefill the
- * AI call's question list.
+ * ones), phrased to GATHER the value from the insurer without revealing what
+ * the standards or certificate say (e.g. "Who are all the insured parties
+ * listed on the policy?"). Sole exception: a VIN row yields a last-4
+ * confirmation plus a first-4 follow-up. Used only by runExtractionPipeline;
+ * the questions prefill the AI call's question list.
  */
 export async function generateInsurerQuestions(
   requirements: Requirement[],
   coi: COIExtracted | null,
+  promptOverride?: string,
 ): Promise<string[]> {
   const mandatory = [
     `Is the COI for ${coi?.named_insured || 'the carrier'} still active and in force?`,
   ];
   if (!requirements.length) return mandatory;
 
-  const system = `You are drafting questions for a phone call with a licensed insurance agent at the insurance company, to independently verify a Certificate of Insurance against a customer's insurance standards.
-
-The questions come from the STANDARDS, and only the standards: every detail the standards require gets confirmed with the insurer, in the order the standards are given — including details the certificate already appears to satisfy. The insurer's answers are compared against the certificate AFTERWARDS, so the questions must be independent of what the certificate shows: never assume, mention, or probe anything as present, absent, or mismatched on the certificate, and never reveal the required threshold.
-
-Phrase every question OPEN, so the agent states the value themselves:
-- "What is the per-occurrence limit on the Automobile Liability policy?" — NOT "Is the limit $1,000,000?" and NOT "The certificate shows $1,000,000 — is that current?"
-- "Who is the named insured on the policy?" — NOT "Is ACME LLC the named insured?"
-- Yes/no phrasing is fine only for existence checks the standard demands ("Is a loss payee endorsement on the policy?").
-
-Certificate details may appear ONLY to identify what you are asking about — a coverage name, a specific vehicle or VIN the standard concerns, a policy number — never as the answer.
-
-Each question must be:
-- 25 words or fewer
-- ATOMIC: exactly one fact per question, answerable with a yes/no or a
-  single concrete value. Never join two checks with "and" (loss payee
-  and additional insured are TWO questions; limit and deductible are
-  TWO questions). If a standard bundles several facts, split it into
-  one question per fact, keeping standard order.
-- Answerable by an insurance company agent (not the trucking company or insured) — never about the carrier's operations, equipment, routes, or business practices
-- About insurance coverage, policy terms, endorsements, limits, parties, or effective dates only
-
-Return ONLY a valid JSON array of question strings, in standard order. No prose.`;
+  const system = promptOverride?.trim() || DEFAULT_INSURER_QUESTIONS_PROMPT;
 
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
       content: [
-        `Customer insurance standards (one or more questions per row, in order):\n${JSON.stringify(requirements, null, 2)}`,
+        `Customer insurance standards (exactly one question per row in order; two for a VIN row):\n${JSON.stringify(requirements, null, 2)}`,
         coi ? `Fields read from the certificate (for identifying coverages/assets only — never reveal values as answers):\n${JSON.stringify(coi, null, 2)}` : '',
       ].filter(Boolean).join('\n\n'),
     },

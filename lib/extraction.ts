@@ -51,10 +51,11 @@ function ensureAllRequirementsJudged(gap: GapAnalysis, requirements: Requirement
 async function questionsFor(
   requirements: Requirement[],
   coiExtracted: unknown,
+  promptOverride?: string,
 ): Promise<string[] | null> {
   if (!requirements.length || !coiExtracted) return null
   try {
-    return await generateInsurerQuestions(requirements, coiExtracted as Parameters<typeof generateInsurerQuestions>[1])
+    return await generateInsurerQuestions(requirements, coiExtracted as Parameters<typeof generateInsurerQuestions>[1], promptOverride)
   } catch (e) {
     console.error('insurer question generation failed', e)
     return null
@@ -154,7 +155,7 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // Insurer call questions track the CURRENT standards on every run (one per
   // requirement, additions and removals included); they prefill the AI call.
   // On failure, keep the old questions rather than wiping them.
-  const regenerated = await questionsFor(requirements, coiExtracted)
+  const regenerated = await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
   if (regenerated) update.agent_questions = regenerated
 
   // Only advance from the initial state: a case already assessed or published
