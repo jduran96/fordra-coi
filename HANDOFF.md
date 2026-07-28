@@ -626,10 +626,14 @@ Gatekeeping: installs only work via HMAC-signed per-org links generated on `/adm
       until the publish step runs.
     - Live IDs: agent `agent_e581fdc4114615fa088b0690ec`, flow
       `conversation_flow_283618e37c0c`. Auth from `RETELL_API_KEY` in `.env.local`.
-    - **Env cutover done locally 2026-07-24** (`RETELL_AGENT_ID` → v5 agent;
-      `RETELL_WEBHOOK_SECRET` set equal to the API key because Retell signs webhooks with
-      the API key). **Vercel still has the old values** — update both there before any
-      prod dispatch, then delete the old demo agent `agent_7b8d16eae5151a12b4545ad591`
+    - **Env cutover COMPLETE (Vercel updated 2026-07-28 via `vercel` CLI + prod
+      redeploy):** `RETELL_AGENT_ID` now points at the current agent in Production and
+      Preview; `RETELL_API_KEY` / `RETELL_WEBHOOK_SECRET` / `RETELL_FROM_NUMBER` were
+      refreshed 2026-07-27 (webhook secret = API key, because Retell signs webhooks with
+      it). Dead demo vars `POSTGRES_URL` / `APP_PASSWORD` / `SESSION_SECRET` deleted from
+      Vercel the same day. NOTE agent IDs are stable: publishing a new version NEVER
+      requires an env change — this was a one-time cutover from the deleted demo agent.
+      Remaining cleanup: delete the old demo agent `agent_7b8d16eae5151a12b4545ad591`
       ("COI Validation - v1", still live in Retell).
     - **Callback-number caveat:** the outbound number `+13055207762` has NO inbound agent
       bound; the flow invites no callbacks. `callback_number`, `email_enabled`, and
