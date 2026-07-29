@@ -80,15 +80,21 @@ export async function questionsFromConfig(input: {
   requirements: Requirement[]
   coiExtracted: unknown
   promptOverride?: string
-}): Promise<string[] | null> {
+}): Promise<(string | { text: string; blocker?: boolean })[] | null> {
   if (!input.orgId || !input.templateId) return null
   try {
     const config = await getQuestionsConfig(input.orgId, input.templateId)
     if (!config) return null
     const values = templateVariableValues(input.storedRequirements)
+    // Object entries so the admin's configured blocker flags and ordering
+    // survive verbatim (a configured list therefore counts as curated, like a
+    // hand-edited one: extraction re-runs keep it; Regenerate re-applies it).
     const configured = config.questions
       .filter(q => q.question)
-      .map(q => applyQuestionTokens(q.question, values))
+      .map(q => ({
+        text: applyQuestionTokens(q.question, values),
+        ...(q.blocker ? { blocker: true as const } : {}),
+      }))
     if (!configured.length) return null
     // The config replaces generation only for the rows it covers; the rest
     // (usually none, which skips the model call entirely) still generate.

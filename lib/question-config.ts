@@ -25,6 +25,9 @@ export interface ConfiguredQuestion {
   requirement: string
   /** The question, possibly with {tokens}. Blank = no configured question for this row. */
   question: string
+  /** Default blocker: populates the flag the AI call's gate node reads (a
+   *  negative answer ends the call). Still editable per deal in the AI tab. */
+  blocker?: boolean
 }
 
 export interface QuestionsListConfig {
@@ -41,12 +44,13 @@ export function parseQuestionsConfig(value: unknown): QuestionsListConfig | null
   const questions = raw
     .map((q): ConfiguredQuestion | null => {
       if (!q || typeof q !== 'object') return null
-      const { coverage_type, requirement, question } = q as Record<string, unknown>
+      const { coverage_type, requirement, question, blocker } = q as Record<string, unknown>
       if (typeof coverage_type !== 'string' || typeof question !== 'string') return null
       return {
         coverage_type: coverage_type.trim(),
         requirement: typeof requirement === 'string' ? requirement : coverage_type.trim(),
         question: question.trim(),
+        ...(blocker === true ? { blocker: true } : {}),
       }
     })
     .filter((q): q is ConfiguredQuestion => !!q && !!q.coverage_type)

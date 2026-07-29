@@ -3,11 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
-import { CONFIG_KEYS, CALL_CONFIG_KEY, callConfigOrgKey, setConfig, deleteConfig } from '@/lib/config'
+import { CONFIG_KEYS, callConfigOrgKey, setConfig, deleteConfig } from '@/lib/config'
 import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
 import { questionsConfigKey, type ConfiguredQuestion } from '@/lib/question-config'
+import { referenceDetailsKey, type ReferenceDetail } from '@/lib/call-config'
 
 const PROMPT_KEYS: Record<string, string> = {
   coi: CONFIG_KEYS.promptCoiExtraction,
@@ -138,6 +139,7 @@ export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: bo
       coverage_type: String(q?.coverage_type ?? '').trim(),
       requirement: String(q?.requirement ?? '').trim(),
       question: String(q?.question ?? '').trim(),
+      ...(q?.blocker === true ? { blocker: true } : {}),
     }))
     .filter(q => q.coverage_type && q.question)
   const key = questionsConfigKey(orgId, templateId)
@@ -148,15 +150,46 @@ export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: bo
 }
 
 /**
- * Save the AI call identity config for one scope: 'global' or an org id.
- * Only non-blank fields are stored; blanks fall back (org -> global ->
- * built-in defaults) at read time via getCallConfig. An all-blank submission
- * clears the scope's override entirely.
+ * Save one org's predefined reference details (settings → Calling): rows
+ * prepended to every pre-dial prefill for that org's verifications, ahead of
+ * the per-deal facts computed from the COI. An all-blank submission clears
+ * the org's config.
+ */
+export async function saveReferenceDetails(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin()
+  const orgId = String(formData.get('org_id') || '').trim()
+  if (!orgId) return { error: 'Pick an org first.' }
+  let rows: ReferenceDetail[]
+  try {
+    rows = JSON.parse(String(formData.get('details') || '[]'))
+  } catch {
+    return { error: 'Could not read the detail rows. Please retry.' }
+  }
+  const details = rows
+    .map(d => ({ label: String(d?.label ?? '').trim(), value: String(d?.value ?? '').trim() }))
+    .filter(d => d.label && d.value)
+  const halfFilled = rows.some(d =>
+    !!String(d?.label ?? '').trim() !== !!String(d?.value ?? '').trim())
+  if (halfFilled) return { error: 'Every row needs both a label and a value (or remove the row).' }
+  const key = referenceDetailsKey(orgId)
+  if (details.length === 0) await deleteConfig(key)
+  else await setConfig(key, { details })
+  revalidatePath('/admin/settings')
+  return { ok: true }
+}
+
+/**
+ * Save the AI call identity config for one org. The global scope was removed
+ * from the editor 2026-07-29 (owner call: every call has different context);
+ * getCallConfig still merges any legacy `call_config` global row at read time.
+ * Only non-blank fields are stored; blanks fall back to the built-in defaults.
+ * An all-blank submission clears the org's override entirely.
  */
 export async function saveCallConfig(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
   await requireAdmin()
-  const scope = String(formData.get('scope') || 'global')
-  const key = scope === 'global' ? CALL_CONFIG_KEY : callConfigOrgKey(scope)
+  const scope = String(formData.get('scope') || '').trim()
+  if (!scope || scope === 'global') return { error: 'Pick an org first.' }
+  const key = callConfigOrgKey(scope)
 
   const value: Record<string, string> = {}
   for (const field of [

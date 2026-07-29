@@ -16,8 +16,9 @@ import OrgStandards from './OrgStandards'
 import NotificationEmails from './NotificationEmails'
 import CallConfigCard from './CallConfigCard'
 import QuestionsListCard from './QuestionsListCard'
+import ReferenceDetailsCard from './ReferenceDetailsCard'
 import { CALL_CONFIG_KEY } from '@/lib/config'
-import type { OrgCallConfig } from '@/lib/call-config'
+import { parseReferenceDetails, REFERENCE_DETAILS_KEY, type OrgCallConfig, type ReferenceDetail } from '@/lib/call-config'
 import { parseQuestionsConfig, QUESTIONS_CONFIG_KEY, type ConfiguredQuestion } from '@/lib/question-config'
 import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
 
@@ -61,10 +62,19 @@ export default async function AdminSettings({ searchParams }: {
   const { data: callCfgRows, error: callCfgError } = await svc
     .from('app_config').select('key, value').like('key', `${CALL_CONFIG_KEY}%`)
   if (callCfgError) throw new Error(`Could not load call config: ${callCfgError.message}`)
-  const callGlobal = (callCfgRows ?? []).find(r => r.key === CALL_CONFIG_KEY)?.value as Partial<OrgCallConfig> ?? {}
   const callByOrg: Record<string, Partial<OrgCallConfig>> = {}
   for (const r of callCfgRows ?? []) {
     if (r.key.startsWith(`${CALL_CONFIG_KEY}:`)) callByOrg[r.key.slice(CALL_CONFIG_KEY.length + 1)] = r.value as Partial<OrgCallConfig>
+  }
+
+  // Org-level predefined reference details, keyed by org id.
+  const { data: refCfgRows, error: refCfgError } = await svc
+    .from('app_config').select('key, value').like('key', `${REFERENCE_DETAILS_KEY}:%`)
+  if (refCfgError) throw new Error(`Could not load reference details configs: ${refCfgError.message}`)
+  const refByOrg: Record<string, ReferenceDetail[]> = {}
+  for (const r of refCfgRows ?? []) {
+    const details = parseReferenceDetails(r.value)
+    if (details.length) refByOrg[r.key.slice(REFERENCE_DETAILS_KEY.length + 1)] = details
   }
 
   // Questions List configs: one row per org+template pair, keyed "orgId:templateId".
@@ -181,13 +191,24 @@ export default async function AdminSettings({ searchParams }: {
           <section>
             <SectionTitle>AI call identity</SectionTitle>
             <p style={hintStyle()}>
-              These prefill the pre-dial review screen; everything stays editable per call there.
-              Org overrides fall back to the global default.
+              Who the agent is and who it calls on behalf of, per org. These prefill the
+              pre-dial review screen; everything stays editable per call there.
             </p>
             <CallConfigCard
               orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
-              global={callGlobal}
               byOrg={callByOrg}
+            />
+          </section>
+          <section>
+            <SectionTitle>Reference details</SectionTitle>
+            <p style={hintStyle()}>
+              Predefined rows the agent can give the office to locate the account, per org. They
+              lead the pre-dial reference details on every deal, ahead of the rows pulled from the
+              COI automatically (the card lists that logic).
+            </p>
+            <ReferenceDetailsCard
+              orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+              byOrg={refByOrg}
             />
           </section>
           <section>

@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { DEFAULT_CALL_CONFIG, type OrgCallConfig } from '@/lib/call-config'
+import { DEFAULT_CALL_CONFIG, parseReferenceDetails, referenceDetailsKey, type OrgCallConfig, type ReferenceDetail } from '@/lib/call-config'
 import { parseQuestionsConfig, questionsConfigKey, type QuestionsListConfig } from '@/lib/question-config'
 
 /**
@@ -64,6 +64,16 @@ export async function getCallConfig(orgId: string | null): Promise<OrgCallConfig
     if (!String(merged[k] ?? '').trim()) merged[k] = DEFAULT_CALL_CONFIG[k] as never
   }
   return merged
+}
+
+/** Org-level predefined reference details prepended to every pre-dial prefill. */
+export async function getReferenceDetails(orgId: string | null): Promise<ReferenceDetail[]> {
+  if (!orgId) return []
+  const svc = createServiceClient()
+  const { data, error } = await svc.from('app_config')
+    .select('value').eq('key', referenceDetailsKey(orgId)).maybeSingle()
+  if (error) throw new Error(`Could not load the reference details config: ${error.message}`)
+  return parseReferenceDetails(data?.value)
 }
 
 /**

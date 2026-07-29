@@ -282,6 +282,30 @@ export function collectVins(coi: COIExtracted | null, requirements: Requirement[
   return [...vins]
 }
 
+/**
+ * Org-level predefined reference details (settings → Calling → Reference
+ * details), stored in app_config under `reference_details:<orgId>`. They are
+ * prepended to every deal's prefilled reference details, ahead of the per-deal
+ * facts computed from the COI/standards below.
+ */
+export const REFERENCE_DETAILS_KEY = 'reference_details'
+export const referenceDetailsKey = (orgId: string) => `${REFERENCE_DETAILS_KEY}:${orgId}`
+
+/** Tolerant read of a stored reference-details config value. */
+export function parseReferenceDetails(value: unknown): ReferenceDetail[] {
+  const raw = (value as { details?: unknown })?.details
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((d): ReferenceDetail | null => {
+      if (!d || typeof d !== 'object') return null
+      const { label, value: v } = d as Record<string, unknown>
+      if (typeof label !== 'string' || typeof v !== 'string') return null
+      const trimmed = { label: label.trim(), value: v.trim() }
+      return trimmed.label && trimmed.value ? trimmed : null
+    })
+    .filter((d): d is ReferenceDetail => !!d)
+}
+
 /** Prefill the editable context + questions + details + number panel from stored data. */
 export function draftFromVerification(input: {
   displayId: string
@@ -291,6 +315,8 @@ export function draftFromVerification(input: {
   contactChecks: ContactCheckEntry[]
   insuranceContact: { name?: string; phone?: string; email?: string } | null
   config: OrgCallConfig
+  /** Org-level predefined rows (settings → Calling → Reference details). */
+  orgDetails?: ReferenceDetail[]
 }): { context: CallContextFields; questions: AiCallQuestion[]; numbers: NumberCandidate[]; details: ReferenceDetail[] } {
   const { coi, config } = input
   const context: CallContextFields = {
@@ -302,10 +328,11 @@ export function draftFromVerification(input: {
     call_context: 'new',
   }
 
-  // Prefill reference details, one row per fact found on the COI extraction or
-  // in the submitted standards — a row appears only when its value exists; the
-  // admin edits/adds/removes rows freely.
-  const details: ReferenceDetail[] = []
+  // Prefill reference details: the org's predefined rows first, then one row
+  // per fact found on the COI extraction or in the submitted standards — a
+  // computed row appears only when its value exists; the admin edits/adds/
+  // removes rows freely per call.
+  const details: ReferenceDetail[] = [...(input.orgDetails ?? [])]
   const push = (label: string, value: string | undefined) => {
     const v = (value ?? '').trim()
     if (v) details.push({ label, value: v })

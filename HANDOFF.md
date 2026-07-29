@@ -5,8 +5,32 @@
 
 ## ⏱️ START HERE (as of 2026-07-29 — Questions List config, contact-check blurb/table cleanup)
 
-**2026-07-29, on `main` (pushed to prod same day, owner-directed):** five
-changes from the owner's VRF-1095 review.
+**2026-07-29, on `main` (pushed to prod same day, owner-directed):** changes
+from the owner's VRF-1095 review, plus a same-day settings hotfix round.
+
+Hotfix round (second push 2026-07-29):
+
+- **Questions List: blocker flags + ordering.** Config entries carry
+  `blocker?: boolean` and the saved row order; `questionsFromConfig` now emits
+  `{text, blocker}` OBJECTS (so a config-populated list counts as curated:
+  extraction re-runs keep it verbatim; Regenerate re-applies the config).
+  Blockers still route to the Retell gate node and dial first; the admin's
+  order holds within each group. Settings editor mirrors AgentQuestionsEditor
+  (up/down arrows + red Blocker checkbox).
+- **AI call identity is org-only.** The 'Global default' scope is deleted from
+  the editor and `saveCallConfig` rejects it; the form renders only after an
+  org is picked. `getCallConfig` still merges any legacy `call_config` global
+  row at read time (harmless back-compat).
+- **Reference details section (new, settings → Calling, between identity and
+  Questions List).** Org-scoped predefined label/value rows stored under
+  `reference_details:<orgId>` (`lib/call-config.ts` key + parse,
+  `getReferenceDetails` in `lib/config.ts`, `ReferenceDetailsCard.tsx`,
+  `saveReferenceDetails` action). They PREPEND the pre-dial reference details
+  on every deal (`draftFromVerification` new `orgDetails` input, wired in the
+  admin [id] page). The card documents the computed per-deal prefill logic —
+  its `COMPUTED_ROWS` list must stay in sync with `draftFromVerification`.
+
+Original round:
 
 - **Questions List config (settings → Calling, new section).** Per-org,
   per-template standard call questions, stored in `app_config` under
