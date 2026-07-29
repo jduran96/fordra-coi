@@ -384,9 +384,15 @@ node ALWAYS generates a spoken response when entered or on its turn — no
 prompt wording ("say nothing", "stay silent") reliably suppresses it, and the
 model narrates bracketed stage directions instead, which TTS speaks. Any flow
 design that lets a keypad menu be heard while a conversation node is current
-will eventually talk to the menu. Also: global nodes are never evaluated on
-the call's FIRST user utterance, so the opener is always spoken over the
-initial greeting/menu — platform behavior, harmless, don't fight it.
+will eventually talk to the menu. Also: the call's FIRST user utterance
+always routes begin -> start node with no global evaluated, so the opener is
+spoken over the initial greeting/menu. That is OBSERVED (5/5: three live
+calls + two simulations, including one where the first utterance plainly
+matched an active global condition), NOT documented — Retell's docs only say
+globals evaluate "after a user turn" and are silent on the first turn
+(checked 2026-07-28; community thread on this exact gap got no staff
+answer). Treat it as stable but re-verify with scripts/retell-test-ivr.mjs
+if first-turn behavior ever seems to change.
 
 **Fix (in place since flow v15 — keep this shape):** keypad menus never touch
 a talking node. `node-ivr-press` (press_digit, silent by nature) is a GLOBAL

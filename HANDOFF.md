@@ -75,10 +75,14 @@ so a case can be moved forward between meetings.
   transcripts for narration/voiced presses. Both scenarios pass on v15;
   the harness reproduced the live bug on the pre-fix draft. Run it before
   publishing ANY flow change.
-- Known cosmetic remainder (platform behavior, not fixable in the flow):
-  the opener is always spoken over the initial greeting because global
-  nodes are not evaluated on the first user utterance. Harmless — menus
-  ignore speech and the press node takes over one turn later.
+- Known cosmetic remainder (not fixable in the flow): the opener is always
+  spoken over the initial greeting because the first user utterance routes
+  begin -> start node with no global evaluated. This is OBSERVED behavior
+  (5/5 across live calls + simulations), NOT documented by Retell — docs
+  checked 2026-07-28 say only that globals evaluate "after a user turn" and
+  are silent on the first turn. Harmless today (menus ignore speech, the
+  press node takes over one turn later); re-verify with the test harness if
+  it ever seems to change.
 
 **2026-07-28 session, round 3 (pushed to prod):**
 
