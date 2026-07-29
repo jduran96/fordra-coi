@@ -10,6 +10,15 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Hotfix round (second push 2026-07-29):
 
+- **Custom questions in the Questions List config.** `ConfiguredQuestion`
+  gained `custom?: boolean`: free-standing questions not tied to any template
+  row (added via "Add question" in the settings editor, orderable, blocker-
+  flaggable, removable). They always populate and never count as covering a
+  requirement in `uncoveredRequirements`. Existing verifications do NOT need
+  an OCR rerun to pick up config changes: the AI tab's "Regenerate from
+  standards" button rebuilds the list from config + the deal's stored
+  standards only (its confirm copy now says so).
+
 - **Questions List: blocker flags + ordering.** Config entries carry
   `blocker?: boolean` and the saved row order; `questionsFromConfig` now emits
   `{text, blocker}` OBJECTS (so a config-populated list counts as curated:

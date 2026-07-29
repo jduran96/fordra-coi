@@ -19,7 +19,8 @@ export const questionsConfigKey = (orgId: string, templateId: string) =>
   `${QUESTIONS_CONFIG_KEY}:${orgId}:${templateId}`
 
 export interface ConfiguredQuestion {
-  /** Match key: the template row's coverage_type at config time (may hold {tokens}). */
+  /** Match key: the template row's coverage_type at config time (may hold
+   *  {tokens}). Empty for custom (free-standing) questions. */
   coverage_type: string
   /** Full row label snapshot ("Coverage: limit (notes)") shown in settings for drift spotting. */
   requirement: string
@@ -28,6 +29,9 @@ export interface ConfiguredQuestion {
   /** Default blocker: populates the flag the AI call's gate node reads (a
    *  negative answer ends the call). Still editable per deal in the AI tab. */
   blocker?: boolean
+  /** Free-standing question not tied to any template requirement row: always
+   *  populated, never counts as covering a requirement. */
+  custom?: boolean
 }
 
 export interface QuestionsListConfig {
@@ -44,16 +48,17 @@ export function parseQuestionsConfig(value: unknown): QuestionsListConfig | null
   const questions = raw
     .map((q): ConfiguredQuestion | null => {
       if (!q || typeof q !== 'object') return null
-      const { coverage_type, requirement, question, blocker } = q as Record<string, unknown>
+      const { coverage_type, requirement, question, blocker, custom } = q as Record<string, unknown>
       if (typeof coverage_type !== 'string' || typeof question !== 'string') return null
       return {
         coverage_type: coverage_type.trim(),
         requirement: typeof requirement === 'string' ? requirement : coverage_type.trim(),
         question: question.trim(),
         ...(blocker === true ? { blocker: true } : {}),
+        ...(custom === true ? { custom: true } : {}),
       }
     })
-    .filter((q): q is ConfiguredQuestion => !!q && !!q.coverage_type)
+    .filter((q): q is ConfiguredQuestion => !!q && (!!q.coverage_type || (!!q.custom && !!q.question)))
   return questions.length ? { questions } : null
 }
 
@@ -88,7 +93,8 @@ export function uncoveredRequirements(
   config: QuestionsListConfig,
   requirements: Requirement[],
 ): Requirement[] {
-  const configured = config.questions.filter(q => q.question)
+  // Custom (free-standing) questions never cover a requirement row.
+  const configured = config.questions.filter(q => q.question && !q.custom)
   return requirements.filter(r =>
     !configured.some(q => coverageMatches(q.coverage_type, r.coverage_type)),
   )

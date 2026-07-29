@@ -140,8 +140,11 @@ export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: bo
       requirement: String(q?.requirement ?? '').trim(),
       question: String(q?.question ?? '').trim(),
       ...(q?.blocker === true ? { blocker: true } : {}),
+      ...(q?.custom === true ? { custom: true } : {}),
     }))
-    .filter(q => q.coverage_type && q.question)
+    // Template rows persist only with a question; custom rows have no
+    // requirement key and persist on their question text alone.
+    .filter(q => q.question && (q.coverage_type || q.custom))
   const key = questionsConfigKey(orgId, templateId)
   if (questions.length === 0) await deleteConfig(key)
   else await setConfig(key, { questions })

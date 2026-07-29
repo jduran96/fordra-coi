@@ -99,23 +99,26 @@ function QuestionsEditor({ orgId, template, stored }: {
       ? [{ coverage_type: 'Additional details', requirement: `Additional details: ${template.details.trim()}` }]
       : []),
   ]
-  // Saved order wins: stored entries (matched to a current row) first, then
-  // any template row without a saved question, in template order.
+  // Saved order wins: stored entries first (custom ones pass straight
+  // through; template entries matched to a current row), then any template
+  // row without a saved question, in template order.
   const initialRows: EditorRow[] = [
     ...stored
-      .map(q => {
+      .map((q): EditorRow | null => {
+        if (q.custom) return { ...q }
         const row = templateRows.find(r => coverageMatches(q.coverage_type, r.coverage_type))
         return row ? { ...row, question: q.question, ...(q.blocker ? { blocker: true } : {}) } : null
       })
       .filter((r): r is EditorRow => !!r),
     ...templateRows
-      .filter(r => !stored.some(q => coverageMatches(q.coverage_type, r.coverage_type)))
+      .filter(r => !stored.some(q => !q.custom && coverageMatches(q.coverage_type, r.coverage_type)))
       .map(r => ({ ...r, question: '' })),
   ]
   // Saved questions whose row no longer exists on the template (row renamed or
-  // deleted since): they are dropped on the next save, so say so.
+  // deleted since): they are dropped on the next save, so say so. Custom
+  // questions have no row to match and never count here.
   const orphaned = stored.filter(q =>
-    q.question && !templateRows.some(r => coverageMatches(q.coverage_type, r.coverage_type)))
+    q.question && !q.custom && !templateRows.some(r => coverageMatches(q.coverage_type, r.coverage_type)))
 
   const [rows, setRows] = useState<EditorRow[]>(initialRows)
   const [message, setMessage] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
@@ -162,14 +165,14 @@ function QuestionsEditor({ orgId, template, stored }: {
       )}
       {rows.map((row, i) => (
         <div key={row.coverage_type + i} style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 12, background: C.paper }}>
-          <p style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2, margin: '0 0 6px', lineHeight: 1.5 }}>
-            {row.requirement}
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: row.custom ? C.txt3 : C.txt2, margin: '0 0 6px', lineHeight: 1.5, ...(row.custom ? { textTransform: 'uppercase' as const, letterSpacing: '0.05em', fontSize: 10.5 } : {}) }}>
+            {row.custom ? 'Custom question (not tied to a requirement)' : row.requirement}
           </p>
           <div className="fx-q-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <textarea
               value={row.question}
               rows={2}
-              placeholder="Leave blank to keep this row AI-drafted per deal"
+              placeholder={row.custom ? 'Question asked on every deal for this standard' : 'Leave blank to keep this row AI-drafted per deal'}
               onChange={e => setRow(i, { question: e.target.value })}
               style={{ ...inputStyle, resize: 'vertical', flex: 1, lineHeight: 1.45 }}
             />
@@ -177,6 +180,10 @@ function QuestionsEditor({ orgId, template, stored }: {
               <button type="button" onClick={() => move(i, -1)} disabled={i === 0} style={tinyBtn(i === 0)} aria-label="Move up">↑</button>
               <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1} style={tinyBtn(i === rows.length - 1)} aria-label="Move down">↓</button>
             </div>
+            {row.custom && (
+              <button type="button" onClick={() => { setMessage(null); setRows(prev => prev.filter((_, j) => j !== i)) }}
+                style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove question">✕</button>
+            )}
           </div>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12.5, color: row.blocker ? C.error : C.txt2, cursor: 'pointer', userSelect: 'none', fontWeight: row.blocker ? 600 : 400 }}>
             <input type="checkbox" checked={!!row.blocker}
@@ -193,6 +200,11 @@ function QuestionsEditor({ orgId, template, stored }: {
         </p>
       )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button type="button" disabled={pending}
+          onClick={() => { setMessage(null); setRows(prev => [...prev, { coverage_type: '', requirement: '', question: '', custom: true }]) }}
+          style={btnStyle(pending)}>
+          Add question
+        </button>
         <button type="button" onClick={save} disabled={pending} style={btnStyle(pending)}>
           {pending ? 'Saving...' : 'Save questions list'}
         </button>

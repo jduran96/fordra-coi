@@ -132,7 +132,7 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
             </button>
           ) : (
             <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
-              <span style={{ fontSize: 13, color: C.txt2 }}>This replaces the whole list, edits included.</span>
+              <span style={{ fontSize: 13, color: C.txt2 }}>Rebuilds from the settings Questions List and this deal&apos;s standards (no OCR rerun), replacing the whole list, edits included.</span>
               <button type="button" disabled={pending} onClick={regenerate} style={{ ...btn(pending), color: C.error }}>
                 {pending ? 'Regenerating...' : 'Confirm regenerate'}
               </button>
