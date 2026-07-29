@@ -147,8 +147,10 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // insured_name from the COI — named insured first, certificate holder
   // second. Displays fall back to the display id while this is blank.
   if (coiExtracted) {
-    const coi = coiExtracted as { named_insured?: string; certificate_holder?: string }
+    const coi = coiExtracted as { named_insured?: string; certificate_holder?: string; named_insured_address?: string }
     update.insured_name = (coi.named_insured ?? '').trim() || (coi.certificate_holder ?? '').trim() || ''
+    // Second half of the business identity the Businesses pages group by.
+    update.insured_address = (coi.named_insured_address ?? '').trim()
   }
   // The agent contact check is NOT run here: it costs web searches per run,
   // so it has its own button on the admin page (runContactCheck action).

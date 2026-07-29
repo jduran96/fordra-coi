@@ -3,7 +3,78 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-28 — admin console is mobile-responsive; branch `quesoDev`)
+## ⏱️ START HERE (as of 2026-07-28 late — Businesses pages, Activity feed, status wording, highlight fix)
+
+**2026-07-28 late, on `main` (localhost only, NOT pushed; owner verifies locally
+first):** six upgrades in one pass.
+
+- **Status wording standardized (owner-directed).** Requirement checks:
+  `met`/`not_met`/`uncertain` now display **Passed / Failed / Warning**
+  everywhere (customer report + VerdictStrip, admin AssessmentForm select,
+  report PDF labels and its Result count line). The owner explicitly chose
+  check-level "Failed" on 2026-07-28; **case-level `failed` still renders
+  "Could not complete"** (`lib/theme.ts statusLabel`) — the two coexist, do
+  not "fix" either. Contact checks: `verified`/`not_found`/`differs` display
+  **Found (green) / Not Found (yellow, was grey) / Warning (red, was amber)**
+  (customer StatusChip, admin NoteStatusChip, NoteCheckControls selects, PDF).
+  The absent no-status state keeps the grey dashed "Not checked online". The
+  legitimacy verdict chips keep their sentences but recolored to the same
+  green/yellow/red. Machine values in the DB are unchanged.
+- **Businesses pages** (`/app/businesses` org-scoped, `/admin/businesses` all
+  orgs + Org column; both in the nav). One row per insured entity, grouped by
+  normalized `insured_name` + **new `verifications.insured_address` column**
+  (migration `0034`: column + backfill from `coi_extracted->>
+  'named_insured_address'` + `my_verifications` DROP/CREATE with the new
+  ungated column; stamped by `lib/extraction.ts` alongside insured_name).
+  Coverage rollup per business (`lib/businesses.ts`): published reports only —
+  any failed check = **Lapsed**, else any warning = **Uncertain**, else
+  **Active**; zero published = Uncertain (owner: ignore pending). Rows expand
+  to the entity's verifications; clicking one opens a **summary modal**
+  (verdict counts + dates + "Open full report" link — owner chose summary over
+  embedding). `components/BusinessesTable.tsx` is its own client table
+  (expansion state can't live in `PaginatedTable`'s prerendered rows), 25/page.
+  Blank-name rows (not yet extracted) are excluded from the roster.
+- **Activity feed** (`components/ActivityFeed.tsx` pill + popup, on the
+  customer report header, the admin detail header beside the admin-only
+  ActivityLog, and every business row). Built from `events` rows via
+  `lib/activity-feed.ts`. Backend: migration `0035` adds indexed
+  `events.verification_id` (+ payload backfill); `emitEvent` takes it as a 4th
+  arg; **new `recordEvent()` in `lib/webhooks.ts` inserts WITHOUT webhook
+  delivery** — used for the new `verification.published` / `.reopened` /
+  `.failed` types because an endpoint with an empty `events` filter receives
+  ALL emitted types. `saveAssessment` records publish/fail/reopen (draft on a
+  published row = reopened). **Web submissions now emit `verification.created`**
+  (parity with API/Slack — this is the one real webhook-traffic change).
+  History limitation: rows from before today only show "Submitted" (+ any old
+  created/updated events); earlier publish history is unrecoverable.
+- **Admin queue tables**: 10 rows/page, inner-scroll `maxHeight` removed.
+- **Special instructions on web creation** (Stefanie/Dakota ask, 2026-07-28):
+  optional free-text box, always the LAST item in the Verification Details
+  section of `/app/new` (the section now renders even with no template
+  variables), auto-growing textarea (wraps, never sideways scroll). The server
+  action appends it to the requirements text as one line
+  (`Special instructions: <text>`) AFTER template resolution, so the parser,
+  gap analysis, and the insurer question generator treat it as one more
+  requirement with zero pipeline changes. Works in all three standards modes
+  (template / manual / upload-doc). Web path only; API/Slack unchanged.
+- **Insured-name highlight fix** (`components/CoiSplitReview.tsx`, the
+  VRF-1087 "box sits below the text" bug). VRF-1087's COI is a **PNG**, so
+  the text-anchor path never applies; diagnosis against its actual detected
+  rules showed the vision box (y 33-42) drifted a full cell below the true
+  INSURED cell (27.03-34.83), and the old symmetric 4.5% nearest-rule snap
+  locked it onto the cell BELOW. Fix in `snapLocations`' sparse-box snap:
+  a top edge with no rule tight against it (1.5%) prefers the nearest rule
+  ABOVE within 7% (vision boxes drift down, per the lib/claude.ts calibration
+  note), and the bottom snaps after removing the same shift so the box keeps
+  its height. Verified numerically against VRF-1087's rule lines: insured box
+  now lands 27.03-36.99 (on the name). PDF text-anchor path also hardened:
+  the insured region gains the address's first line as a needle; new
+  `anchorInsuredByWords` clusters words of the name on the model's page when
+  whole-needle matching fails (names split across text runs); the page guard
+  lets a needle matching **exactly once in the whole document** win off-page.
+  fitChain / growToLines tolerances untouched.
+
+## Previous (as of 2026-07-28 — admin console is mobile-responsive; branch `quesoDev`)
 
 **2026-07-28, branch `quesoDev` (NOT yet merged or deployed; owner has not
 eyeballed it on a phone yet):** the whole `/admin` console works on a phone,

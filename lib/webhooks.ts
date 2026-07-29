@@ -36,7 +36,7 @@ function allowedWebhookUrl(raw: string): boolean {
  * `t`). Delivery outcome is recorded on the events row (attempts,
  * delivered_at) — there are no retries yet, but failures are visible.
  */
-export async function emitEvent(orgId: string, type: string, object: unknown) {
+export async function emitEvent(orgId: string, type: string, object: unknown, verificationId?: string) {
   const svc = createServiceClient()
   const payload = {
     object: 'event',
@@ -47,7 +47,7 @@ export async function emitEvent(orgId: string, type: string, object: unknown) {
   }
 
   const { data: ev, error: evErr } = await svc.from('events')
-    .insert({ org_id: orgId, type, data: payload })
+    .insert({ org_id: orgId, type, data: payload, verification_id: verificationId ?? null })
     .select('id')
     .single()
   if (evErr) console.error('emitEvent: could not record event', evErr)
@@ -95,4 +95,25 @@ export async function emitEvent(orgId: string, type: string, object: unknown) {
       .eq('id', ev.id)
       .then(() => {}, () => {})
   }
+}
+
+/**
+ * Record an event WITHOUT webhook delivery — the activity-feed status types
+ * (verification.published / reopened / failed). They cannot go through
+ * emitEvent: an endpoint subscribed with an empty events filter receives ALL
+ * types, so new types would leak into existing integrations unannounced.
+ * Promote a type to emitEvent only as a deliberate API change.
+ */
+export async function recordEvent(orgId: string, type: string, object: unknown, verificationId: string) {
+  const svc = createServiceClient()
+  const payload = {
+    object: 'event',
+    id: `evt_${randomBytes(12).toString('hex')}`,
+    type,
+    created_at: new Date().toISOString(),
+    data: { object },
+  }
+  const { error } = await svc.from('events')
+    .insert({ org_id: orgId, type, data: payload, verification_id: verificationId })
+  if (error) console.error('recordEvent: could not record event', error)
 }

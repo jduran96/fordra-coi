@@ -40,7 +40,7 @@ export interface ReportPdfInput {
 const INK = '#141413'
 const GREY = '#6f6e69'
 const LINE = '#dedcd3'
-const STATUS_LABEL: Record<string, string> = { met: 'Passed', not_met: 'Discrepancy', uncertain: 'Needs attention' }
+const STATUS_LABEL: Record<string, string> = { met: 'Passed', not_met: 'Failed', uncertain: 'Warning' }
 const STATUS_COLOR: Record<string, string> = { met: '#3f7d47', not_met: '#b3403a', uncertain: '#9a6b1f' }
 
 function items(r: Report | null | undefined): ReportItem[] {
@@ -95,9 +95,10 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     if (rows.length > 0) {
       const disc = rows.filter(i => i.status === 'not_met').length
       const unc = rows.filter(i => i.status === 'uncertain').length
+      const met = rows.length - disc - unc
       heading('Result')
       doc.font('Helvetica').fontSize(10.5).fillColor(INK).text(
-        `${rows.length} checks   ·   ${disc} ${disc === 1 ? 'discrepancy' : 'discrepancies'}   ·   ${unc} ${unc === 1 ? 'needs' : 'need'} attention`,
+        `${rows.length} checks   ·   ${met} passed   ·   ${disc} failed   ·   ${unc} ${unc === 1 ? 'warning' : 'warnings'}`,
       )
       doc.moveDown(0.4)
 
@@ -136,12 +137,12 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
     const notes = (v.call_notes ?? []).filter(n =>
       (n.summary_text ?? '').trim() || (n.text ?? '').trim() || (n.transcript ?? '').trim())
     const chipLabel = (s?: OnlineListingStatus) =>
-      s === 'verified' ? 'Verified online'
-      : s === 'differs' ? 'Differs from online'
-      : s === 'not_found' ? 'Not found online'
+      s === 'verified' ? 'Found'
+      : s === 'differs' ? 'Warning'
+      : s === 'not_found' ? 'Not Found'
       : 'Not checked online'
     const chipColor = (s?: OnlineListingStatus) =>
-      s === 'verified' ? '#3f7d47' : s === 'differs' ? '#9a6b1f' : GREY
+      s === 'verified' ? '#3f7d47' : s === 'differs' ? '#b3403a' : s === 'not_found' ? '#9a6b1f' : GREY
     if (notes.length > 0) {
       rule()
       heading('Insurer Contact Log')
@@ -186,7 +187,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
                 : check.legitimacy === 'mismatch' ? 'Discrepancies found in online search'
                 : 'Not able to find online'
               const verdictColor = check.legitimacy === 'legit' ? '#3f7d47'
-                : check.legitimacy === 'mismatch' ? '#9a6b1f' : GREY
+                : check.legitimacy === 'mismatch' ? '#b3403a' : '#9a6b1f'
               doc.font('Helvetica-Bold').fontSize(9).fillColor(verdictColor).text(verdict.toUpperCase(), { characterSpacing: 0.5 })
             }
             if (check.blurb.trim()) {

@@ -9,7 +9,7 @@ import { notifySlackReportReady } from '@/Slack/notify'
 import { requireAdmin, isAdminEmail } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { DOCUMENTS_BUCKET } from '@/lib/storage'
-import { emitEvent } from '@/lib/webhooks'
+import { emitEvent, recordEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline, runAssessmentPipeline } from '@/lib/extraction'
 import { performContactCheck, retroTagNotes } from '@/lib/contact-check'
@@ -456,13 +456,16 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   // the saved verdicts. Reopening clears the failure reason so a stale one
   // can never resurface on a later fail.
   if (String(formData.get('intent') || '') === 'reopen') {
-    const { error } = await supabase.from('verifications')
+    const { data: r, error } = await supabase.from('verifications')
       .update({ case_status: 'report_ready', status: 'pending', published_at: null, failure_reason: null })
       .eq('id', verificationId)
-    if (error) {
+      .select('org_id, display_id')
+      .single()
+    if (error || !r) {
       console.error('saveAssessment: reopen failed', error)
       return { error: 'Could not save. Nothing was changed. Please retry.' }
     }
+    await recordEvent(r.org_id, 'verification.reopened', { id: verificationId, display_id: r.display_id }, verificationId)
     revalidatePath('/admin')
     revalidatePath(`/admin/${verificationId}`)
     return
@@ -517,6 +520,13 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     update.published_at = null
   }
 
+  // Whether this save takes a live report away from the customer: a draft or
+  // fail on a previously published row is a "reopened" feed entry.
+  const { data: prior } = await supabase.from('verifications')
+    .select('published_at')
+    .eq('id', verificationId)
+    .maybeSingle()
+
   const { data: v, error } = await supabase.from('verifications')
     .update(update)
     .eq('id', verificationId)
@@ -525,6 +535,15 @@ export async function saveAssessment(verificationId: string, formData: FormData)
   if (error || !v) {
     console.error('saveAssessment: update failed', error)
     return { error: 'Could not save. Nothing was changed. Please retry.' }
+  }
+
+  // Status transitions land in events for the Activity feed (insert-only, no
+  // webhook delivery; see recordEvent). Minimal payloads: never leave the DB.
+  {
+    const feedObj = { id: verificationId, display_id: v.display_id, status: v.status }
+    if (publish) await recordEvent(v.org_id as string, 'verification.published', feedObj, verificationId)
+    else if (fail) await recordEvent(v.org_id as string, 'verification.failed', { ...feedObj, reason: failureReason }, verificationId)
+    else if (prior?.published_at) await recordEvent(v.org_id as string, 'verification.reopened', feedObj, verificationId)
   }
 
   // Notify checkbox in the publish/fail confirm dialogs: the message to the
@@ -581,7 +600,7 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     const { data: docs } = await supabase.from('documents')
       .select('kind, file_name')
       .eq('verification_id', verificationId)
-    await emitEvent(v.org_id as string, 'verification.updated', serializeVerification(v, docs ?? []))
+    await emitEvent(v.org_id as string, 'verification.updated', serializeVerification(v, docs ?? []), verificationId)
     revalidatePath('/admin')
     redirect('/admin')
   }

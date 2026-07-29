@@ -3,7 +3,9 @@
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { getProfile } from '@/lib/auth-helpers'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { emitEvent } from '@/lib/webhooks'
+import { serializeVerification } from '@/lib/api-auth'
 import { generateApiKey, type KeyMode } from '@/lib/apikeys'
 import { createVerification, type VerificationFile, type DocumentKind } from '@/lib/verifications'
 import { normalizeRequirementRows, resolveTemplate, TEMPLATE_SELECT, type RequirementTemplate } from '@/lib/templates'
@@ -173,6 +175,19 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     return { error: 'Insurance standards are required. Pick a saved template, write an explanation, or upload a file.' }
   }
 
+  // Optional special instructions (owner ask 2026-07-28, for Dakota): one
+  // free-text note that rides in as one more requirement LINE, so the parser,
+  // gap analysis, and the insurer question generator all treat it like any
+  // other requirement — no separate pipeline. Appended after template
+  // resolution so it lands on the resolved text in every standards mode
+  // (provenance keys are preserved).
+  const specialInstructions = String(formData.get('special_instructions') || '').trim()
+  if (specialInstructions) {
+    const line = `Special instructions: ${specialInstructions}`
+    const cur = requirements as { text?: string } | null
+    requirements = { ...(cur ?? {}), text: cur?.text ? `${cur.text}\n${line}` : line }
+  }
+
   // Paths were ownership-validated up front; here we just size/type-check each
   // stored object. abort() cleans up this submission's own uploads.
   const abort = async (error: string) => { await cleanupUploads(); return { error } }
@@ -195,8 +210,10 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     return abort('The other documents exceed 50 MB together. Remove a file or upload smaller ones.')
   }
 
+  let createdId: string
+  let createdDocs: { id: string; kind: string; file_name: string }[] = []
   try {
-    await createVerification(supabase, {
+    const { verification, docRefs } = await createVerification(supabase, {
       orgId: profile.org_id,
       source: 'web',
       requirements,
@@ -207,12 +224,26 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
       // display_id is SELECT-granted and rides into the email alert.
       select: 'id, display_id',
     })
+    createdId = verification.id as string
+    createdDocs = docRefs
   } catch (e) {
     console.error('new verification: create failed', e)
     // createVerification's compensation removes only objects IT uploaded;
     // direct-to-storage objects are ours to clean.
     await cleanupUploads()
     return { error: 'Could not create verification. Please contact a Fordra admin for help.' }
+  }
+
+  // Parity with API and Slack submissions: web creations emit
+  // verification.created too (webhooks + the Activity feed). The session
+  // client cannot select('*'), so the payload row is read with the service
+  // client. A hiccup here must not fail a successful submission.
+  try {
+    const svc = createServiceClient()
+    const { data: full } = await svc.from('verifications').select('*').eq('id', createdId).single()
+    if (full) await emitEvent(profile.org_id, 'verification.created', serializeVerification(full, createdDocs), createdId)
+  } catch (e) {
+    console.error('new verification: created event failed', e)
   }
 
   revalidatePath('/app')

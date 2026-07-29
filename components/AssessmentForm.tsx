@@ -118,8 +118,8 @@ export default function AssessmentForm({
             <div className="fx-full" style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 200, flexShrink: 0 }}>
               <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={input()}>
                 <option value="met">Passed</option>
-                <option value="not_met">Discrepancy</option>
-                <option value="uncertain">Needs attention</option>
+                <option value="not_met">Failed</option>
+                <option value="uncertain">Warning</option>
               </select>
               <select name={`req_${i}_insurer_confirmation`} defaultValue={item.insurer_confirmation ?? ''} disabled={closed} style={input()}>
                 <option value="">Not confirmed with insurer</option>

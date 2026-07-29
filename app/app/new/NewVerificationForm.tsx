@@ -34,6 +34,9 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
   const [reqFile, setReqFile] = useState<File | null>(null)
   const [manualReqs, setManualReqs] = useState<Requirement[]>([{ coverage_type: '', minimum_limit: '', notes: '', kind: 'limit' }])
   const [manualNotes, setManualNotes] = useState('')
+  // Optional per-deal ask ("double check with the insurer that we are loss
+  // payee"); the server appends it to the requirements text as one more line.
+  const [specialInstructions, setSpecialInstructions] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const [hover, setHover] = useState(false)
@@ -187,6 +190,7 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
     } else if (!(reqMode === 'upload' && reqFile)) {
       fd.append('requirements_text', serializeStandards())
     }
+    if (specialInstructions.trim()) fd.append('special_instructions', specialInstructions.trim())
 
     // A thrown invocation (network drop, deploy mid-flight, body over the
     // proxy cap) must never strand the form on "Submitting…" forever.
@@ -315,34 +319,54 @@ export default function NewVerificationForm({ templates }: { templates: Requirem
         )}
       </div>
 
-      {activeVars.length > 0 && (
-        <div>
-          <Label>Verification Details</Label>
-          <div style={{
-            border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
-            background: C.surface, display: 'flex', flexDirection: 'column', gap: 10,
-          }}>
-            {activeVars.map(v => (
-              <div key={v.key}>
-                <Label>
-                  {v.label}
-                  <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>
-                </Label>
-                <input
-                  value={varValues[v.key] ?? ''}
-                  onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
-                  placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
-                  style={{
-                    width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
-                    fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
-                    background: C.surface, color: C.txt,
-                  }}
-                />
-              </div>
-            ))}
+      <div>
+        <Label>Verification Details</Label>
+        <div style={{
+          border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 16,
+          background: C.surface, display: 'flex', flexDirection: 'column', gap: 10,
+        }}>
+          {activeVars.map(v => (
+            <div key={v.key}>
+              <Label>
+                {v.label}
+                <span style={{ color: C.error, marginLeft: 4 }} title="Required">*</span>
+              </Label>
+              <input
+                value={varValues[v.key] ?? ''}
+                onChange={e => setVarValues({ ...varValues, [v.key]: e.target.value })}
+                placeholder="e.g. $85,000 or 2021 Freightliner Cascadia"
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
+                  fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
+                  background: C.surface, color: C.txt,
+                }}
+              />
+            </div>
+          ))}
+          {/* Always last: the optional per-deal ask. A textarea that grows
+              with its content (wrap, never sideways scroll); the height sync
+              runs on every change so deletes shrink it back. */}
+          <div>
+            <Label>Special instructions <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></Label>
+            <textarea
+              value={specialInstructions}
+              onChange={e => {
+                setSpecialInstructions(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = `${e.target.scrollHeight}px`
+              }}
+              placeholder="Describe something you want Fordra to pay particular attention to."
+              rows={2}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14,
+                fontFamily: C.sans, border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none',
+                background: C.surface, color: C.txt, resize: 'none', overflow: 'hidden',
+                minHeight: 64, lineHeight: 1.5,
+              }}
+            />
           </div>
         </div>
-      )}
+      </div>
 
       <MultiDropZone
         boxTitle="Any other relevant documents (optional)"

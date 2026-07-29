@@ -73,8 +73,7 @@ export default async function AdminQueue() {
 function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished?: boolean }) {
   return (
     <PaginatedTable
-      pageSize={25}
-      maxHeight={440}
+      pageSize={10}
       head={
         <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Policyholder</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>

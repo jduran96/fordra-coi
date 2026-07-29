@@ -6,6 +6,8 @@ import { signedUrl } from '@/lib/storage'
 import { C, statusColor, statusLabel } from '@/lib/theme'
 import { pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import CoiSplitReview from '@/components/CoiSplitReview'
+import ActivityFeed from '@/components/ActivityFeed'
+import { feedEntries } from '@/lib/activity-feed'
 import { parseStandardLine } from '@/lib/templates'
 import { orderBySubmitted, orderFromText } from '@/lib/gap-order'
 import { contactValue } from '@/lib/contact-notes'
@@ -54,6 +56,15 @@ export default async function CustomerVerification({ params }: { params: Promise
   // The submitted certificate itself, rendered in the split review.
   const coiFile = docsWithUrls.find(d => d.kind === 'coi' && d.url)
   const coiDoc = coiFile ? { url: coiFile.url!, mime: coiFile.mime_type ?? '', fileName: coiFile.file_name } : null
+
+  // Status history for the Activity popup. RLS scopes events to the org; a
+  // read failure only costs the feed, never the report.
+  const { data: eventRows } = await supabase
+    .from('events')
+    .select('type, created_at')
+    .eq('verification_id', id)
+    .order('created_at', { ascending: false })
+  const activity = feedEntries({ created_at: String(v.created_at), display_id: v.display_id }, eventRows ?? [])
   // Manually entered standards come in two shapes: web submissions store
   // { text }, API submissions store [{ type: 'text', value }]. Template-based
   // submissions add provenance ({ template_name, ... }) alongside the text.
@@ -104,15 +115,18 @@ export default async function CustomerVerification({ params }: { params: Promise
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.insured_name || v.display_id}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusColor(displayStatus), background: `${statusColor(displayStatus)}1a`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{statusLabel(displayStatus)}</span>
-        {published && !failed && (
-          <a href={`/app/${id}/pdf`} className="no-print" style={{
-            marginLeft: 'auto', padding: '8px 18px', fontSize: 13, fontWeight: 600,
-            fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
-            color: C.txt2, textDecoration: 'none', whiteSpace: 'nowrap',
-          }}>
-            Download PDF
-          </a>
-        )}
+        <span className="no-print" style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <ActivityFeed entries={activity} />
+          {published && !failed && (
+            <a href={`/app/${id}/pdf`} style={{
+              padding: '8px 18px', fontSize: 13, fontWeight: 600,
+              fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`,
+              color: C.txt2, textDecoration: 'none', whiteSpace: 'nowrap',
+            }}>
+              Download PDF
+            </a>
+          )}
+        </span>
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 24px' }}>{v.display_id} · submitted {pacificDateTime(v.created_at)}</p>
 
@@ -316,13 +330,13 @@ function legitimacyLabel(v: Legitimacy): string {
 }
 
 function legitimacyColor(v: Legitimacy): string {
-  return v === 'legit' ? (C.ok as string) : v === 'mismatch' ? (C.warn as string) : (C.txt3 as string)
+  return v === 'legit' ? (C.ok as string) : v === 'mismatch' ? (C.error as string) : (C.warn as string)
 }
 
 function StatusChip({ status }: { status?: OnlineListingStatus }) {
-  const s = status === 'verified' ? { label: 'Verified online', color: C.ok }
-    : status === 'differs' ? { label: 'Differs from online', color: C.warn }
-    : status === 'not_found' ? { label: 'Not found online', color: C.txt3 }
+  const s = status === 'verified' ? { label: 'Found', color: C.ok }
+    : status === 'differs' ? { label: 'Warning', color: C.error }
+    : status === 'not_found' ? { label: 'Not Found', color: C.warn }
     : { label: 'Not checked online', color: C.txt3 }
   return (
     <span style={{
@@ -444,8 +458,8 @@ function VerdictStrip({ items }: { items: GapItem[] }) {
   const parts = [
     { n: items.length, label: items.length === 1 ? 'check' : 'checks', color: C.txt },
     { n: met, label: 'passed', color: C.ok },
-    { n: disc, label: disc === 1 ? 'discrepancy' : 'discrepancies', color: disc === 0 ? C.ok : C.error },
-    { n: miss, label: miss === 1 ? 'needs attention' : 'need attention', color: miss === 0 ? C.ok : C.warn },
+    { n: disc, label: 'failed', color: disc === 0 ? C.ok : C.error },
+    { n: miss, label: miss === 1 ? 'warning' : 'warnings', color: miss === 0 ? C.ok : C.warn },
   ]
   return (
     <div style={{

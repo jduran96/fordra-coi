@@ -24,6 +24,8 @@ import { normalizeActivity } from '@/lib/admin-activity'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
 import ActivityLog from './ActivityLog'
+import ActivityFeed from '@/components/ActivityFeed'
+import { feedEntries } from '@/lib/activity-feed'
 import AiCallLauncher from './AiCallLauncher'
 import AgentQuestionsEditor from './AgentQuestionsEditor'
 import RunAnalysisButton from './RunAnalysisButton'
@@ -97,6 +99,16 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   const docsWithUrls = await Promise.all(
     (docs ?? []).map(async d => ({ ...d, url: await signedUrl(d.storage_path).catch(() => null) })),
   )
+
+  // Status history (submissions, publishes, reopens) for the Activity popup —
+  // the same customer-visible feed the /app report shows, distinct from the
+  // admin-only ActivityLog bookkeeping beside it.
+  const { data: eventRows } = await supabase
+    .from('events')
+    .select('type, created_at')
+    .eq('verification_id', id)
+    .order('created_at', { ascending: false })
+  const statusFeed = feedEntries({ created_at: String(v.created_at), display_id: v.display_id }, eventRows ?? [])
 
   // Manually entered standards come in two shapes: web submissions store
   // { text }, API submissions store [{ type: 'text', value }].
@@ -214,7 +226,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         {/* Working-day age against the same-day target, red from 3 days.
             Only open cases: a closed one is no longer against the clock. */}
         {!caseIsClosed && <AgeChip iso={String(v.created_at)} />}
-        <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
+        <span className="fx-unpin" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+          <ActivityFeed entries={statusFeed} />
           <ActivityLog
             entries={normalizeActivity(v.admin_activity)}
             logAction={logAdminActivity.bind(null, id)}
@@ -660,8 +673,8 @@ function InsurerCard({ coi }: { coi: COI }) {
  */
 function LegitimacyChip({ verdict }: { verdict: NonNullable<ContactCheckEntry['legitimacy']> }) {
   const s = verdict === 'legit' ? { label: 'Insurer legit: website + outside source', color: C.ok as string }
-    : verdict === 'mismatch' ? { label: 'Mismatch with online records', color: C.warn as string }
-    : { label: 'Not fully verified online', color: C.txt3 as string }
+    : verdict === 'mismatch' ? { label: 'Mismatch with online records', color: C.error as string }
+    : { label: 'Not fully verified online', color: C.warn as string }
   return (
     <span style={{
       display: 'inline-block', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
@@ -695,9 +708,9 @@ function hostOf(url: string): string {
  * never reach this component at all.
  */
 function NoteStatusChip({ status }: { status?: OnlineListingStatus }) {
-  const s = status === 'verified' ? { label: 'Verified online', color: C.ok as string }
-    : status === 'differs' ? { label: 'Differs from online', color: C.warn as string }
-    : status === 'not_found' ? { label: 'Not found online', color: C.txt3 as string }
+  const s = status === 'verified' ? { label: 'Found', color: C.ok as string }
+    : status === 'differs' ? { label: 'Warning', color: C.error as string }
+    : status === 'not_found' ? { label: 'Not Found', color: C.warn as string }
     : { label: 'Not checked online', color: C.txt3 as string }
   return (
     <span style={{

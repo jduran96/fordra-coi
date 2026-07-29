@@ -42,9 +42,9 @@ export interface CoiDocFile {
 }
 
 const TAG = {
-  met:       { label: 'Passed',          color: C.ok },
-  not_met:   { label: 'Discrepancy',     color: C.error },
-  uncertain: { label: 'Needs attention', color: C.warn },
+  met:       { label: 'Passed',  color: C.ok },
+  not_met:   { label: 'Failed',  color: C.error },
+  uncertain: { label: 'Warning', color: C.warn },
 } as const
 
 // ─── Check → rule classification ─────────────────────────────────────────────
@@ -244,8 +244,19 @@ function snapLocations(coi: COIExtracted, linesByPage: Record<number, RuleLine[]
       if (!loc || loc.page !== page || !Array.isArray(loc.box)) continue
       const c0 = correct(loc.box[1])
       const c1 = correct(loc.box[3])
-      const y0 = nearestLine(c0, L, 4.5) ?? c0
-      const y1 = nearestLine(c1, L, 4.5) ?? c1
+      // Vision boxes drift DOWN the page (the calibration note in
+      // lib/claude.ts), so a top edge with no rule tight against it prefers
+      // the nearest rule ABOVE within 7% over a nearer one below — snapping
+      // the top downward compounds the drift onto the next section (how
+      // VRF-1087's insured highlight landed a full cell low). The bottom then
+      // snaps after removing the same shift, so the box keeps its height
+      // instead of stretching to a rule that only looked near because the
+      // whole box sat too low.
+      const tight0 = nearestLine(c0, L, 1.5)
+      const above0 = nearestLine(c0, L.filter(v => v < c0), 7)
+      const y0 = tight0 ?? above0 ?? nearestLine(c0, L, 4.5) ?? c0
+      const shift = c0 - y0
+      const y1 = nearestLine(c1 - shift, L, 4.5) ?? (c1 - shift)
       if (y1 > y0 + 1) fl[key] = snapBox(loc, y0, y1)
     }
   }
@@ -303,8 +314,10 @@ function anchorByNeedles(
     // The model knows which PAGE a region sits on even when its box drifts.
     // A needle that only matches elsewhere (e.g. the insured's name quoted on
     // the remarks page while page 1 is a scan) is the wrong anchor — skip it
-    // and let the snapped box handle the region.
-    if (prior && !all.some(m => m.page === prior.page)) continue
+    // and let the snapped box handle the region. A needle matching exactly
+    // once in the whole document is exempt: one printed occurrence of a full
+    // value outranks the model's page guess.
+    if (prior && all.length > 1 && !all.some(m => m.page === prior.page)) continue
     let chosen = all
     if (all.length > 1 && prior) {
       // Disambiguate repeats (e.g. the holder's name also quoted in the
@@ -333,6 +346,59 @@ function anchorByNeedles(
 
 // Words too generic to locate a check by on an insurance form.
 const STOPWORDS = new Set(['vehicle', 'vehicles', 'listed', 'certificate', 'policy', 'policies', 'insurance', 'insured', 'liability', 'coverage', 'holder', 'active', 'currently', 'must', 'match', 'matches', 'minimum', 'amount', 'with', 'that', 'this', 'every', 'each', 'deal'])
+
+/**
+ * Last-chance anchor for the insured region. Whole-needle matching fails when
+ * the name is split across text runs ("ABC TRUCKING" + "LLC"), and the raw
+ * model box it falls back to is the one that drifts down the page. Cluster
+ * individual words of the name on the model's page instead: two distinct
+ * words on the same printed line, or one long distinctive word, locate the
+ * INSURED box.
+ */
+function anchorInsuredByWords(
+  name: string | undefined,
+  textByPage: TextByPage,
+  linesByPage: Record<number, RuleLine[]>,
+  prior: FieldLocation | null | undefined,
+): FieldLocation[] {
+  if (!name || !prior) return []
+  const words = [...new Set(
+    name.split(/[^A-Za-z0-9]+/)
+      .filter(w => !STOPWORDS.has(w.toLowerCase()))
+      .map(normText)
+      .filter(w => w.length >= 4),
+  )]
+  if (!words.length) return []
+  const hits: { it: TextItem; word: string }[] = []
+  for (const it of textByPage[prior.page] ?? []) {
+    const s = normText(it.str)
+    if (s.length < 4) continue
+    const word = words.find(w => s.includes(w))
+    if (word) hits.push({ it, word })
+  }
+  let best: TextItem[] | null = null
+  for (const h of hits) {
+    const cy = h.it.y + h.it.h / 2
+    const near = hits.filter(o => Math.abs((o.it.y + o.it.h / 2) - cy) <= 2.5)
+    if (new Set(near.map(o => o.word)).size >= 2 && (!best || near.length > best.length)) best = near.map(o => o.it)
+  }
+  if (!best) {
+    // One long word (TRUCKING, WERNER…) is distinctive enough alone; if it
+    // appears in several places, the model's approximate y disambiguates.
+    const strong = hits.filter(h => h.word.length >= 7)
+    if (!strong.length) return []
+    const cy = (prior.box[1] + prior.box[3]) / 2
+    best = [strong.reduce((a, b) =>
+      Math.abs((b.it.y + b.it.h / 2) - cy) < Math.abs((a.it.y + a.it.h / 2) - cy) ? b : a).it]
+  }
+  const x0 = Math.min(...best.map(i => i.x))
+  const x1 = Math.max(...best.map(i => i.x + i.w))
+  const [gy0, gy1] = growToLines(
+    Math.min(...best.map(i => i.y)), Math.max(...best.map(i => i.y + i.h)),
+    (linesByPage[prior.page] ?? []).map(l => l.pct),
+  )
+  return [{ page: prior.page, box: padBox(x0, gy0, x1, gy1) }]
+}
 
 /**
  * Locate a check by its own distinctive values (a VIN, a make/model, a
@@ -382,7 +448,7 @@ function resolveChecks(
   const fl = snapped.field_locations ?? {}
 
   const regionNeedles: Record<RegionKey, (string | undefined)[]> = {
-    insured: [coi.named_insured, coi.usdot_number && `USDOT ${coi.usdot_number}`],
+    insured: [coi.named_insured, coi.named_insured_address?.split(/[\n,]/)[0], coi.usdot_number && `USDOT ${coi.usdot_number}`],
     producer: [coi.producer],
     insurers: [coi.insurance_company, coi.insurance_company?.split(',')[0]],
     certificate_holder: [coi.certificate_holder],
@@ -415,6 +481,10 @@ function resolveChecks(
             { fullWidth: rule.key === 'description_of_operations' },
           )
           if (anchored.length) return anchored
+          if (rule.key === 'insured') {
+            const clustered = anchorInsuredByWords(coi.named_insured, textByPage, linesByPage, prior)
+            if (clustered.length) return clustered
+          }
         }
         // The model's (snapped) box outranks token search here: a region the
         // anchor couldn't confirm on its own page shouldn't jump to a stray

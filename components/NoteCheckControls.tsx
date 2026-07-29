@@ -6,9 +6,9 @@ import PendingButton from '@/components/PendingButton'
 import type { ExternalConfirmation, NoteContactCheck, OnlineListingStatus, WebsiteStatus } from '@/lib/types'
 
 const STATUS_OPTIONS: { value: OnlineListingStatus; label: string }[] = [
-  { value: 'verified', label: 'Verified online' },
-  { value: 'not_found', label: 'Not found online' },
-  { value: 'differs', label: 'Differs from online' },
+  { value: 'verified', label: 'Found' },
+  { value: 'not_found', label: 'Not Found' },
+  { value: 'differs', label: 'Warning' },
 ]
 
 const WEBSITE_OPTIONS: { value: WebsiteStatus; label: string }[] = [

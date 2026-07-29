@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         orgName={orgName}
         links={[
           { href: '/app', label: 'Verifications' },
+          { href: '/app/businesses', label: 'Businesses' },
           { href: '/app/docs', label: 'API Docs' },
           { href: '/app/settings', label: 'Settings' },
         ]}

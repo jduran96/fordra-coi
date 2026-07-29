@@ -384,7 +384,7 @@ export async function handleIntakeMessage(install: Installation, ev: SlackMessag
   await svc.from('slack_intake_sessions').update({ verification_id: verification.id }).eq('id', sessionId)
 
   await svc.from('slack_intake_sessions').delete().eq('id', sessionId)
-  await emitEvent(install.org_id, 'verification.created', serializeVerification(verification, docRefs))
+  await emitEvent(install.org_id, 'verification.created', serializeVerification(verification, docRefs), verification.id as string)
 
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
   await say(

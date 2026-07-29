@@ -215,11 +215,11 @@ export async function POST(request: Request) {
       ...sandboxResult(),
     }).eq('id', v.id).select('*').single()
     const final = done ?? v
-    await emitEvent(auth.orgId, 'verification.updated', serializeVerification(final, docRefs))
+    await emitEvent(auth.orgId, 'verification.updated', serializeVerification(final, docRefs), v.id as string)
     return Response.json(serializeVerification(final, docRefs), { status: 201 })
   }
 
-  await emitEvent(auth.orgId, 'verification.created', serializeVerification(v, docRefs))
+  await emitEvent(auth.orgId, 'verification.created', serializeVerification(v, docRefs), v.id as string)
   return Response.json(serializeVerification(v, docRefs), { status: 201 })
 }
 
