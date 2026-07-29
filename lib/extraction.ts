@@ -1,8 +1,9 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions } from '@/lib/claude'
-import { getExtractionConfig } from '@/lib/config'
+import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions, mandatoryInsurerQuestion } from '@/lib/claude'
+import { getExtractionConfig, getQuestionsConfig } from '@/lib/config'
 import { isCuratedQuestionList } from '@/lib/call-config'
+import { applyQuestionTokens, templateVariableValues, uncoveredRequirements } from '@/lib/question-config'
 import type { ContactNote, FinalReport, GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -64,6 +65,46 @@ async function questionsFor(
 }
 
 /**
+ * Question list from the org+template Questions List config (settings →
+ * Calling) when one exists: the configured questions with per-deal {tokens}
+ * substituted, plus OCR-generated questions ONLY for requirements the config
+ * does not cover (template edits since the config was saved, special
+ * instructions, uploaded standards docs). Null = no usable config; the caller
+ * falls back to full generation. Best-effort like questionsFor: never throws.
+ */
+export async function questionsFromConfig(input: {
+  orgId: string | null
+  templateId: string | null
+  /** verifications.requirements as stored — carries the per-deal variable values. */
+  storedRequirements: unknown
+  requirements: Requirement[]
+  coiExtracted: unknown
+  promptOverride?: string
+}): Promise<string[] | null> {
+  if (!input.orgId || !input.templateId) return null
+  try {
+    const config = await getQuestionsConfig(input.orgId, input.templateId)
+    if (!config) return null
+    const values = templateVariableValues(input.storedRequirements)
+    const configured = config.questions
+      .filter(q => q.question)
+      .map(q => applyQuestionTokens(q.question, values))
+    if (!configured.length) return null
+    // The config replaces generation only for the rows it covers; the rest
+    // (usually none, which skips the model call entirely) still generate.
+    const uncovered = uncoveredRequirements(config, input.requirements)
+    const extras = uncovered.length
+      ? (await questionsFor(uncovered, input.coiExtracted, input.promptOverride) ?? []).slice(1)
+      : []
+    const coi = (input.coiExtracted ?? null) as Parameters<typeof generateInsurerQuestions>[1]
+    return [mandatoryInsurerQuestion(coi), ...configured, ...extras]
+  } catch (e) {
+    console.error('questions config lookup failed; falling back to generation', e)
+    return null
+  }
+}
+
+/**
  * The OCR pipeline body, callable from the admin route (which raises
  * maxDuration — Claude vision on a PDF regularly exceeds the default limit).
  * Caller must have verified admin.
@@ -81,7 +122,7 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
 
   const { data: v, error: verr } = await supabase
     .from('verifications')
-    .select('id, requirements, template_id, case_status, agent_questions')
+    .select('id, org_id, requirements, template_id, case_status, agent_questions')
     .eq('id', verificationId)
     .single()
   if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
@@ -162,7 +203,14 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // the explicit way back (owner decision 2026-07-28). On generation failure,
   // keep the old questions rather than wiping them.
   if (!isCuratedQuestionList(v.agent_questions)) {
-    const regenerated = await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
+    const regenerated = await questionsFromConfig({
+      orgId: (v.org_id as string | null) ?? null,
+      templateId: (v.template_id as string | null) ?? null,
+      storedRequirements: v.requirements,
+      requirements,
+      coiExtracted,
+      promptOverride: cfg.promptInsurerQuestions,
+    }) ?? await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
     if (regenerated) update.agent_questions = regenerated
   }
 

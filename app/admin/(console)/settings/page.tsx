@@ -15,8 +15,10 @@ import { savePrompt } from './actions'
 import OrgStandards from './OrgStandards'
 import NotificationEmails from './NotificationEmails'
 import CallConfigCard from './CallConfigCard'
+import QuestionsListCard from './QuestionsListCard'
 import { CALL_CONFIG_KEY } from '@/lib/config'
 import type { OrgCallConfig } from '@/lib/call-config'
+import { parseQuestionsConfig, QUESTIONS_CONFIG_KEY, type ConfiguredQuestion } from '@/lib/question-config'
 import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
@@ -63,6 +65,16 @@ export default async function AdminSettings({ searchParams }: {
   const callByOrg: Record<string, Partial<OrgCallConfig>> = {}
   for (const r of callCfgRows ?? []) {
     if (r.key.startsWith(`${CALL_CONFIG_KEY}:`)) callByOrg[r.key.slice(CALL_CONFIG_KEY.length + 1)] = r.value as Partial<OrgCallConfig>
+  }
+
+  // Questions List configs: one row per org+template pair, keyed "orgId:templateId".
+  const { data: qCfgRows, error: qCfgError } = await svc
+    .from('app_config').select('key, value').like('key', `${QUESTIONS_CONFIG_KEY}:%`)
+  if (qCfgError) throw new Error(`Could not load questions configs: ${qCfgError.message}`)
+  const questionsByKey: Record<string, ConfiguredQuestion[]> = {}
+  for (const r of qCfgRows ?? []) {
+    const parsed = parseQuestionsConfig(r.value)
+    if (parsed) questionsByKey[r.key.slice(QUESTIONS_CONFIG_KEY.length + 1)] = parsed.questions
   }
 
   const prompts = [
@@ -165,18 +177,34 @@ export default async function AdminSettings({ searchParams }: {
       )}
 
       {tab === 'calling' && (
-        <section>
-          <SectionTitle>AI call identity</SectionTitle>
-          <p style={hintStyle()}>
-            These prefill the pre-dial review screen; everything stays editable per call there.
-            Org overrides fall back to the global default.
-          </p>
-          <CallConfigCard
-            orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
-            global={callGlobal}
-            byOrg={callByOrg}
-          />
-        </section>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <section>
+            <SectionTitle>AI call identity</SectionTitle>
+            <p style={hintStyle()}>
+              These prefill the pre-dial review screen; everything stays editable per call there.
+              Org overrides fall back to the global default.
+            </p>
+            <CallConfigCard
+              orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+              global={callGlobal}
+              byOrg={callByOrg}
+            />
+          </section>
+          <section>
+            <SectionTitle>Questions List</SectionTitle>
+            <p style={hintStyle()}>
+              The standard call questions for each insurance standard. New verifications on a
+              standard with a saved list prefill their AI question list from it (still editable
+              per deal); AI drafting then only covers special instructions and rows the list
+              does not have a question for.
+            </p>
+            <QuestionsListCard
+              orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+              templates={(templates ?? []) as unknown as RequirementTemplate[]}
+              byKey={questionsByKey}
+            />
+          </section>
+        </div>
       )}
 
       {tab === 'notifications' && (

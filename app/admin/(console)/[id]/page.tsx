@@ -394,19 +394,31 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 )}
                 {checks.length > 0 && (
                   <div className="fx-scroll-x" style={{ marginTop: 12, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                    <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse', fontSize: 13 }}>
+                    <table style={{ width: '100%', minWidth: 380, borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          <th style={checkTh}>Checked</th><th style={checkTh}>Phone</th><th style={checkTh}>Email</th><th style={checkTh}>Verdict</th>
+                          <th style={checkTh}>Checked</th><th style={checkTh}>Phone</th><th style={checkTh}>Email</th>
                         </tr>
                       </thead>
                       <tbody>
                         {checks.slice().reverse().map(e => (
                           <tr key={e.checked_at} style={{ borderTop: `1px solid ${C.border}` }}>
                             <td style={{ ...checkTd, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(e.checked_at)}</td>
-                            <td style={checkTd}>{contactValue(e.phone) ? <>{contactValue(e.phone)}<NoteStatusChip status={e.phone_status} /></> : '—'}</td>
-                            <td style={{ ...checkTd, overflowWrap: 'anywhere' }}>{contactValue(e.email) ? <>{contactValue(e.email)}<NoteStatusChip status={e.email_status} /></> : '—'}</td>
-                            <td style={checkTd}>{e.legitimacy ? <LegitimacyChip verdict={e.legitimacy} /> : '—'}</td>
+                            {/* Value on its own line, tag centered beneath it —
+                                inline chips widowed onto a second line at
+                                narrow widths (owner call 2026-07-29). */}
+                            <td style={checkTd}>{contactValue(e.phone) ? (
+                              <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                <span>{contactValue(e.phone)}</span>
+                                <NoteStatusChip status={e.phone_status} stacked />
+                              </span>
+                            ) : '—'}</td>
+                            <td style={{ ...checkTd, overflowWrap: 'anywhere' }}>{contactValue(e.email) ? (
+                              <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
+                                <span style={{ overflowWrap: 'anywhere' }}>{contactValue(e.email)}</span>
+                                <NoteStatusChip status={e.email_status} stacked />
+                              </span>
+                            ) : '—'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -590,7 +602,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
               extraction. Each run replaces the draft below. */}
           {!caseIsClosed && (
             <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
-              <RunAnalysisButton verificationId={id} hasDraft={!!v.final_report || !!v.gap_analysis} />
+              <RunAnalysisButton verificationId={id} />
             </span>
           )}
         </div>
@@ -667,26 +679,6 @@ function InsurerCard({ coi }: { coi: COI }) {
 }
 
 /**
- * Overall verdict chip for a two-pronged check run. Derived server-side
- * (deriveLegitimacy): legit needs the agency's own site to align AND an
- * outside source to confirm it.
- */
-function LegitimacyChip({ verdict }: { verdict: NonNullable<ContactCheckEntry['legitimacy']> }) {
-  const s = verdict === 'legit' ? { label: 'Insurer legit: website + outside source', color: C.ok as string }
-    : verdict === 'mismatch' ? { label: 'Mismatch with online records', color: C.error as string }
-    : { label: 'Not fully verified online', color: C.warn as string }
-  return (
-    <span style={{
-      display: 'inline-block', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
-      color: s.color, background: `color-mix(in oklch, ${s.color} 11%, transparent)`,
-      padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' as const,
-    }}>
-      {s.label}
-    </span>
-  )
-}
-
-/**
  * Compact run telemetry: what the check actually spent. cost_usd is computed
  * at run time with the model's own rates (lib/claude.ts), so historical
  * entries stay correct across model changes.
@@ -707,14 +699,14 @@ function hostOf(url: string): string {
  * no online check has covered it yet ("Not checked online"); blank fields
  * never reach this component at all.
  */
-function NoteStatusChip({ status }: { status?: OnlineListingStatus }) {
+function NoteStatusChip({ status, stacked }: { status?: OnlineListingStatus; stacked?: boolean }) {
   const s = status === 'verified' ? { label: 'Found', color: C.ok as string }
     : status === 'differs' ? { label: 'Warning', color: C.error as string }
     : status === 'not_found' ? { label: 'Not Found', color: C.warn as string }
     : { label: 'Not checked online', color: C.txt3 as string }
   return (
     <span style={{
-      marginLeft: 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+      marginLeft: stacked ? 0 : 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const,
       color: s.color, background: status ? `color-mix(in oklch, ${s.color} 11%, transparent)` : 'transparent',
       border: status ? 'none' : `1px dashed ${C.border}`,
       padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' as const, verticalAlign: 'middle',

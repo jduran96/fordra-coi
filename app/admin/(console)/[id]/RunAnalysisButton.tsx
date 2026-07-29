@@ -11,9 +11,8 @@ import { runAnalysis } from '../actions'
  * the admin runs it once the context (OCR, checks, calls) is in, and can
  * rerun it after new calls land. Each run replaces the current draft.
  */
-export default function RunAnalysisButton({ verificationId, hasDraft }: {
+export default function RunAnalysisButton({ verificationId }: {
   verificationId: string
-  hasDraft: boolean
 }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +33,7 @@ export default function RunAnalysisButton({ verificationId, hasDraft }: {
           fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`,
           cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.65 : 1,
         }}>
-        {pending ? 'Analyzing… (can take a minute)' : hasDraft ? 'Re-run analysis' : 'Run analysis'}
+        {pending ? 'Analyzing… (can take a minute)' : 'Run Analysis'}
       </button>
       {error && <span style={{ fontSize: 12.5, color: C.error, fontFamily: C.sans }}>{error}</span>}
     </span>

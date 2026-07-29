@@ -3,7 +3,54 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-28 late — Businesses pages, Activity feed, status wording, highlight fix)
+## ⏱️ START HERE (as of 2026-07-29 — Questions List config, contact-check blurb/table cleanup)
+
+**2026-07-29, on `main` (pushed to prod same day, owner-directed):** five
+changes from the owner's VRF-1095 review.
+
+- **Questions List config (settings → Calling, new section).** Per-org,
+  per-template standard call questions, stored in `app_config` under
+  `questions_config:<orgId>:<templateId>` (no migration needed). Pure helpers
+  in `lib/question-config.ts` (client-safe: key builders, `coverageMatches`
+  row matching, `{token}` substitution); server read `getQuestionsConfig` in
+  `lib/config.ts`; editor `settings/QuestionsListCard.tsx` + `saveQuestionsConfig`
+  action. The builder `questionsFromConfig` (exported from `lib/extraction.ts`)
+  is consulted FIRST by both `runExtractionPipeline` and the AI tab's
+  Regenerate button: configured questions (with per-deal template variables
+  auto-substituted from the requirements provenance) replace AI drafting for
+  the rows they cover; AI drafting still runs, but ONLY for uncovered rows
+  (special instructions, template rows added/renamed after the config was
+  saved, uploaded standards docs). Question text may embed `{tokens}` (repo
+  convention: single braces, same as templates): tokens matching the
+  template's variables fill automatically; any other token stays literal for
+  the admin to fill in the AI tab — `validateDispatch` now hard-blocks
+  dialing while a `{token}` remains in any question. Lists populate as plain
+  strings, so the curated-list freeze semantics are unchanged.
+- **Contact-check blurb halved (prompt change, `lib/claude.ts`
+  `verifyLoggedContact`).** The `summary` output rule is now case-based: all
+  found → where phone/email were found; nothing found → ONE sentence naming a
+  couple of places checked; discrepancy → what was found online and where. Max
+  2 sentences, never narrates the search process.
+- **Contact-check history table (admin Outreach):** Verdict column removed
+  entirely (`LegitimacyChip` deleted; the customer-facing legitimacy chip on
+  `/app/[id]` and the PDF are untouched); Found/Not-found tags now render
+  centered UNDER the phone/email values (they widowed inline). `NoteStatusChip`
+  grew a `stacked` prop.
+- **Contact log AI section:** the note Edit dialog (`EditNoteButton`) now also
+  edits the note's contact-verification blurb (`check_blurb` field →
+  `updateCallNote`). It stamps `contact_check.edited_at` ONLY on an actual
+  text change — `edited_at` permanently opts the note out of `retroTagNotes`
+  re-syncs from the Outreach registry, so an untouched field must not freeze it.
+  (Known behavior, unchanged: Outreach blurb edits do NOT propagate to notes
+  whose check was ever hand-edited.)
+- **Run Analysis button** label is now unconditional "Run Analysis" — it used
+  to flip to "Re-run analysis" whenever `gap_analysis`/`final_report` existed,
+  which reads wrong on a section the admin never ran.
+- Cost/usage telemetry (`usageLine`) renders ONLY on the admin Outreach card —
+  verified absent from `/app` and the PDF. Owner rule: customer surfaces never
+  show AI search cost/usage.
+
+## Previous (as of 2026-07-28 late — Businesses pages, Activity feed, status wording, highlight fix)
 
 **2026-07-28 late, on `main` (localhost only, NOT pushed; owner verifies locally
 first):** six upgrades in one pass.

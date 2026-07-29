@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { DEFAULT_CALL_CONFIG, type OrgCallConfig } from '@/lib/call-config'
+import { parseQuestionsConfig, questionsConfigKey, type QuestionsListConfig } from '@/lib/question-config'
 
 /**
  * Admin-editable runtime config, stored in the `app_config` table.
@@ -63,6 +64,19 @@ export async function getCallConfig(orgId: string | null): Promise<OrgCallConfig
     if (!String(merged[k] ?? '').trim()) merged[k] = DEFAULT_CALL_CONFIG[k] as never
   }
   return merged
+}
+
+/**
+ * Per-org, per-template AI-call question list (settings → Calling → Questions
+ * List). Null when the pair has no saved config; extraction then falls back
+ * to full OCR question generation.
+ */
+export async function getQuestionsConfig(orgId: string, templateId: string): Promise<QuestionsListConfig | null> {
+  const svc = createServiceClient()
+  const { data, error } = await svc.from('app_config')
+    .select('value').eq('key', questionsConfigKey(orgId, templateId)).maybeSingle()
+  if (error) throw new Error(`Could not load the questions config: ${error.message}`)
+  return parseQuestionsConfig(data?.value)
 }
 
 export async function setConfig(key: string, value: unknown): Promise<void> {

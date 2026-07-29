@@ -17,6 +17,7 @@ import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
 import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
 import { generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
+import { questionsFromConfig } from '@/lib/extraction'
 import type { COIExtracted, ContactCheckEntry, Requirement } from '@/lib/types'
 
 /**
@@ -124,14 +125,23 @@ export async function regenerateAgentQuestions(verificationId: string): Promise<
   await requireAdmin()
   const supabase = createServiceClient()
   const { data: v, error } = await supabase.from('verifications')
-    .select('requirements_normalized, coi_extracted')
+    .select('requirements_normalized, coi_extracted, org_id, template_id, requirements')
     .eq('id', verificationId)
     .maybeSingle()
   if (error || !v) return { error: 'Could not load this verification. Please retry.' }
   const requirements = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
   try {
     const cfg = await getExtractionConfig()
-    const questions = await generateInsurerQuestions(requirements, (v.coi_extracted ?? null) as COIExtracted | null, cfg.promptInsurerQuestions)
+    // Same source order as extraction: the org+template Questions List config
+    // first, full OCR generation only when no config covers this deal.
+    const questions = await questionsFromConfig({
+      orgId: (v.org_id as string | null) ?? null,
+      templateId: (v.template_id as string | null) ?? null,
+      storedRequirements: v.requirements,
+      requirements,
+      coiExtracted: v.coi_extracted ?? null,
+      promptOverride: cfg.promptInsurerQuestions,
+    }) ?? await generateInsurerQuestions(requirements, (v.coi_extracted ?? null) as COIExtracted | null, cfg.promptInsurerQuestions)
     const { error: werr } = await supabase.from('verifications')
       .update({ agent_questions: questions })
       .eq('id', verificationId)

@@ -7,6 +7,7 @@ import { CONFIG_KEYS, CALL_CONFIG_KEY, callConfigOrgKey, setConfig, deleteConfig
 import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
+import { questionsConfigKey, type ConfiguredQuestion } from '@/lib/question-config'
 
 const PROMPT_KEYS: Record<string, string> = {
   coi: CONFIG_KEYS.promptCoiExtraction,
@@ -112,6 +113,38 @@ export async function deleteOrgTemplate(templateId: string): Promise<void> {
   const { error } = await supabase.from('requirement_templates').delete().eq('id', templateId)
   if (error) throw new Error(`Could not delete the template: ${error.message}`)
   revalidatePath('/admin/settings')
+}
+
+/**
+ * Save one org+template Questions List (settings → Calling): the standard
+ * question per requirement row that prefills the AI call question list on
+ * every verification submitted against that template. Rows with a blank
+ * question stay AI-drafted; an all-blank submission clears the config so the
+ * template goes back to full AI drafting.
+ */
+export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin()
+  const orgId = String(formData.get('org_id') || '').trim()
+  const templateId = String(formData.get('template_id') || '').trim()
+  if (!orgId || !templateId) return { error: 'Pick an org and a standard first.' }
+  let rows: ConfiguredQuestion[]
+  try {
+    rows = JSON.parse(String(formData.get('questions') || '[]'))
+  } catch {
+    return { error: 'Could not read the question rows. Please retry.' }
+  }
+  const questions = rows
+    .map(q => ({
+      coverage_type: String(q?.coverage_type ?? '').trim(),
+      requirement: String(q?.requirement ?? '').trim(),
+      question: String(q?.question ?? '').trim(),
+    }))
+    .filter(q => q.coverage_type && q.question)
+  const key = questionsConfigKey(orgId, templateId)
+  if (questions.length === 0) await deleteConfig(key)
+  else await setConfig(key, { questions })
+  revalidatePath('/admin/settings')
+  return { ok: true }
 }
 
 /**

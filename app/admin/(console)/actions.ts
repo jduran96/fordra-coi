@@ -375,13 +375,20 @@ export async function updateCallNote(verificationId: string, noteAt: string, for
 
   const phoneChanged = normalizePhone(nextContact.phone) !== normalizePhone(note.contact?.phone)
   const emailChanged = normalizeEmail(nextContact.email) !== normalizeEmail(note.contact?.email)
-  const check = (phoneChanged || emailChanged)
+  let check = (phoneChanged || emailChanged)
     ? noteCheckFromRegistry(
         (Array.isArray(row.contact_checks) ? row.contact_checks : []) as ContactCheckEntry[],
         contactValue(nextContact.phone),
         contactValue(nextContact.email),
       )
     : note.contact_check ?? null
+  // The dialog also carries the verification blurb. edited_at is stamped only
+  // on an actual change: it permanently opts the note out of registry re-syncs
+  // (retroTagNotes skips edited notes), so an untouched field must not freeze it.
+  if (check && formData.has('check_blurb')) {
+    const blurb = String(formData.get('check_blurb') || '').trim()
+    if (blurb !== check.blurb) check = { ...check, blurb, edited_at: new Date().toISOString() }
+  }
 
   // Whole-object replacement. Legacy `text` is deliberately dropped: the edit
   // dialog prefills the summary editor from it, so its content survives as

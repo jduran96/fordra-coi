@@ -29,6 +29,7 @@ export default function EditNoteButton({ note, action }: {
     note.summary_html ?? plainToHtml(note.summary_text || note.text || ''),
   )
   const [transcript, setTranscript] = useState(note.transcript ?? '')
+  const [checkBlurb, setCheckBlurb] = useState(note.contact_check?.blurb ?? '')
   const [error, setError] = useState('')
 
   async function submit(formData: FormData) {
@@ -57,6 +58,16 @@ export default function EditNoteButton({ note, action }: {
             <input name="contact_phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={input()} />
             <input name="contact_email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={input()} />
             <input name="contact_method" value={method} onChange={e => setMethod(e.target.value)} placeholder="Contact method (email, text, call)" style={input()} />
+            {/* The log's contact verification write-up rides along here so the
+                whole entry is editable from one dialog. Absent until an online
+                check has covered this log's values. */}
+            {note.contact_check && (
+              <>
+                <label style={label()}>Contact verification text</label>
+                <textarea name="check_blurb" value={checkBlurb} onChange={e => setCheckBlurb(e.target.value)} rows={3}
+                  placeholder="What the online search found for this log's phone/email" style={{ ...input(), resize: 'vertical' }} />
+              </>
+            )}
             <label style={label()}>Summary</label>
             <RichTextInput name="summary_html" value={summary} onChange={setSummary} />
             <label style={label()}>Transcript</label>

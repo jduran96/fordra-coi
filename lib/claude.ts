@@ -500,7 +500,11 @@ Hard limits:
 Output rules:
 - Field statuses, ONLY for these keys: ${fields.join(', ')}. "verified" when the value appears in a credible public listing for that agency (formatting differences are fine; an email also counts as verified when its domain is the agency's confirmed official domain and no listing shows a contradictory address); "differs" when public listings show a clearly different value; "not_found" when you cannot find a credible public value to compare. Never invent a status for a field you were not given.
 - website_url: the agency's official website URL, or "" when none was found.
-- summary: 1-3 plain sentences shown to the CUSTOMER on the published report, covering both parts: what the agency's own website showed and which outside source (if any) confirmed it. Professional, plain language, no em dashes.
+- summary: shown to the CUSTOMER on the published report. Keep it SHORT, at most 2 brief sentences, and never narrate your search process. Pick the one case that applies:
+  - Everything checked out: briefly state where the phone and where the email were found (e.g. the agency's website, a directory listing). Nothing else.
+  - Nothing found: ONE sentence saying the online search turned up no listing for the logged details, naming a couple of the places checked.
+  - Anything differs from the logged details: briefly state what was found online and where, so the discrepancy stands out.
+  Professional, plain language, no em dashes.
 - sources: the URLs you actually relied on (up to 5), official website first, then the external confirmer.`;
 
   const domain = corporateEmailDomain(email);
@@ -649,14 +653,17 @@ Return ONLY a valid JSON array of question strings, blockers first, then standar
  * confirmation plus a first-4 follow-up. Used only by runExtractionPipeline;
  * the questions prefill the AI call's question list.
  */
+/** The hardcoded lead question every list starts with, generated or configured. */
+export function mandatoryInsurerQuestion(coi: COIExtracted | null): string {
+  return `Is the COI for ${coi?.named_insured || 'the carrier'} still active and in force?`;
+}
+
 export async function generateInsurerQuestions(
   requirements: Requirement[],
   coi: COIExtracted | null,
   promptOverride?: string,
 ): Promise<string[]> {
-  const mandatory = [
-    `Is the COI for ${coi?.named_insured || 'the carrier'} still active and in force?`,
-  ];
+  const mandatory = [mandatoryInsurerQuestion(coi)];
   if (!requirements.length) return mandatory;
 
   const system = promptOverride?.trim() || DEFAULT_INSURER_QUESTIONS_PROMPT;
