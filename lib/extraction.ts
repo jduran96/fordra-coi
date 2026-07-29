@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
-import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions, mandatoryInsurerQuestion } from '@/lib/claude'
+import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig, getQuestionsConfig } from '@/lib/config'
 import { isCuratedQuestionList } from '@/lib/call-config'
 import { dispositionLabel, TERMINAL_STATUSES, type AiCall } from '@/lib/ai-call-shared'
@@ -103,8 +103,11 @@ export async function questionsFromConfig(input: {
     const extras = uncovered.length
       ? (await questionsFor(uncovered, input.coiExtracted, input.promptOverride) ?? []).slice(1)
       : []
-    const coi = (input.coiExtracted ?? null) as Parameters<typeof generateInsurerQuestions>[1]
-    return [mandatoryInsurerQuestion(coi), ...configured, ...extras]
+    // NO mandatory lead question here: a configured list is authoritative
+    // (prepending the hardcoded "still active and in force?" duplicated the
+    // admin's own policy-active blocker, owner report 2026-07-29). The
+    // generated extras above already have theirs sliced off too.
+    return [...configured, ...extras]
   } catch (e) {
     console.error('questions config lookup failed; falling back to generation', e)
     return null

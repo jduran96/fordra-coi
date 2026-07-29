@@ -10,6 +10,12 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Third round 2026-07-29 (owner's customer-path review):
 
+- **Config-populated question lists get NO injected lead question.**
+  `questionsFromConfig` no longer prepends `mandatoryInsurerQuestion` (it
+  duplicated the admin's own configured policy-active blocker). A configured
+  list is authoritative: if an org's Questions List omits an active/in-force
+  question, none is injected. Plain generation (no config) still prepends it.
+
 - **Assessment sees failed calls.** `runAssessmentPipeline` now also feeds the
   model every TERMINAL ai_calls row as a "Call attempts" section (no answer /
   voicemail / busy / refusal were structurally invisible: unanswered calls
