@@ -13,6 +13,17 @@ import { saveReferenceDetails } from './actions'
  * org is picked.
  */
 
+/** The three identity-core rows the pre-dial Reference details section always
+ *  shows first (CallReviewForm LOOKUP_FIELDS). Their titles are fixed because
+ *  each dispatches to the phone agent as its own dedicated variable
+ *  (insured_name / agency_name / agent_name; renaming means a Retell agent
+ *  change) — only their values are editable per call. */
+const FIXED_ROWS: { label: string; source: string }[] = [
+  { label: 'Insured name', source: 'the named insured on the COI; spoken in the agent\'s opening line' },
+  { label: 'Insurer name', source: 'the producer/agency on the COI' },
+  { label: 'Insurer contact', source: 'the insurance company contact on the COI, or the logged insurer contact' },
+]
+
 /** The per-deal rows draftFromVerification computes (lib/call-config.ts) —
  *  keep this list in sync with that function. */
 const COMPUTED_ROWS: { label: string; source: string }[] = [
@@ -83,9 +94,21 @@ function DetailsEditor({ orgId, stored }: { orgId: string; stored: ReferenceDeta
       <div style={{ background: C.paper, border: `1px solid ${C.border}`, borderRadius: 9, padding: 12 }}>
         <p style={sectionTitleStyle}>How reference details prefill on each deal</p>
         <p style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 8px' }}>
-          The rows you save here come first on every pre-dial screen for this org. After them, these
-          rows are added automatically from the deal itself (a row appears only when the value exists;
-          everything stays editable per call):
+          The pre-dial screen always shows these three rows first. Their titles are locked because
+          each one is passed to the phone agent as its own named variable; only the value is
+          editable per call:
+        </p>
+        <ul style={{ margin: '0 0 10px', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {FIXED_ROWS.map(r => (
+            <li key={r.label} style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 600, color: C.txt }}>{r.label}</span>: {r.source}
+            </li>
+          ))}
+        </ul>
+        <p style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 8px' }}>
+          Then come the rows you save here, followed by rows added automatically from the deal
+          itself (an automatic row appears only when the value exists; these all stay fully
+          editable per call, titles included):
         </p>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {COMPUTED_ROWS.map(r => (
