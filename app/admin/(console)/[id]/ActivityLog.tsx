@@ -88,8 +88,8 @@ function ActivityDialog({ entries, summary, logAction, deleteAction, onClose }: 
   }
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={overlay}>
-      <div style={card}>
+    <div className="fx-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={overlay}>
+      <div className="fx-modal-card" style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>Activity log</h2>
           <button onClick={onClose} aria-label="Close" style={closeBtn}>×</button>
@@ -98,9 +98,11 @@ function ActivityDialog({ entries, summary, logAction, deleteAction, onClose }: 
           Admin bookkeeping only. Not visible to the customer.
         </p>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* Logging a voicemail is the single most common phone action, so on
+            a small screen this becomes three stacked full-width controls. */}
+        <div className="fx-stack" style={{ display: 'flex', gap: 8 }}>
           <select value={kind} onChange={e => setKind(e.target.value)} disabled={pending}
-            style={{ ...field(), width: 170, flexShrink: 0 }}>
+            className="fx-full" style={{ ...field(), width: 170, flexShrink: 0 }}>
             <option value="">What happened?</option>
             {ACTIVITY_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
           </select>
@@ -131,7 +133,7 @@ function ActivityDialog({ entries, summary, logAction, deleteAction, onClose }: 
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12, maxHeight: '50vh', overflowY: 'auto', fontFamily: C.sans }}>
             {entries.slice().reverse().map((e, i) => (
-              <div key={`${e.at}-${i}`} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13 }}>
+              <div key={`${e.at}-${i}`} className="fx-wrap" style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13 }}>
                 <span style={{
                   fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
                   color: C.txt2, background: C.paper, border: `1px solid ${C.border}`,

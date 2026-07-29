@@ -60,9 +60,9 @@ export default function EditNoteButton({ note, action }: {
             <label style={label()}>Summary</label>
             <RichTextInput name="summary_html" value={summary} onChange={setSummary} />
             <label style={label()}>Transcript</label>
-            <textarea name="transcript" value={transcript} onChange={e => setTranscript(e.target.value)} rows={5} placeholder="Paste the raw transcript (optional)" style={{ ...input(), resize: 'vertical' }} />
+            <textarea name="transcript" value={transcript} onChange={e => setTranscript(e.target.value)} rows={5} placeholder="Paste the raw transcript (optional)" className="fx-paste" style={{ ...input(), resize: 'vertical' }} />
             {error && <p style={{ fontSize: 13, color: C.error, margin: 0 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
+            <div className="fx-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
               <PendingButton pendingLabel="Saving…" style={{
                 padding: '8px 20px', background: C.txt, color: C.onDark, fontSize: 13, fontWeight: 600,
                 fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: 'pointer',

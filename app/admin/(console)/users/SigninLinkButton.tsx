@@ -43,8 +43,8 @@ export default function SigninLinkButton({ email }: { email: string }) {
       </button>
 
       {open && (
-        <div onClick={e => { if (e.target === e.currentTarget) setOpen(false) }} style={overlay}>
-          <div style={card}>
+        <div onClick={e => { if (e.target === e.currentTarget) setOpen(false) }} className="fx-modal-backdrop" style={overlay}>
+          <div className="fx-modal-card" style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>Sign-in link</h2>
               <button onClick={() => setOpen(false)} aria-label="Close" style={closeBtn}>×</button>

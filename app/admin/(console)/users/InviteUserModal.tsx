@@ -32,8 +32,8 @@ function InviteDialog({ orgs, onClose }: { orgs: { id: string; name: string }[];
   }, [onClose])
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={overlay}>
-      <div style={card}>
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} className="fx-modal-backdrop" style={overlay}>
+      <div className="fx-modal-card" style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>Invite user</h2>
           <button onClick={onClose} aria-label="Close" style={closeBtn}>×</button>

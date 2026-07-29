@@ -49,7 +49,7 @@ export default function ContactCheckTask({
             placeholder="Email to verify" style={input()} />
         </label>
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div className="fx-stack" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <PendingButton pendingLabel="Checking the web… (can take a minute)" style={btn()}>
           Check phone/email online
         </PendingButton>

@@ -88,12 +88,18 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
         )}
         {questions.map((q, i) => (
           <div key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 12, background: C.paper }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            {/* On a phone the reorder/remove controls wrap onto their own
+                line so the question text keeps the full width. */}
+            <div className="fx-q-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: C.txt3, paddingTop: 9, fontFamily: C.mono }}>{i + 1}.</span>
+              {/* fx-q-text drops these to 14px on a phone. They are read far
+                  more often than edited, and the 16px anti-zoom size fits so
+                  little of a question in two rows that it is hard to scan. */}
               <textarea value={q.text} rows={2} disabled={caseIsClosed}
                 onChange={e => setQuestion(i, { text: e.target.value })}
-                style={{ ...fieldStyle(!q.text.trim()), resize: 'vertical', flex: 1 }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                className="fx-q-text"
+                style={{ ...fieldStyle(!q.text.trim()), resize: 'vertical', flex: 1, lineHeight: 1.45 }} />
+              <div className="fx-q-tools" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <button type="button" onClick={() => move(i, -1)} disabled={caseIsClosed || i === 0} style={tinyBtn(caseIsClosed || i === 0)} aria-label="Move up">↑</button>
                 <button type="button" onClick={() => move(i, 1)} disabled={caseIsClosed || i === questions.length - 1} style={tinyBtn(caseIsClosed || i === questions.length - 1)} aria-label="Move down">↓</button>
               </div>
@@ -113,7 +119,7 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
         <p style={{ fontSize: 13.5, fontWeight: 600, color: message.kind === 'error' ? C.error : C.ok, margin: '12px 0 0' }}>{message.text}</p>
       )}
       {!caseIsClosed && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+        <div className="fx-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
           <button type="button" disabled={pending} onClick={() => edit(prev => [...prev, { text: '' }])} style={btn(pending)}>
             Add question
           </button>

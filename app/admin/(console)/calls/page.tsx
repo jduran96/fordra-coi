@@ -17,6 +17,29 @@ interface CallRow extends AiCall {
   } | null
 }
 
+/** m:ss, or blank for a call that never connected. */
+function duration(call: AiCall): string {
+  return typeof call.duration_ms === 'number' && call.duration_ms > 0
+    ? `${Math.floor(call.duration_ms / 60000)}:${String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}`
+    : ''
+}
+
+function StatusPill({ call }: { call: AiCall }) {
+  const active = ACTIVE_STATUSES.includes(call.status)
+  const color = active ? C.warn
+    : call.status === 'completed' ? C.ok
+    : call.status === 'approved' ? C.neutral
+    : C.error
+  const label = call.status === 'in_progress' ? 'On the call'
+    : call.status === 'dispatched' ? 'Ringing'
+    : call.status.charAt(0).toUpperCase() + call.status.slice(1)
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  )
+}
+
 /** Global record of AI voice-agent calls across all verifications. */
 export default async function AdminCallsPage() {
   await requireAdmin()
@@ -57,41 +80,48 @@ export default async function AdminCallsPage() {
               <th style={th}>Log</th>
             </tr>
           }
-          rows={calls.map(call => {
-            const active = ACTIVE_STATUSES.includes(call.status)
-            const pillColor = active ? C.warn
-              : call.status === 'completed' ? C.ok
-              : call.status === 'approved' ? C.neutral
-              : C.error
-            const pillLabel = call.status === 'in_progress' ? 'On the call'
-              : call.status === 'dispatched' ? 'Ringing'
-              : call.status.charAt(0).toUpperCase() + call.status.slice(1)
-            return (
-              <tr key={call.id}>
-                <td style={{ ...td, whiteSpace: 'nowrap', color: C.txt2 }}>{pacificDateTime(call.approved_at ?? call.created_at)}</td>
-                <td style={td}>
-                  <Link href={`/admin/${call.verification_id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'none' }}>
-                    {call.verifications?.display_id ?? 'View'}
-                  </Link>
-                </td>
-                <td style={{ ...td, color: C.txt2 }}>{call.verifications?.orgs?.name ?? ''}</td>
-                <td style={{ ...td, color: C.txt2 }}>{call.verifications?.insured_name ?? ''}</td>
-                <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5, whiteSpace: 'nowrap' }}>{call.to_number ?? ''}</td>
-                <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: pillColor, background: `color-mix(in oklch, ${pillColor} 12%, transparent)`, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                    {pillLabel}
-                  </span>
-                </td>
-                <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5 }}>
-                  {typeof call.duration_ms === 'number' && call.duration_ms > 0
-                    ? `${Math.floor(call.duration_ms / 60000)}:${String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}`
-                    : ''}
-                </td>
-                <td style={{ ...td, color: C.txt2 }}>{dispositionLabel(call)}</td>
-                <td style={{ ...td, color: C.txt3, whiteSpace: 'nowrap' }}>{call.published_note_at ? 'Published' : ''}</td>
-              </tr>
-            )
-          })}
+          rows={calls.map(call => (
+            <tr key={call.id}>
+              <td style={{ ...td, whiteSpace: 'nowrap', color: C.txt2 }}>{pacificDateTime(call.approved_at ?? call.created_at)}</td>
+              <td style={td}>
+                <Link href={`/admin/${call.verification_id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'none' }}>
+                  {call.verifications?.display_id ?? 'View'}
+                </Link>
+              </td>
+              <td style={{ ...td, color: C.txt2 }}>{call.verifications?.orgs?.name ?? ''}</td>
+              <td style={{ ...td, color: C.txt2 }}>{call.verifications?.insured_name ?? ''}</td>
+              <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5, whiteSpace: 'nowrap' }}>{call.to_number ?? ''}</td>
+              <td style={td}><StatusPill call={call} /></td>
+              <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5 }}>{duration(call)}</td>
+              <td style={{ ...td, color: C.txt2 }}>{dispositionLabel(call)}</td>
+              <td style={{ ...td, color: C.txt3, whiteSpace: 'nowrap' }}>{call.published_note_at ? 'Published' : ''}</td>
+            </tr>
+          ))}
+          cards={calls.map(call => (
+            <Link key={call.id} href={`/admin/${call.verification_id}`} style={{
+              display: 'block', padding: '13px 14px', borderTop: `1px solid ${C.border}`,
+              textDecoration: 'none', color: C.txt,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <StatusPill call={call} />
+                <span style={{ marginLeft: 'auto', fontFamily: C.mono, fontSize: 12, color: C.txt3 }}>{duration(call)}</span>
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 600, margin: '6px 0 2px' }}>
+                {call.verifications?.insured_name || call.verifications?.display_id || 'View'}
+              </div>
+              <div style={{ fontSize: 12.5, color: C.txt3 }}>
+                {call.verifications?.orgs?.name ?? ''} · <span style={{ fontFamily: C.mono }}>{call.to_number ?? ''}</span>
+              </div>
+              <div style={{ fontSize: 12, color: C.txt3, marginTop: 3 }}>
+                {pacificDateTime(call.approved_at ?? call.created_at)}
+              </div>
+              {(dispositionLabel(call) || call.published_note_at) && (
+                <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 4 }}>
+                  {[dispositionLabel(call), call.published_note_at ? 'Published' : ''].filter(Boolean).join(' · ')}
+                </div>
+              )}
+            </Link>
+          ))}
         />
       )}
     </div>

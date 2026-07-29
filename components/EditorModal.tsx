@@ -27,7 +27,11 @@ export default function EditorModal({ title, onClose, children, maxWidth = 880 }
   const pressedBackdrop = useRef(false)
 
   return (
+    /* On phones the dialog becomes a bottom sheet (fx-modal-*): full width,
+       rounded top corners, thumb-reachable, and it scrolls inside itself
+       instead of the page scrolling behind it. */
     <div
+      className="fx-modal-backdrop"
       onMouseDown={e => { pressedBackdrop.current = e.target === e.currentTarget }}
       onClick={e => { if (e.target === e.currentTarget && pressedBackdrop.current) onClose() }}
       style={{
@@ -35,12 +39,12 @@ export default function EditorModal({ title, onClose, children, maxWidth = 880 }
       backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24,
     }}>
-      <div style={{
+      <div className="fx-modal-card" style={{
         background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28,
         width: '100%', maxWidth, maxHeight: '88vh', overflowY: 'auto',
         boxShadow: '0 25px 50px -12px rgba(20,20,19,0.25)',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 10 }}>
           <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>{title}</h2>
           <button onClick={onClose} aria-label="Close" style={{
             width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',

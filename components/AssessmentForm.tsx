@@ -85,6 +85,7 @@ export default function AssessmentForm({
           rows={4}
           placeholder="Overall verdict in plain language: what passed, what did not, what remains unconfirmed…"
           disabled={closed}
+          className="fx-paste-sm"
           style={{ ...input(), width: '100%', resize: 'vertical' }}
         />
       </div>
@@ -92,13 +93,13 @@ export default function AssessmentForm({
       {rows.map((item, i) => (
         <div key={item.key} style={{ paddingBottom: 14, borderBottom: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input type="hidden" name={`req_${i}_requirement`} value={JSON.stringify(item.requirement)} />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="fx-wrap" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
               value={item.requirement.coverage_type ?? ''}
               onChange={e => editName(item.key, e.target.value)}
               placeholder="Requirement name"
               disabled={closed}
-              style={{ ...input(), flex: 1, fontWeight: 700 }}
+              style={{ ...input(), flex: 1, minWidth: 0, fontWeight: 700 }}
             />
             {item.requirement.minimum_limit
               ? <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{item.requirement.minimum_limit}</span>
@@ -110,8 +111,11 @@ export default function AssessmentForm({
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 200, flexShrink: 0 }}>
+          {/* Verdict + confirmation stack beside the evidence box on desktop
+              and above it on a phone, where a 200px column would leave the
+              evidence field too narrow to read a pasted line. */}
+          <div className="fx-stack" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div className="fx-full" style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 200, flexShrink: 0 }}>
               <select name={`req_${i}_status`} defaultValue={item.status} disabled={closed} style={input()}>
                 <option value="met">Passed</option>
                 <option value="not_met">Discrepancy</option>
@@ -129,6 +133,7 @@ export default function AssessmentForm({
               rows={3}
               placeholder="Reason / evidence shown to the customer"
               disabled={closed}
+              className="fx-paste-sm"
               style={{ ...input(), flex: 1, resize: 'vertical', lineHeight: 1.5 }}
             />
           </div>
@@ -155,7 +160,9 @@ export default function AssessmentForm({
           </p>
         </>
       ) : (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        /* The page-global action bar: visible under every tab, so on a phone
+           it stacks full-width rather than squeezing three buttons. */
+        <div className="fx-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <PendingButton name="intent" value="save" pendingLabel="Saving…" style={smallBtn()}>Save draft</PendingButton>
           <button type="button" onClick={() => setFailOpen(true)}
             style={{ ...smallBtn(), color: C.error, borderColor: C.error }}>
@@ -174,7 +181,7 @@ export default function AssessmentForm({
             </p>
             <NotifyUserChoice submitterEmail={submitterEmail} slackNotifiable={slackNotifiable} />
             {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="fx-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setPublishOpen(false)} style={smallBtn()}>Cancel</button>
               <PendingButton name="intent" value="publish" pendingLabel="Publishing…" style={primaryBtn()}>
                 Publish to customer
@@ -195,11 +202,12 @@ export default function AssessmentForm({
               required
               rows={4}
               placeholder="Reason shown to the customer"
+              className="fx-paste-sm"
               style={{ ...input(), width: '100%', resize: 'vertical' }}
             />
             <NotifyUserChoice submitterEmail={submitterEmail} slackNotifiable={slackNotifiable} />
             {error && <p style={{ fontSize: 13, color: C.error, fontFamily: C.sans, margin: 0 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="fx-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setFailOpen(false)} style={smallBtn()}>Cancel</button>
               <PendingButton name="intent" value="fail" pendingLabel="Saving…"
                 style={{ ...primaryBtn(), background: C.error }}>
