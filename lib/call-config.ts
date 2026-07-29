@@ -261,21 +261,16 @@ export function disclosurePreview(ctx: Pick<CallContextFields, 'assistant_name' 
 /** A 17-character VIN (I, O, Q are never used in VINs). */
 const VIN_RE = /\b[A-HJ-NPR-Z0-9]{17}\b/g
 
-/** Every distinct VIN found in the COI extraction and the submitted standards. */
-export function collectVins(coi: COIExtracted | null, requirements: Requirement[]): string[] {
+/**
+ * Every distinct VIN in the SUBMITTED STANDARDS only: template rows, manual
+ * standards inputs, and resolved per-deal variables (all of which land in the
+ * parsed requirement rows). VINs read off the COI are deliberately excluded
+ * (owner call 2026-07-29, VRF-1083): a certificate can list a whole fleet,
+ * but the call only concerns the vehicles the customer asked about.
+ */
+export function collectVins(requirements: Requirement[]): string[] {
   const vins = new Set<string>()
-  for (const v of coi?.vehicle_vins ?? []) {
-    const trimmed = String(v ?? '').trim().toUpperCase()
-    if (VIN_RE.test(trimmed)) vins.add(trimmed)
-    VIN_RE.lastIndex = 0
-  }
-  // Standards routinely carry the VIN of the financed vehicle in the row title
-  // or notes; the COI may also bury one in its free-text terms.
-  const haystacks = [
-    ...requirements.flatMap(r => [r.coverage_type, r.minimum_limit, r.notes ?? '']),
-    coi?.additional_terms ?? '',
-    ...(coi?.coverages ?? []).map(c => c.raw_notes ?? ''),
-  ]
+  const haystacks = requirements.flatMap(r => [r.coverage_type, r.minimum_limit, r.notes ?? ''])
   for (const text of haystacks) {
     for (const m of String(text ?? '').toUpperCase().matchAll(VIN_RE)) vins.add(m[0])
   }
@@ -357,7 +352,7 @@ export function draftFromVerification(input: {
   } else {
     push('Certificate holder', coi?.certificate_holder)
   }
-  for (const vin of collectVins(coi, input.requirements)) push('VIN', vin)
+  for (const vin of collectVins(input.requirements)) push('VIN', vin)
   push('USDOT number', coi?.usdot_number)
   push('MC number', coi?.mc_number)
 

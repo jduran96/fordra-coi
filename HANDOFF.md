@@ -10,6 +10,13 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Hotfix round (second push 2026-07-29):
 
+- **VIN reference details come from the standards only** (owner call,
+  VRF-1083): `collectVins` no longer reads `coi.vehicle_vins` /
+  `additional_terms` / coverage `raw_notes` — a COI can list a whole fleet,
+  but the call only concerns vehicles the customer specified (template rows,
+  manual standards input, per-deal variables, all present in the parsed
+  requirement rows).
+
 - **Custom questions in the Questions List config.** `ConfiguredQuestion`
   gained `custom?: boolean`: free-standing questions not tied to any template
   row (added via "Add question" in the settings editor, orderable, blocker-

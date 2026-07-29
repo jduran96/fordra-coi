@@ -30,7 +30,7 @@ const COMPUTED_ROWS: { label: string; source: string }[] = [
   { label: 'Policy number (one row per coverage)', source: 'each distinct policy number on the COI, labeled with its coverage type' },
   { label: 'Insured address', source: 'the named insured address on the COI' },
   { label: 'Certificate holder / holder address', source: 'the certificate holder box on the COI' },
-  { label: 'VIN (one row each)', source: 'every 17-character VIN found on the COI or in the submitted standards' },
+  { label: 'VIN (one row each)', source: 'every 17-character VIN in the submitted standards (template rows, manual inputs, per-deal variables); VINs only on the COI are excluded' },
   { label: 'USDOT number / MC number', source: 'the COI when present' },
 ]
 
