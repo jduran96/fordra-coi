@@ -10,6 +10,16 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Third round 2026-07-29 (owner's customer-path review):
 
+- **Passed REQUIRES insurer confirmation (owner rule).** The assessment
+  prompt's "met" now demands explicit insurer confirmation by call/email in
+  the contact log; a standard merely present on the certificate is at best
+  "uncertain" (Warning). `runAssessmentPipeline` additionally enforces this
+  deterministically: any met item the model returns without
+  `insurer_confirmation` is demoted to uncertain with a "Not yet confirmed
+  with the insurer." clause. Applies to Run Analysis only; the admin can
+  still hand-set Passed in AssessmentForm. (No `prompt_assessment` override
+  exists in app_config, so the new default is live immediately.)
+
 - **Config-populated question lists get NO injected lead question.**
   `questionsFromConfig` no longer prepends `mandatoryInsurerQuestion` (it
   duplicated the admin's own configured policy-active blocker). A configured

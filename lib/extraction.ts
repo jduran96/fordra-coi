@@ -308,6 +308,18 @@ export async function runAssessmentPipeline(verificationId: string): Promise<voi
     await assessVerification(requirements, v.coi_extracted as Parameters<typeof assessVerification>[1], log, cfg.promptAssessment),
     requirements,
   ) as FinalReport
+  // Passed REQUIRES insurer confirmation (owner rule 2026-07-29): a standard
+  // merely present on the certificate is a Warning, not a pass. Deterministic
+  // guard on top of the prompt: demote any unconfirmed met item.
+  const unconfirmed = report.met.filter(i => i.insurer_confirmation !== 'call' && i.insurer_confirmation !== 'email')
+  if (unconfirmed.length) {
+    report.met = report.met.filter(i => !unconfirmed.includes(i))
+    report.uncertain = [...report.uncertain, ...unconfirmed.map(i => ({
+      ...i,
+      status: 'uncertain' as const,
+      evidence: `${(i.evidence ?? '').trim().replace(/\.$/, '')}. Not yet confirmed with the insurer.`.replace(/^\. /, ''),
+    }))]
+  }
 
   const { error: werr } = await supabase.from('verifications').update({
     gap_analysis: { met: report.met, not_met: report.not_met, uncertain: report.uncertain },

@@ -353,16 +353,16 @@ export async function extractCOIFields(
  *  appended in code so the stored override never goes stale. */
 export const DEFAULT_ASSESSMENT_PROMPT = `You are a COI compliance analyst for a company that verifies certificates of insurance.
 Classify each insurance requirement as "met", "not_met", or "uncertain".
-- "met": The evidence clearly satisfies the requirement.
-- "not_met": The evidence clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage).
-- "uncertain": The evidence is relevant but ambiguous, OCR could not confirm, or the requirement depends on endorsements not visible.
+- "met": The insurance agent EXPLICITLY confirmed the requirement by call or email in the contact log, and nothing contradicts it. A requirement is NEVER met from the certificate alone: a standard simply appearing on the document without insurer confirmation is "uncertain" at best. Every met item must therefore carry insurer_confirmation.
+- "not_met": The evidence clearly lacks or falls short of the requirement (direct conflict with stated limits or coverage), whether on the certificate or per the insurer.
+- "uncertain": Everything else: the certificate appears to satisfy the requirement but the insurer has not confirmed it by call or email, the evidence is ambiguous, OCR could not confirm, or the requirement depends on endorsements not visible.
 Evidence comes from TWO sources: the extracted certificate, and the insurer contact log (the verifier's phone calls and emails with the insurance agent, when provided). An insurer's explicit confirmation or contradiction in the contact log outweighs what the certificate alone shows: it can move a requirement to met or not_met. When a verdict rests on the contact log, say so in the evidence sentence and set "insurer_confirmation" on that item to "call" or "email" (matching how the insurer was reached). Never invent contact-log evidence; omit insurer_confirmation when the log says nothing about that requirement.
 Return ONLY a valid JSON object: { "met": [...], "not_met": [...], "uncertain": [...], "narrative_summary": string }
 Each item: { "requirement": <requirement object>, "status": string, "evidence": string, "insurer_confirmation"?: "call" | "email" }
 narrative_summary: TWO sentences maximum, second person. State the overall verdict, then note every requirement that is still not met or unresolved — including any policyholder-name mismatch. Do not omit a failed or unconfirmed check, and do not call something resolved unless the evidence says so. When the contact log or call attempts show outreach that did not land (no answer, voicemail, busy, or the insurer refused to verify), add ONE brief clause noting it (e.g. "; calls to the insurer have gone unanswered so far"). No lists, no jargon.
 evidence: EXACTLY ONE plain-English sentence, second person, under 25 words. Never two sentences. No raw field names, no jargon.
 CRITICAL — the evidence MUST be consistent with the status; never contradict it or hedge:
-- status "met": affirm satisfaction plainly, e.g. "You require $500k CGL; the policy provides $1,000,000 per occurrence, which satisfies it." Do NOT raise doubts, do NOT mention unresolved concerns, do NOT defer to any "uncertain" note, do NOT trail off.
+- status "met": affirm satisfaction plainly and say the insurer confirmed it, e.g. "You require $500k CGL; the insurer confirmed $1,000,000 per occurrence, which satisfies it." Do NOT raise doubts, do NOT mention unresolved concerns, do NOT defer to any "uncertain" note, do NOT trail off.
 - status "not_met": state plainly what falls short, e.g. "You require $1M cargo; the policy shows only $100,000."
 - status "uncertain": state exactly what could not be confirmed and why — and only then.
 Judge each requirement on the coverage type and its stated amount. Do not introduce a separate concern (e.g. effective dates) that conflicts with the status you chose.
