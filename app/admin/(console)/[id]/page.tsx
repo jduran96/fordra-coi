@@ -343,7 +343,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             <SectionTitle>OCR Analysis</SectionTitle>
             <form action={runExtraction.bind(null, id)} className="fx-unpin" style={{ marginLeft: 'auto' }}>
               <PendingButton pendingLabel="Extracting… (can take a minute)" style={smallBtn()}>
-                {v.coi_extracted ? 'Re-run extraction' : 'Run extraction'}
+                {v.coi_extracted ? 'Rerun extraction' : 'Run extraction'}
               </PendingButton>
             </form>
           </div>
@@ -375,6 +375,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                   <ContactCheckTask
                     defaultPhone={contactValue(coi?.insurance_company_phone)}
                     defaultEmail={contactValue(coi?.insurance_company_email)}
+                    hasChecks={checks.length > 0}
                     runAction={runOnlineContactCheck.bind(null, id)}
                   />
                 )}

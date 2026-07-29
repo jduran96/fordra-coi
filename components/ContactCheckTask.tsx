@@ -5,12 +5,12 @@ import { C } from '@/lib/theme'
 import PendingButton from '@/components/PendingButton'
 
 /**
- * The single entry point for online contact verification: phone/email inputs
+ * The manual entry point for online contact verification: phone/email inputs
  * prefilled from the COI's extracted producer contact (editable, so the admin
  * can check a number an insurer gave them instead), and a manually triggered
  * web check. Results accumulate in the verification's check history; contact
- * logs inherit tags by matching against it — this form is the only thing
- * that ever spends web-search tokens.
+ * logs inherit tags by matching against it. The only other spender of
+ * web-search tokens is the one-time auto run (lib/auto-checks.ts).
  *
  * Controlled inputs on purpose: after a run the values stay put so the admin
  * can tweak one field and re-run (and React 19 resets defaultValue-only
@@ -19,10 +19,13 @@ import PendingButton from '@/components/PendingButton'
 export default function ContactCheckTask({
   defaultPhone,
   defaultEmail,
+  hasChecks,
   runAction,
 }: {
   defaultPhone: string
   defaultEmail: string
+  /** True once the check history has entries (auto or manual) — flips the label to Rerun. */
+  hasChecks: boolean
   runAction: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
   const [phone, setPhone] = useState(defaultPhone)
@@ -51,7 +54,7 @@ export default function ContactCheckTask({
       </div>
       <div className="fx-stack" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <PendingButton pendingLabel="Checking the web… (can take a minute)" style={btn()}>
-          Check phone/email online
+          {hasChecks ? 'Rerun online check' : 'Run online check'}
         </PendingButton>
         <span style={{ fontSize: 12, color: C.txt3 }}>
           Runs a web search against the producer on the COI.

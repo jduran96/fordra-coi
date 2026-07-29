@@ -3,6 +3,7 @@ import { after } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { uploadDocument, removeDocuments } from '@/lib/storage'
 import { notifyNewVerification } from '@/lib/notify'
+import { runAutoChecks } from '@/lib/auto-checks'
 
 export type DocumentKind = 'coi' | 'rcs' | 'requirements'
 
@@ -31,6 +32,13 @@ export interface CreateVerificationInput {
   files: VerificationFile[]
   /** Email alert to the configured admins (default true; sandbox passes false). */
   notify?: boolean
+  /**
+   * Fire the one-time auto OCR + contact check via after() (default true;
+   * the /v1 sandbox branch passes false — canned results, nothing to
+   * extract). Exactly-once is enforced by the auto_*_claimed_at columns in
+   * lib/auto-checks.ts, not by this flag.
+   */
+  autoChecks?: boolean
   /**
    * Columns to return from the insert. Default '*' (fine for the service
    * client). The web path passes the RLS session client, where column-level
@@ -127,6 +135,16 @@ export async function createVerification(
       source: input.source,
     })
     try { after(p) } catch { void p } // no request context (e.g. a script): let it run untracked
+  }
+
+  // One-time auto OCR + contact check (never the analysis step — that places
+  // calls). Callback form so the multi-minute pipeline only starts after the
+  // response is sent; the invoking segment must export maxDuration = 300 to
+  // cover it (repeat-bug #6). runAutoChecks never throws, and its DB claims
+  // make duplicate firing harmless.
+  if (input.autoChecks !== false) {
+    const kick = () => runAutoChecks(v.id as string)
+    try { after(kick) } catch { void kick() } // no request context (e.g. a script): run untracked
   }
 
   return { verification: v, docRefs }

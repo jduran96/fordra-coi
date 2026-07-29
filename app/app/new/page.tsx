@@ -6,6 +6,9 @@ import Link from 'next/link'
 import NewVerificationForm from './NewVerificationForm'
 
 export const dynamic = 'force-dynamic'
+// Covers submitVerification's after()-deferred auto OCR + contact check —
+// server actions run under the invoking PAGE's maxDuration (repeat-bug #6).
+export const maxDuration = 300
 
 export default async function NewVerification() {
   const profile = await getProfile()

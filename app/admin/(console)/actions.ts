@@ -12,7 +12,7 @@ import { DOCUMENTS_BUCKET } from '@/lib/storage'
 import { emitEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline, runAssessmentPipeline } from '@/lib/extraction'
-import { verifyLoggedContact } from '@/lib/claude'
+import { performContactCheck, retroTagNotes } from '@/lib/contact-check'
 import { activityKind, adminInitials } from '@/lib/admin-activity'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
 import { contactValue, deriveLegitimacy, noteCheckFromRegistry, normalizePhone, normalizeEmail } from '@/lib/contact-notes'
@@ -101,22 +101,8 @@ export async function runOnlineContactCheck(verificationId: string, formData: Fo
   if (!phone && !email) {
     return { error: 'Enter a phone or email to verify.' }
   }
-  const check = await verifyLoggedContact({ producer, insurer, phone, email })
-  if (!check) return { error: 'The web check came back empty. Please retry.' }
-  const entry: ContactCheckEntry = {
-    ...check,
-    ...(phone ? { phone } : {}),
-    ...(email ? { email } : {}),
-  }
-  const { error: werr } = await supabase.rpc('admin_append_contact_check', {
-    vid: verificationId,
-    entry,
-  })
-  if (werr) {
-    console.error('runOnlineContactCheck: write failed', werr)
-    return { error: 'Could not save the check. Please retry.' }
-  }
-  await retroTagNotes(supabase, verificationId)
+  const res = await performContactCheck(supabase, verificationId, { producer, insurer, phone, email })
+  if (res?.error) return res
   revalidatePath(`/admin/${verificationId}`)
 }
 
@@ -171,54 +157,6 @@ export async function saveContactCheckEdit(verificationId: string, entryAt: stri
   }
   await retroTagNotes(supabase, verificationId)
   revalidatePath(`/admin/${verificationId}`)
-}
-
-/**
- * Re-derive every contact log's check snapshot from the current check
- * history (after a run or an edit), so logs written BEFORE a check still get
- * their tags. Rules:
- *  - a note whose own check was hand-edited (contact_check.edited_at) is
- *    never touched: edited_at marks human-curated customer copy;
- *  - a field the history does not match keeps the note's existing status
- *    (legacy per-log check results survive);
- *  - no match at all leaves the note alone (never destroys old data).
- * Writes go per-note through the atomic admin_set_note_check RPC — never
- * read-modify-write the whole call_notes array. Failures log and continue:
- * each note is independently correct.
- */
-async function retroTagNotes(supabase: ReturnType<typeof createServiceClient>, verificationId: string): Promise<void> {
-  const { data: v, error } = await supabase.from('verifications')
-    .select('call_notes, contact_checks')
-    .eq('id', verificationId)
-    .maybeSingle()
-  if (error || !v) {
-    console.error('retroTagNotes: read failed', error)
-    return
-  }
-  const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
-  const entries = (Array.isArray(v.contact_checks) ? v.contact_checks : []) as ContactCheckEntry[]
-  for (const note of notes) {
-    if (note.contact_check?.edited_at) continue
-    const phone = contactValue(note.contact?.phone)
-    const email = contactValue(note.contact?.email)
-    if (!phone && !email) continue
-    const candidate = noteCheckFromRegistry(entries, phone, email)
-    if (!candidate) continue
-    const existing = note.contact_check
-    const merged: NoteContactCheck = {
-      ...candidate,
-      // Carry a status the history did not cover from the note's old check.
-      ...(!candidate.phone_status && existing?.phone_status ? { phone_status: existing.phone_status } : {}),
-      ...(!candidate.email_status && existing?.email_status ? { email_status: existing.email_status } : {}),
-    }
-    if (existing && JSON.stringify(existing) === JSON.stringify(merged)) continue
-    const { error: werr } = await supabase.rpc('admin_set_note_check', {
-      vid: verificationId,
-      note_at: note.at,
-      check_data: merged,
-    })
-    if (werr) console.error('retroTagNotes: write failed for note', note.at, werr)
-  }
 }
 
 /**

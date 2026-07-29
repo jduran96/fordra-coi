@@ -9,7 +9,9 @@ import { rateLimitAllows } from '@/lib/rate-limit'
 
 // Headroom for parallel link downloads (20s each) + storage writes + the
 // awaited webhook/notify, so the worst case can't be killed mid-createVerification.
-export const maxDuration = 120
+// Raised to 300 for the after()-deferred auto OCR + contact check, which runs
+// under this same limit (repeat-bug #6).
+export const maxDuration = 300
 
 /** Canned result returned immediately for sandbox (sk_test_) verifications. */
 function sandboxResult() {
@@ -193,8 +195,10 @@ export async function POST(request: Request) {
       templateId,
       autoCall,
       files: verificationFiles,
-      // Sandbox auto-completes with canned data; nobody needs to review it.
+      // Sandbox auto-completes with canned data; nobody needs to review it,
+      // and nothing real exists to extract or web-check.
       notify: auth.mode !== 'sandbox',
+      autoChecks: auth.mode !== 'sandbox',
     }))
   } catch (e) {
     // Internal detail stays in the logs; API clients get a generic failure.
