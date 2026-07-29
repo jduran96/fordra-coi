@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth-helpers'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
-import { normalizeActivity, ACTIVITY_KINDS } from '@/lib/admin-activity'
+import { adminInitials } from '@/lib/admin-activity'
 import PaginatedTable from '@/components/PaginatedTable'
 import { pacificDateTimeParts } from '@/lib/dates'
 import { caseAge, ageTitle, turnaroundLabel } from '@/lib/sla'
@@ -25,7 +25,7 @@ interface Row {
   manual_notes: string | null
   insurance_contact: unknown
   final_report: unknown
-  admin_activity: unknown
+  assigned_admin: string | null
   orgs: { name: string } | null
 }
 
@@ -37,7 +37,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, insured_name, status, source, created_at, updated_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
+    .select('id, display_id, insured_name, status, source, created_at, updated_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, assigned_admin, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -94,7 +94,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             <AdminStatusPill row={r} />
           </td>
           <td style={td()}>
-            <AdminActivityPill row={r} />
+            <AssignedPill row={r} />
           </td>
           <td style={{ ...td(), color: C.txt3 }}>
             {showPublished
@@ -126,7 +126,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               <AdminStatusPill row={r} />
-              <AdminActivityPill row={r} />
+              <AssignedPill row={r} />
             </div>
           </Link>
         )
@@ -161,14 +161,12 @@ function AgePill({ iso }: { iso: string }) {
   )
 }
 
-/** Most recent entry from the admin activity log, e.g. "VM · JD". Blank when nothing is logged. */
-function AdminActivityPill({ row }: { row: Row }) {
-  const entries = normalizeActivity(row.admin_activity)
-  const last = entries[entries.length - 1]
-  if (!last) return null
-  const pill = ACTIVITY_KINDS.find(k => k.value === last.kind)?.pill ?? last.kind
+/** The admin the deal is assigned to (Assign button on the detail page). */
+function AssignedPill({ row }: { row: Row }) {
+  const email = (row.assigned_admin ?? '').trim()
+  if (!email) return <span style={{ color: C.txt3 }}>—</span>
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, color: C.txt2, background: `color-mix(in oklch, ${C.txt2} 10%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{`${pill} · ${last.by}`}</span>
+    <span title={`Assigned to ${email}`} style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', color: C.txt2, background: `color-mix(in oklch, ${C.txt2} 10%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{adminInitials(email)}</span>
   )
 }
 

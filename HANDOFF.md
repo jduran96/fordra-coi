@@ -8,6 +8,22 @@
 **2026-07-29, on `main` (pushed to prod same day, owner-directed):** changes
 from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
+Fourth round 2026-07-29 (deal assignment):
+
+- **Deal assignment** (owner call: admins were overlapping). New
+  `verifications.assigned_admin` (migration `0036`, applied to live; text
+  email, admin-only: no authenticated grant, not in my_verifications). The
+  detail page's top-right **Assign** button (new `AssignButton.tsx`,
+  `assignVerification` action; options = the ADMIN_EMAIL allowlist +
+  Unassigned; selection takes effect only on Confirm, button disabled while
+  unchanged) replaced the Log activity button. Queue's **Admin column** now
+  shows the assignee's initials (JD/EM via `adminInitials`), and the detail
+  header shows an initials tag between the status chip and the day count.
+- **Manual Log activity flow deleted**: `ActivityLog.tsx`,
+  `logAdminActivity`, `deleteAdminActivity` are gone. KEPT: the events
+  ActivityFeed pill, the `admin_activity` column + RPCs, and the automatic
+  AI-call bookkeeping writes into it (currently no UI reads it).
+
 Third round 2026-07-29 (owner's customer-path review):
 
 - **Customer surfaces drop the overall legitimacy verdict chip** ("Insurer

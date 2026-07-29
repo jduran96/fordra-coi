@@ -13,7 +13,8 @@ import { emitEvent, recordEvent } from '@/lib/webhooks'
 import { serializeVerification } from '@/lib/api-auth'
 import { runExtractionPipeline, runAssessmentPipeline } from '@/lib/extraction'
 import { performContactCheck, retroTagNotes } from '@/lib/contact-check'
-import { activityKind, adminInitials } from '@/lib/admin-activity'
+import { adminInitials } from '@/lib/admin-activity'
+import { adminEmails } from '@/lib/admin-emails'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
 import { contactValue, deriveLegitimacy, noteCheckFromRegistry, normalizePhone, normalizeEmail } from '@/lib/contact-notes'
 import type { COIExtracted, ContactCheckEntry, ContactNote, ExternalConfirmation, NoteContactCheck, OnlineListingStatus, WebsiteStatus } from '@/lib/types'
@@ -625,47 +626,23 @@ export async function saveAssessment(verificationId: string, formData: FormData)
 }
 
 /**
- * Append one entry to the admin activity log: what happened (called /
- * voicemail / emailed / note), stamped server-side with the time and the
- * admin's initials from the session. Admin-only bookkeeping (column has no
- * grants to `authenticated`); the append is an atomic RPC so concurrent
- * admins can never drop each other's entries.
+ * Assign the verification to one admin (or clear the assignment). The email
+ * must come from the ADMIN_EMAIL allowlist; the queue's Admin column and the
+ * detail-header initials tag render from it. Replaced the manual Log activity
+ * flow 2026-07-29 (owner call); the automatic admin_activity bookkeeping from
+ * AI calls still writes, it just has no manual input anymore.
  */
-export async function logAdminActivity(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
-  const admin = await requireAdmin()
-  const kind = activityKind(String(formData.get('kind') || ''))
-  if (!kind) return { error: 'Pick what happened.' }
-  const note = String(formData.get('note') || '').trim().slice(0, 500)
-  const supabase = createServiceClient()
-  const { error } = await supabase.rpc('admin_append_activity', {
-    vid: verificationId,
-    kind,
-    actor: adminInitials(admin.email ?? ''),
-    note,
-  })
-  if (error) {
-    console.error('logAdminActivity failed', error)
-    return { error: 'Could not save. Please retry.' }
-  }
-  // The legacy single-value internal_flag has no clear control anymore (the
-  // old picker's "none" option was it); logging real activity supersedes and
-  // clears it so a stale/wrong legacy pill can't linger in the queue.
-  await supabase.from('verifications').update({ internal_flag: null }).eq('id', verificationId)
-  revalidatePath('/admin')
-  revalidatePath(`/admin/${verificationId}`)
-}
-
-/** Remove one activity entry, identified by its timestamp. Admin only. */
-export async function deleteAdminActivity(verificationId: string, entryAt: string): Promise<{ error?: string } | void> {
+export async function assignVerification(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
   await requireAdmin()
+  const email = String(formData.get('assignee') || '').trim().toLowerCase()
+  if (email && !adminEmails().has(email)) return { error: 'Pick one of the listed admins.' }
   const supabase = createServiceClient()
-  const { error } = await supabase.rpc('admin_delete_activity', {
-    vid: verificationId,
-    entry_at: entryAt,
-  })
+  const { error } = await supabase.from('verifications')
+    .update({ assigned_admin: email || null })
+    .eq('id', verificationId)
   if (error) {
-    console.error('deleteAdminActivity failed', error)
-    return { error: 'Could not delete. Please retry.' }
+    console.error('assignVerification failed', error)
+    return { error: 'Could not save the assignment. Please retry.' }
   }
   revalidatePath('/admin')
   revalidatePath(`/admin/${verificationId}`)

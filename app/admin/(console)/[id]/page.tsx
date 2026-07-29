@@ -19,11 +19,12 @@ import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
 import NoteCheckControls from '@/components/NoteCheckControls'
 import ContactCheckTask from '@/components/ContactCheckTask'
-import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, updateInsuredName, logAdminActivity, deleteAdminActivity } from '../actions'
-import { normalizeActivity } from '@/lib/admin-activity'
+import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, updateInsuredName, assignVerification } from '../actions'
+import { adminInitials } from '@/lib/admin-activity'
+import { adminEmails } from '@/lib/admin-emails'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
-import ActivityLog from './ActivityLog'
+import AssignButton from './AssignButton'
 import ActivityFeed from '@/components/ActivityFeed'
 import { feedEntries } from '@/lib/activity-feed'
 import AiCallLauncher from './AiCallLauncher'
@@ -135,6 +136,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
+  // Deal ownership (Assign button, migration 0036): email of the owning admin.
+  const assignedAdmin = String((v as { assigned_admin?: string | null }).assigned_admin ?? '').trim()
   // Closed (published or failed) cases are read-only, call notes included,
   // until reopened via Edit Status. Mirrored server-side in the actions.
   const caseIsClosed = !!v.published_at || v.case_status === 'failed'
@@ -225,15 +228,26 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
       <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 4px' }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400, lineHeight: 1.2 }}>{v.insured_name || v.display_id}</h1>
         <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>{adminStatus}</span>
+        {/* Who owns this deal: the assigned admin's initials, between the
+            status chip and the day count (owner spec 2026-07-29). */}
+        {assignedAdmin && (
+          <span title={`Assigned to ${assignedAdmin}`} style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: C.txt2,
+            background: C.paper, border: `1px solid ${C.border}`,
+            padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
+          }}>
+            {adminInitials(assignedAdmin)}
+          </span>
+        )}
         {/* Working-day age against the same-day target, red from 3 days.
             Only open cases: a closed one is no longer against the clock. */}
         {!caseIsClosed && <AgeChip iso={String(v.created_at)} />}
         <span className="fx-unpin" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
           <ActivityFeed entries={statusFeed} />
-          <ActivityLog
-            entries={normalizeActivity(v.admin_activity)}
-            logAction={logAdminActivity.bind(null, id)}
-            deleteAction={deleteAdminActivity.bind(null, id)}
+          <AssignButton
+            assigned={assignedAdmin}
+            admins={[...adminEmails()]}
+            action={assignVerification.bind(null, id)}
           />
         </span>
       </div>

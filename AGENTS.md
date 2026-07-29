@@ -60,5 +60,8 @@ rationale + roadmap). Quick orientation:
   hand-rolled paths land on deprecated endpoints and trigger emails to the workspace owner.
   Agent publish and call listing have committed tooling: `scripts/retell-publish-agent.mjs`,
   `scripts/retell-list-calls.mjs` (details + the deprecation history in HANDOFF.md).
+  Before debugging any call problem or changing Retell settings/flow, read the
+  `fordra-voice-agent` skill (`.claude/skills/fordra-voice-agent/SKILL.md`): implementation
+  map, tuning history, known issues + tradeoffs, and the draft/publish version-chain rules.
 - Clean up any test rows + storage objects written to the live DB during testing.
 - Anthropic/Claude work: consult the `claude-api` skill; default model `claude-sonnet-4-6`.
