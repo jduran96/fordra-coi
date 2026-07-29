@@ -194,17 +194,9 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
               .text(status ? `  (${chipLabel(status)})` : '', { continued: !last })
           })
           if (check) {
-            // Overall verdict of the two-pronged check (website alignment +
-            // outside confirmation); absent on checks from before 2026-07-22.
-            // Same customer strings as the web report.
-            if (check.legitimacy) {
-              const verdict = check.legitimacy === 'legit' ? 'Insurer verified online'
-                : check.legitimacy === 'mismatch' ? 'Discrepancies found in online search'
-                : 'Not able to find online'
-              const verdictColor = check.legitimacy === 'legit' ? '#3f7d47'
-                : check.legitimacy === 'mismatch' ? '#b3403a' : '#9a6b1f'
-              doc.font('Helvetica-Bold').fontSize(9).fillColor(verdictColor).text(verdict.toUpperCase(), { characterSpacing: 0.5 })
-            }
+            // No overall legitimacy verdict line (owner call 2026-07-29,
+            // same rule as the web report): per-field tags only; the blurb
+            // below carries any discrepancy in words.
             if (check.blurb.trim()) {
               doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(check.blurb.trim(), { width, lineGap: 2 })
             }

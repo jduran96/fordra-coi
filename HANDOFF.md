@@ -10,6 +10,15 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Third round 2026-07-29 (owner's customer-path review):
 
+- **Customer surfaces drop the overall legitimacy verdict chip** ("Insurer
+  verified online" / "Discrepancies found in online search" / "Not able to
+  find online") from the contact-log Contact Details block on /app and the
+  PDF (owner call, VRF-1088: stacked under a per-field tag it read like a
+  tag for a missing field; same rule as the admin table's deleted Verdict
+  column). Per-field Found/Warning/Not Found tags stay; the blurb still
+  describes any discrepancy in words. `legitimacy` remains stored/derived
+  and the admin edit controls keep using it.
+
 - **Passed REQUIRES insurer confirmation (owner rule).** The assessment
   prompt's "met" now demands explicit insurer confirmation by call/email in
   the contact log; a standard merely present on the certificate is at best
