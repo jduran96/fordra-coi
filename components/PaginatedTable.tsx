@@ -11,11 +11,19 @@ import { C } from '@/lib/theme'
  * data; if a table ever grows past a few hundred rows, move the slicing into
  * the database query instead of loading everything here.
  */
-export default function PaginatedTable({ head, rows, pageSize = 5, maxHeight }: {
+export default function PaginatedTable({ head, rows, cards, pageSize = 5, maxHeight }: {
   /** The fully-styled header <tr>. */
   head: React.ReactNode
   /** One fully-styled <tr> per record (keyed), in display order. */
   rows: React.ReactNode[]
+  /**
+   * Optional phone layout: one card per record, same order and index as
+   * `rows`. Both layouts render and CSS picks one at 760px — a server
+   * component can't read the viewport, and swapping on a JS media query
+   * flashes the wrong layout on first paint. When omitted the table just
+   * scrolls sideways on small screens.
+   */
+  cards?: React.ReactNode[]
   pageSize?: number
   /** Caps the table body's height; the current page scrolls inside it. */
   maxHeight?: number
@@ -25,14 +33,21 @@ export default function PaginatedTable({ head, rows, pageSize = 5, maxHeight }: 
   // Clamp instead of resetting state: a deleted row on the last page must not
   // strand the pager past the end.
   const cur = Math.min(page, pages - 1)
+  const slice = <T,>(xs: T[]) => xs.slice(cur * pageSize, (cur + 1) * pageSize)
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto', ...(maxHeight ? { maxHeight, overflowY: 'auto' as const } : {}) }}>
+      <div className={cards ? 'fx-only-desktop' : undefined}
+        style={{ overflowX: 'auto', ...(maxHeight ? { maxHeight, overflowY: 'auto' as const } : {}) }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: C.sans, fontSize: 14 }}>
           <thead>{head}</thead>
-          <tbody>{rows.slice(cur * pageSize, (cur + 1) * pageSize)}</tbody>
+          <tbody>{slice(rows)}</tbody>
         </table>
       </div>
+      {cards && (
+        <div className="fx-only-mobile" style={{ fontFamily: C.sans }}>
+          {slice(cards)}
+        </div>
+      )}
       {pages > 1 && (
         <div style={{
           display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10,

@@ -1,0 +1,175 @@
+/*
+ * Fordra responsive layer.
+ *
+ * The app styles with inline `style` objects (no Tailwind), and an inline
+ * style always beats a class rule — so every rule here that has to override
+ * one carries `!important` on purpose, not as a shortcut. Nothing in this
+ * file applies until a component opts in with a class name, except the
+ * `.fx-admin` input/tap-target block, which is scoped to the admin console.
+ *
+ * One breakpoint: 760px. Phones and small tablets in portrait get the
+ * stacked layout; everything above keeps the desktop layout unchanged.
+ */
+
+/* Toggles: render both layouts, let CSS pick. Server components can't read
+   the viewport, and a JS media query would flash the wrong one on load. */
+.fx-only-mobile { display: none; }
+
+/* Horizontal scroller for anything that genuinely can't stack (wide tables,
+   tab strips). Momentum scrolling on iOS; no visible scrollbar chrome. */
+.fx-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.fx-scroll-x::-webkit-scrollbar { display: none; }
+
+@media (max-width: 760px) {
+  .fx-only-mobile { display: block; }
+  .fx-only-desktop { display: none !important; }
+
+  /* ── Generic layout utilities ─────────────────────────────────── */
+
+  /* Flex row → column. `align-items: stretch` so children fill the width
+     instead of keeping their desktop centering. */
+  .fx-stack {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  /* A row that should stay a row but wrap onto more lines. */
+  .fx-wrap { flex-wrap: wrap !important; }
+  /* Multi-column grid → single column. */
+  .fx-cols-1 { grid-template-columns: 1fr !important; }
+  /* Label/value <dl> grids stack. Tightening the row gap and spacing the
+     pairs instead keeps each label visually attached to its own value. */
+  .fx-facts {
+    grid-template-columns: 1fr !important;
+    row-gap: 1px !important;
+  }
+  .fx-facts > dd { margin-bottom: 9px !important; }
+  .fx-facts > dd:last-child { margin-bottom: 0 !important; }
+  /* Element goes full width (buttons, inputs with a fixed desktop width). */
+  .fx-full { width: 100% !important; max-width: none !important; min-width: 0 !important; }
+  /* `margin-left: auto` pins things to the right on desktop; on a stacked
+     column it just adds a gap. */
+  .fx-unpin { margin-left: 0 !important; }
+  .fx-hide { display: none !important; }
+
+  /* ── Shell ────────────────────────────────────────────────────── */
+
+  .fx-nav { gap: 10px !important; padding: 10px 14px !important; flex-wrap: wrap; }
+  /* Nav links drop to their own full-width line and scroll sideways, so a
+     sixth link never pushes Sign out off screen. */
+  .fx-nav-links {
+    order: 3;
+    width: 100%;
+    margin-left: 0 !important;
+    gap: 16px !important;
+    padding-bottom: 2px;
+  }
+  .fx-main { padding: 18px 14px 40px !important; }
+
+  /* ── Action rows ──────────────────────────────────────────────── */
+
+  /* Save / Dispatch / Publish style footers: full-width stacked buttons,
+     nothing pinned right (a `margin-left: auto` in a column is just a gap),
+     and the inline two-step confirms stack under their trigger. */
+  .fx-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  .fx-actions > *,
+  .fx-actions > span > button {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+  .fx-actions > span {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ── Pre-dial reference details ───────────────────────────────── */
+
+  /* Title over value in one column, remove button beside them spanning both
+     rows, so a detail stays one visual unit instead of three loose lines. */
+  .fx-detail-row {
+    grid-template-columns: 1fr auto !important;
+    gap: 6px !important;
+  }
+  .fx-detail-row > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  /* ── Master question list ─────────────────────────────────────── */
+
+  .fx-q-row { flex-wrap: wrap !important; }
+  .fx-q-row > textarea { flex-basis: calc(100% - 30px) !important; }
+  .fx-q-tools { flex-direction: row !important; margin-left: 26px; }
+  /* Beats the 16px anti-zoom rule on purpose (two classes vs class+type):
+     questions are read far more than edited, and 16px fits too little of one
+     to scan. Trade-off: tapping INTO a question will zoom the page on iOS. */
+  .fx-admin .fx-q-text { font-size: 14px !important; }
+
+  /* ── Tab strip (admin detail page) ────────────────────────────── */
+
+  /* Sticky so the admin can jump between Standards / AI / Analysis without
+     scrolling back to the top of a long case. */
+  .fx-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #faf9f5; /* C.paper — the page behind must not show through */
+    /* Bleed to the screen edges (matching .fx-main's 14px) so the strip can
+       be scrolled all the way to the last tab. */
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+  .fx-tabs button { padding-left: 12px !important; padding-right: 12px !important; }
+
+  /* ── Dialogs become bottom sheets ─────────────────────────────── */
+
+  .fx-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .fx-modal-card {
+    max-width: none !important;
+    max-height: 92dvh !important;
+    border-radius: 16px 16px 0 0 !important;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom)) !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* ── Typing and tapping ───────────────────────────────────────── */
+
+  .fx-admin input:not([type='checkbox']):not([type='radio']),
+  .fx-admin select,
+  .fx-admin textarea {
+    /* iOS Safari zooms the page whenever a focused field is under 16px.
+       Every field in the console is 13–14px, so every tap used to zoom. */
+    font-size: 16px !important;
+  }
+  .fx-admin input[type='checkbox'],
+  .fx-admin input[type='radio'] {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  /* 38px minimum tap target. This deliberately grows the tiny ✕ / ↑ / ↓
+     buttons, which are the hardest to hit with a thumb. */
+  .fx-admin button {
+    min-height: 38px !important;
+    min-width: 38px;
+    touch-action: manipulation;
+  }
+  /* Paste targets: a transcript pasted from Granola should be readable
+     without scrolling a 3-row box. */
+  .fx-paste { min-height: 220px !important; }
+  .fx-paste-sm { min-height: 130px !important; }
+  .fx-admin .fordra-rte .tiptap { min-height: 130px !important; font-size: 16px !important; }
+}

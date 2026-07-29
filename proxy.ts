@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { isAdminEmail } from '@/lib/admin-emails'
+import { DEV_ADMIN_BYPASS } from '@/lib/dev-bypass'
 
 /** Sessions hard-expire 24h after the last real sign-in, on every surface. */
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
@@ -50,6 +51,12 @@ export async function proxy(request: NextRequest) {
   // Customer portal + admin console — Supabase session. Each surface has its
   // own login page (customer /login offers password sign-in; admin is link-only).
   if (pathname.startsWith('/app') || pathname.startsWith('/admin')) {
+    // Local-only console bypass (lib/dev-bypass.ts). Inert unless
+    // DEV_ADMIN_BYPASS=1 on a non-production, non-Vercel build; /app is never
+    // bypassed, so the customer surface still needs a real session.
+    if (DEV_ADMIN_BYPASS && pathname.startsWith('/admin')) {
+      return NextResponse.next()
+    }
     const loginPath = pathname.startsWith('/admin') ? '/admin/login' : '/login'
     const { response, user } = await updateSession(request)
     if (!user) {

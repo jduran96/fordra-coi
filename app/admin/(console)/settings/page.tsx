@@ -108,7 +108,7 @@ export default async function AdminSettings({ searchParams }: {
       <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: '0 0 20px', fontWeight: 400 }}>Settings</h1>
 
       {/* Same segmented control as /app/settings and the /app/new mode picker. */}
-      <nav style={{ display: 'inline-flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}`, marginBottom: 26 }}>
+      <nav className="fx-scroll-x" style={{ display: 'flex', background: C.paper, borderRadius: 8, padding: 2, border: `1px solid ${C.border}`, marginBottom: 26, width: 'fit-content', maxWidth: '100%' }}>
         {TABS.map(t => (
           <Link
             key={t.key}
@@ -118,6 +118,7 @@ export default async function AdminSettings({ searchParams }: {
               padding: '6px 14px', borderRadius: 6, textDecoration: 'none',
               background: t.key === tab ? C.txt : 'transparent',
               color: t.key === tab ? C.surface : C.txt3, transition: 'all 120ms',
+              whiteSpace: 'nowrap',
             }}
           >
             {t.label}

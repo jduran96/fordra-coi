@@ -9,7 +9,9 @@ export const metadata = { title: 'Fordra | Admin' }
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdmin()
   return (
-    <div style={{ minHeight: '100vh', background: C.paper, color: C.txt }}>
+    /* fx-admin scopes the mobile typing/tap-target rules (16px fields so iOS
+       stops zooming, 38px minimum buttons) to the console. */
+    <div className="fx-admin" style={{ minHeight: '100vh', background: C.paper, color: C.txt }}>
       <NavBar
         email={user.email}
         links={[
@@ -20,7 +22,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           { href: '/admin/settings', label: 'Settings' },
         ]}
       />
-      <main style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 28px' }}>{children}</main>
+      <main className="fx-main" style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 28px' }}>{children}</main>
     </div>
   )
 }

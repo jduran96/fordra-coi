@@ -1,9 +1,17 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './mobile.css';
 
 export const metadata: Metadata = {
   title: 'Fordra',
   description: 'Insurance verification, handled.',
+};
+
+/** Explicit so nothing ever ships a fixed-width mobile render. Zoom is
+ *  deliberately left unrestricted (no maximumScale). */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

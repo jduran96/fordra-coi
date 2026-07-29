@@ -41,7 +41,7 @@ export default function AiCallLauncher({ verificationId, context, questions, det
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {!caseIsClosed && (
-        <div>
+        <div className="fx-actions" style={{ display: 'flex' }}>
           <button
             type="button"
             onClick={() => setModal(activeCall ? { mode: 'call', callId: activeCall.id } : { mode: 'new' })}
@@ -76,7 +76,9 @@ export default function AiCallLauncher({ verificationId, context, questions, det
 
       {calls.length > 0 && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: C.sans }}>
+          {/* Six columns never fit a phone, so the same rows also render as
+              tap-anywhere cards; CSS picks one at 760px. */}
+          <table className="fx-only-desktop" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: C.sans }}>
             <thead>
               <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 <th style={th}>When</th><th style={th}>Number</th><th style={th}>Status</th>
@@ -85,31 +87,14 @@ export default function AiCallLauncher({ verificationId, context, questions, det
             </thead>
             <tbody>
               {calls.map(call => {
-                const active = ACTIVE_STATUSES.includes(call.status)
-                const pillColor = active ? C.warn
-                  : call.status === 'completed' ? C.ok
-                  : call.status === 'approved' ? C.neutral
-                  : C.error
-                const pillLabel = call.status === 'in_progress' ? 'On the call'
-                  : call.status === 'dispatched' ? 'Ringing'
-                  : call.status.charAt(0).toUpperCase() + call.status.slice(1)
+                const c = callChrome(call)
                 return (
                   <tr key={call.id} style={{ borderTop: `1px solid ${C.border}` }}>
                     <td style={{ ...td, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(call.approved_at ?? call.created_at)}</td>
                     <td style={{ ...td, fontFamily: C.mono }}>{call.to_number ?? '—'}</td>
-                    <td style={td}>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: pillColor, background: `color-mix(in oklch, ${pillColor} 12%, transparent)`, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                        {pillLabel}
-                      </span>
-                    </td>
-                    <td style={{ ...td, fontFamily: C.mono, color: C.txt3 }}>
-                      {typeof call.duration_ms === 'number' && call.duration_ms > 0
-                        ? `${Math.floor(call.duration_ms / 60000)}:${String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}`
-                        : '—'}
-                    </td>
-                    <td style={{ ...td, color: C.txt2 }}>
-                      {call.published_note_at ? 'In contact log' : dispositionLabel(call) || (call.error ? 'Error' : '—')}
-                    </td>
+                    <td style={td}><StatusPill call={call} /></td>
+                    <td style={{ ...td, fontFamily: C.mono, color: C.txt3 }}>{c.duration}</td>
+                    <td style={{ ...td, color: C.txt2 }}>{c.outcome}</td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       <button type="button" onClick={() => setModal({ mode: 'call', callId: call.id })}
                         style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent', color: C.txt2, cursor: 'pointer' }}>
@@ -121,6 +106,29 @@ export default function AiCallLauncher({ verificationId, context, questions, det
               })}
             </tbody>
           </table>
+          <div className="fx-only-mobile">
+            {calls.map(call => {
+              const c = callChrome(call)
+              return (
+                <button key={call.id} type="button" onClick={() => setModal({ mode: 'call', callId: call.id })}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px',
+                    background: 'transparent', border: 'none', borderTop: `1px solid ${C.border}`,
+                    fontFamily: C.sans, cursor: 'pointer',
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <StatusPill call={call} />
+                    <span style={{ marginLeft: 'auto', fontFamily: C.mono, fontSize: 12, color: C.txt3 }}>{c.duration}</span>
+                  </div>
+                  <div style={{ fontFamily: C.mono, fontSize: 13.5, color: C.txt, marginTop: 6 }}>{call.to_number ?? '—'}</div>
+                  <div style={{ fontSize: 12, color: C.txt3, marginTop: 2 }}>
+                    {pacificDateTime(call.approved_at ?? call.created_at)}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 4 }}>{c.outcome}</div>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -147,6 +155,32 @@ export default function AiCallLauncher({ verificationId, context, questions, det
         </EditorModal>
       )}
     </div>
+  )
+}
+
+/** Row values shared by the desktop table and the phone cards. */
+function callChrome(call: AiCall) {
+  return {
+    duration: typeof call.duration_ms === 'number' && call.duration_ms > 0
+      ? `${Math.floor(call.duration_ms / 60000)}:${String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}`
+      : '—',
+    outcome: call.published_note_at ? 'In contact log' : dispositionLabel(call) || (call.error ? 'Error' : '—'),
+  }
+}
+
+function StatusPill({ call }: { call: AiCall }) {
+  const active = ACTIVE_STATUSES.includes(call.status)
+  const color = active ? C.warn
+    : call.status === 'completed' ? C.ok
+    : call.status === 'approved' ? C.neutral
+    : C.error
+  const label = call.status === 'in_progress' ? 'On the call'
+    : call.status === 'dispatched' ? 'Ringing'
+    : call.status.charAt(0).toUpperCase() + call.status.slice(1)
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
   )
 }
 

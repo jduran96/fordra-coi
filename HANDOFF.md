@@ -3,7 +3,58 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-07-28 — AI pre-dial: master question list, split holder + VIN details, insurer labels)
+## ⏱️ START HERE (as of 2026-07-28 — admin console is mobile-responsive; branch `quesoDev`)
+
+**2026-07-28, branch `quesoDev` (NOT yet merged or deployed; owner has not
+eyeballed it on a phone yet):** the whole `/admin` console works on a phone,
+so a case can be moved forward between meetings.
+
+- **One responsive layer, `app/mobile.css`** (imported by the root layout,
+  after `globals.css`). The app styles with inline `style` objects, and an
+  inline style beats a class rule, so the `!important`s in that file are
+  load-bearing — do not "clean them up". Everything is opt-in via `fx-*`
+  class names except the `.fx-admin` typing/tap-target block, which the
+  console layout scopes with `className="fx-admin"`. Single breakpoint:
+  **760px**. Above it, nothing changed.
+  - Utilities: `fx-stack` (row→column), `fx-wrap`, `fx-cols-1`, `fx-facts`
+    (label/value `<dl>`), `fx-full`, `fx-unpin` (kills `margin-left: auto`),
+    `fx-hide`, `fx-scroll-x`, `fx-actions` (button footers stack full width),
+    `fx-only-mobile` / `fx-only-desktop`, `fx-paste` / `fx-paste-sm`.
+  - **Two layouts, CSS picks one.** Wide tables also render as cards and the
+    pair is toggled at 760px (`PaginatedTable` now takes an optional `cards`
+    prop sharing the pager state; same trick in `AiCallLauncher`). A server
+    component can't read the viewport and a JS media query flashes the wrong
+    layout on first paint — hence the duplicate DOM.
+  - **iOS field zoom is fixed**: any focused field under 16px makes Safari zoom
+    the page, and every console field is 13-14px. `.fx-admin input/select/
+    textarea` are forced to 16px under 760px. Buttons get a 38px minimum tap
+    target (this deliberately grows the tiny ✕ / ↑ / ↓ controls).
+  - Dialogs become **bottom sheets** (`fx-modal-backdrop` / `fx-modal-card`,
+    92dvh, safe-area padding). `EditorModal` plus the four hand-rolled
+    overlays (ActivityLog, CreateOrg / InviteUser / EditUser / SigninLink).
+  - Paste targets open tall on a phone: contact-note transcript 220px,
+    assessment summary/evidence and the Tiptap summary 130px.
+- **`lib/sla.ts` — the same-day rule is now in the UI.** `caseAge()` counts
+  **business days** (a Friday submission read Monday is 1 day old, not 3):
+  0 = green "Today", 1-2 = amber, **3+ = red overdue**. Plus `ageTitle()`,
+  `turnaroundLabel()` (Completed rows show "Closed same day"),
+  `isPacificToday()`. All Pacific-time, matching the rest of the console.
+  Unit-checked against the Friday/weekend edges.
+- **Queue reads as a worklist**: three stat tiles (Open / Overdue 3+ days /
+  Closed today) above the table, and the Completed column shows turnaround.
+  `updated_at` is now selected as the closed-at fallback for failed rows (they
+  have no `published_at`). **Row ordering and the Submitted column are
+  deliberately unchanged** (owner, 2026-07-28: an oldest-first sort and an Age
+  column replacing Submitted were both tried and rejected). The age pill lives
+  on the phone cards and the detail header only.
+- **Detail page**: header wraps and carries the age chip; **document
+  quick-links (COI / Standards / Other) sit under the header on every tab**
+  so "open the COI in another tab" is one tap; the tab strip is sticky and
+  scrolls sideways.
+- Not touched: `/app` customer surfaces (only the shared `NavBar`,
+  `EditorModal` and `PaginatedTable` changed, all additively).
+
+## Previous (as of 2026-07-28 — AI pre-dial: master question list, split holder + VIN details, insurer labels)
 
 **2026-07-28 session, round 4 (owner-directed after a third live IVR failure):**
 

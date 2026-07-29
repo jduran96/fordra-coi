@@ -30,7 +30,10 @@ export default function AdminTabs({ tabs, analysisForm }: {
   const analysisIdx = tabs.length - 1
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div role="tablist" style={{ display: 'flex', gap: 2, borderBottom: `1.5px solid ${C.border}` }}>
+      {/* On phones this strip is sticky and scrolls sideways: five tabs never
+          fit, and switching between AI and Analysis should not mean scrolling
+          back to the top of a long case. */}
+      <div role="tablist" className="fx-tabs fx-scroll-x" style={{ display: 'flex', gap: 2, borderBottom: `1.5px solid ${C.border}` }}>
         {tabs.map((t, i) => (
           <button
             key={t.label} type="button" role="tab" aria-selected={active === i}
@@ -40,7 +43,7 @@ export default function AdminTabs({ tabs, analysisForm }: {
               background: 'transparent', border: 'none', cursor: 'pointer',
               color: active === i ? C.txt : C.txt3,
               borderBottom: active === i ? `2px solid ${C.limeDeep}` : '2px solid transparent',
-              marginBottom: -1.5,
+              marginBottom: -1.5, whiteSpace: 'nowrap', flexShrink: 0,
             }}>
             {t.label}
           </button>

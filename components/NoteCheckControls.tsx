@@ -62,7 +62,7 @@ export default function NoteCheckControls({
       )}
       {editing && (
         <form action={save} style={{ display: 'flex', flexDirection: 'column', gap: 8, fontFamily: C.sans }}>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className="fx-stack" style={{ display: 'flex', gap: 10 }}>
             {check.phone_status && (
               <label style={label()}>
                 Phone status
@@ -84,7 +84,7 @@ export default function NoteCheckControls({
               two-pronged rework; the derived legitimacy verdict re-computes
               server-side on save and is never edited directly. */}
           {(check.website_status || check.external_confirmation) && (
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="fx-stack" style={{ display: 'flex', gap: 10 }}>
               {check.website_status && (
                 <label style={label()}>
                   Their website
@@ -109,7 +109,7 @@ export default function NoteCheckControls({
               placeholder="A couple of sentences about what the web search turned up"
               style={{ ...input(), resize: 'vertical' as const }} />
           </label>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="fx-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <PendingButton pendingLabel="Saving…" style={btn()}>Save</PendingButton>
             <button type="button" onClick={() => setEditing(false)} style={{ ...btn(), border: 'none', background: 'transparent', color: C.txt2 }}>
               Cancel

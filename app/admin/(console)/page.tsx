@@ -6,6 +6,7 @@ import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { normalizeActivity, ACTIVITY_KINDS } from '@/lib/admin-activity'
 import PaginatedTable from '@/components/PaginatedTable'
 import { pacificDateTimeParts } from '@/lib/dates'
+import { caseAge, ageTitle, turnaroundLabel } from '@/lib/sla'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,7 @@ interface Row {
   status: string
   source: string
   created_at: string
+  updated_at: string | null
   published_at: string | null
   case_status: string | null
   coi_extracted: unknown
@@ -35,7 +37,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, insured_name, status, source, created_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
+    .select('id, display_id, insured_name, status, source, created_at, updated_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, admin_activity, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -96,10 +98,40 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             <AdminActivityPill row={r} />
           </td>
           <td style={{ ...td(), color: C.txt3 }}>
-            <Timestamp iso={showPublished && r.published_at ? r.published_at : r.created_at} />
+            {showPublished
+              ? <Timestamp iso={r.published_at ?? r.updated_at ?? r.created_at} sub={turnaroundLabel(r.created_at, r.published_at ?? r.updated_at)} />
+              : <Timestamp iso={r.created_at} />}
           </td>
         </tr>
       ))}
+      cards={rows.map(r => {
+        const { dateTime } = pacificDateTimeParts(showPublished ? (r.published_at ?? r.updated_at ?? r.created_at) : r.created_at)
+        return (
+          <Link key={r.id} href={`/admin/${r.id}`} style={{
+            display: 'block', padding: '14px 14px', borderTop: `1px solid ${C.border}`,
+            textDecoration: 'none', color: C.txt,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: C.mono, fontSize: 12.5, fontWeight: 600, color: C.txt2 }}>{r.display_id}</span>
+              <span style={{ marginLeft: 'auto' }}>
+                {showPublished
+                  ? <span style={{ fontSize: 12, color: C.txt3 }}>{turnaroundLabel(r.created_at, r.published_at ?? r.updated_at) ?? ''}</span>
+                  : <AgePill iso={r.created_at} />}
+              </span>
+            </div>
+            <div style={{ fontSize: 15.5, fontWeight: 600, margin: '5px 0 2px', lineHeight: 1.3 }}>
+              {r.insured_name || r.display_id}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.txt3 }}>
+              {r.orgs?.name ?? '—'} · {r.source.toUpperCase()} · {dateTime}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              <AdminStatusPill row={r} />
+              <AdminActivityPill row={r} />
+            </div>
+          </Link>
+        )
+      })}
     />
   )
 }
@@ -108,7 +140,25 @@ function AdminStatusPill({ row }: { row: Row }) {
   const s = deriveAdminStatus(row)
   const color = adminStatusColor(s)
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20 }}>{s}</span>
+    <span style={{ fontSize: 12, fontWeight: 600, color, background: `color-mix(in oklch, ${color} 12%, transparent)`, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>{s}</span>
+  )
+}
+
+/**
+ * Working-day age of an open case against the same-day target: green today,
+ * amber at 1-2 days, red from 3. Weekends do not count (a Friday submission
+ * read on Monday is one day old, not three).
+ */
+function AgePill({ iso }: { iso: string }) {
+  const age = caseAge(iso)
+  return (
+    <span title={ageTitle(age)} style={{
+      display: 'inline-block', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.03em',
+      color: age.color, background: `color-mix(in oklch, ${age.color} 13%, transparent)`,
+      padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap',
+    }}>
+      {age.label}
+    </span>
   )
 }
 
@@ -123,13 +173,13 @@ function AdminActivityPill({ row }: { row: Row }) {
   )
 }
 
-/** Date + time on one line, timezone underneath. */
-function Timestamp({ iso }: { iso: string }) {
+/** Date + time on one line, timezone (or a caller-supplied note) underneath. */
+function Timestamp({ iso, sub }: { iso: string; sub?: string | null }) {
   const { dateTime, tz } = pacificDateTimeParts(iso)
   return (
     <>
       <div style={{ whiteSpace: 'nowrap' }}>{dateTime}</div>
-      <div style={{ fontSize: 12, color: C.txt3 }}>{tz}</div>
+      <div style={{ fontSize: 12, color: C.txt3 }}>{sub ?? tz}</div>
     </>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { C } from '@/lib/theme'
 import {
@@ -126,7 +126,7 @@ export default function CallReviewForm({ verificationId, context: initialContext
         <p style={{ fontSize: 13.5, color: C.txt, background: C.cream, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', margin: '0 0 14px', fontStyle: 'italic' }}>
           Opening line: &ldquo;{disclosurePreview(context)}&rdquo;
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="fx-cols-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {IDENTITY_FIELDS.map(({ field, label, hint }) => (
             <div key={field}>
               <label style={labelStyle}>{label}</label>
@@ -154,7 +154,7 @@ export default function CallReviewForm({ verificationId, context: initialContext
         </div>
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 14 }}>
           <p style={{ ...labelStyle, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.txt3, marginBottom: 10 }}>Legitimacy</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="fx-cols-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {LEGITIMACY_FIELDS.map(({ field, label, hint }) => (
               <div key={field}>
                 <label style={labelStyle}>{label}</label>
@@ -179,23 +179,28 @@ export default function CallReviewForm({ verificationId, context: initialContext
       {/* 3. Identity core + generic reference details the agent may state */}
       <section style={card()}>
         <Title>Reference details</Title>
-        {/* One two-column grid, Title | Value. The first rows are the identity
-            core (fixed titles — they dispatch as their own variables); below
-            them the free-form detail rows with editable titles. The trailing
-            28px column keeps the ✕ buttons from misaligning the values. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 28px', gap: 8, alignItems: 'center' }}>
-          <span style={{ ...labelStyle, marginBottom: 0 }}>Title</span>
-          <span style={{ ...labelStyle, marginBottom: 0 }}>Value</span>
-          <span />
+        {/* Title | Value | remove, one grid PER ROW rather than one grid for
+            the whole block: the fixed column template keeps every row aligned
+            on desktop exactly as a single grid did, and on a phone each row
+            can restack on its own (title over value, remove button beside
+            them) instead of every cell becoming its own full-width line. The
+            first rows are the identity core (fixed titles — they dispatch as
+            their own variables); below them the free-form detail rows. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="fx-hide" style={detailRow}>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>Title</span>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>Value</span>
+            <span />
+          </div>
           {LOOKUP_FIELDS.map(({ field, label, optional }) => (
-            <Fragment key={field}>
+            <div key={field} className="fx-detail-row" style={detailRow}>
               <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500, paddingLeft: 2 }}>{label}</span>
               <input value={context[field]} onChange={e => setField(field, e.target.value)} style={fieldStyle(!optional && !context[field].trim())} />
               <span />
-            </Fragment>
+            </div>
           ))}
           {details.map((d, i) => (
-            <Fragment key={i}>
+            <div key={i} className="fx-detail-row" style={detailRow}>
               <input value={d.label} placeholder="Title (e.g. VIN, 2019 Freightliner)"
                 onChange={e => { setDetails(prev => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x))); setConfirming(false) }}
                 style={fieldStyle(!d.label.trim())} />
@@ -204,7 +209,7 @@ export default function CallReviewForm({ verificationId, context: initialContext
                 style={fieldStyle(!d.value.trim())} />
               <button type="button" onClick={() => { setDetails(prev => prev.filter((_, j) => j !== i)); setConfirming(false) }}
                 style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove detail">✕</button>
-            </Fragment>
+            </div>
           ))}
         </div>
         <button type="button" onClick={() => setDetails(prev => [...prev, { label: '', value: '' }])}
@@ -226,12 +231,12 @@ export default function CallReviewForm({ verificationId, context: initialContext
               {n.status && <StatusChip status={n.status} />}
             </label>
           ))}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+          <label className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
             <input type="radio" name="number_choice" checked={numberChoice === 'manual'}
               onChange={() => { setNumberChoice('manual'); setConfirming(false) }} style={{ accentColor: C.txt }} />
             <span>Other number:</span>
             <input value={manualNumber} onChange={e => { setManualNumber(e.target.value); setNumberChoice('manual'); setConfirming(false) }}
-              placeholder="(555) 555-0100" style={{ ...fieldStyle(false), width: 190 }} />
+              placeholder="(555) 555-0100" className="fx-full" style={{ ...fieldStyle(false), width: 190 }} />
           </label>
         </div>
       </section>
@@ -254,7 +259,7 @@ export default function CallReviewForm({ verificationId, context: initialContext
       {message && (
         <p style={{ fontSize: 13.5, fontWeight: 600, color: message.kind === 'error' ? C.error : C.ok, margin: 0 }}>{message.text}</p>
       )}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="fx-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" disabled={pending}
           onClick={() => run(() => saveCallDraft(verificationId, buildFormData()), 'Draft saved.')}
           style={btn(pending)}>
@@ -298,7 +303,7 @@ export default function CallReviewForm({ verificationId, context: initialContext
         {draftId && rejecting && (
           <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
             <input value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason"
-              style={{ ...fieldStyle(false), width: 220 }} />
+              className="fx-full" style={{ ...fieldStyle(false), width: 220 }} />
             <button type="button" disabled={pending || !rejectReason.trim()}
               onClick={() => {
                 const fd = new FormData()
@@ -331,6 +336,7 @@ function Title({ children }: { children: React.ReactNode }) {
   return <h3 style={{ fontSize: 12, fontWeight: 600, color: C.txt3, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 10px' }}>{children}</h3>
 }
 const card = (): React.CSSProperties => ({ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 })
+const detailRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '280px 1fr 28px', gap: 8, alignItems: 'center' }
 const btn = (disabled = false): React.CSSProperties => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 })
 const primaryBtn = (disabled = false): React.CSSProperties => ({ padding: '8px 20px', background: C.earthy, color: C.onDark, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 9999, border: 'none', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 })
 const tinyBtn = (disabled: boolean): React.CSSProperties => ({ padding: '2px 8px', background: C.surface, color: C.txt2, fontSize: 12, borderRadius: 6, border: `1px solid ${C.border}`, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.45 : 1 })

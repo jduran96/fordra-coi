@@ -46,9 +46,9 @@ export default async function UsersPage() {
 
   return (
     <div style={{ maxWidth: 920, fontFamily: C.sans, color: C.txt }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 20 }}>
         <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>Users</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="fx-wrap" style={{ display: 'flex', gap: 10 }}>
           <CreateOrgModal />
           <InviteUserModal orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))} />
           <EditUserModal

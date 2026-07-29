@@ -8,6 +8,7 @@ import { signedUrl } from '@/lib/storage'
 import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { pacificDateTime } from '@/lib/dates'
+import { caseAge, ageTitle } from '@/lib/sla'
 import { humanizeToken, parseStandardLine } from '@/lib/templates'
 import { orderBySubmitted, orderFromRequirements } from '@/lib/gap-order'
 import type { ContactCheckEntry, ContactNote, OnlineListingStatus } from '@/lib/types'
@@ -207,10 +208,13 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   return (
     <div style={{ fontFamily: C.sans, color: C.txt, maxWidth: 860 }}>
       <Link href="/admin" style={{ color: C.txt2, fontSize: 14, textDecoration: 'none' }}>← Queue</Link>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 4px' }}>
-        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400 }}>{v.insured_name || v.display_id}</h1>
-        <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>{adminStatus}</span>
-        <span style={{ marginLeft: 'auto' }}>
+      <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 4px' }}>
+        <h1 style={{ fontFamily: C.serif, fontSize: 28, margin: 0, fontWeight: 400, lineHeight: 1.2 }}>{v.insured_name || v.display_id}</h1>
+        <span style={{ fontSize: 12, fontWeight: 600, color: statusCol, background: `color-mix(in oklch, ${statusCol} 12%, transparent)`, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>{adminStatus}</span>
+        {/* Working-day age against the same-day target, red from 3 days.
+            Only open cases: a closed one is no longer against the clock. */}
+        {!caseIsClosed && <AgeChip iso={String(v.created_at)} />}
+        <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
           <ActivityLog
             entries={normalizeActivity(v.admin_activity)}
             logAction={logAdminActivity.bind(null, id)}
@@ -218,9 +222,27 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           />
         </span>
       </div>
-      <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 22px' }}>
+      <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 12px' }}>
         {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}
       </p>
+
+      {/* Every uploaded document, one tap from anywhere on the page. The
+          review flow is "read the standards, open the COI in another tab",
+          so these must not be buried under a tab. */}
+      {docsWithUrls.some(d => d.url) && (
+        <div className="fx-scroll-x" style={{ display: 'flex', gap: 8, margin: '0 0 20px', paddingBottom: 2 }}>
+          {docsWithUrls.filter(d => d.url).map(d => (
+            <a key={d.id} href={d.url!} target="_blank" rel="noreferrer" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+              fontSize: 12.5, fontWeight: 600, color: C.txt, textDecoration: 'none',
+              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9999,
+              padding: '7px 14px', whiteSpace: 'nowrap',
+            }}>
+              {docChipLabel(d.kind)} ↗
+            </a>
+          ))}
+        </div>
+      )}
 
       {/* Tabbed layout: panels stay mounted (hidden) so form state survives
           switching; the assessment form renders below the panels so its
@@ -232,7 +254,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             <div style={card()}>
               <SectionTitle small>Submission</SectionTitle>
-              <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+              <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
                 <dt style={{ fontSize: 13, color: C.txt3, alignSelf: 'center' }}>Insured name</dt>
                 <dd style={{ margin: 0 }}>
                   {caseIsClosed ? (
@@ -304,7 +326,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             {templateVariables.length > 0 && (
               <div style={card()}>
                 <SectionTitle small>Variable inputs (entered by submitter)</SectionTitle>
-                <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+                <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
                   {templateVariables.map(([key, val]) => (
                     <FactRow key={key} label={humanizeToken(key)} value={val?.trim() || '—'} />
                   ))}
@@ -317,9 +339,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
         { label: 'OCR', content: (
         <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <SectionTitle>OCR Analysis</SectionTitle>
-            <form action={runExtraction.bind(null, id)} style={{ marginLeft: 'auto' }}>
+            <form action={runExtraction.bind(null, id)} className="fx-unpin" style={{ marginLeft: 'auto' }}>
               <PendingButton pendingLabel="Extracting… (can take a minute)" style={smallBtn()}>
                 {v.coi_extracted ? 'Re-run extraction' : 'Run extraction'}
               </PendingButton>
@@ -357,8 +379,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                   />
                 )}
                 {checks.length > 0 && (
-                  <div style={{ marginTop: 12, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <div className="fx-scroll-x" style={{ marginTop: 12, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                    <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           <th style={checkTh}>Checked</th><th style={checkTh}>Phone</th><th style={checkTh}>Email</th><th style={checkTh}>Verdict</th>
@@ -547,13 +569,13 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         ) },
 
         { label: 'Analysis', content: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <SectionTitle>Assessment</SectionTitle>
           {/* Generates verdicts + draft summary from the OCR extraction AND
               the contact log — deliberately its own step, never part of Run
               extraction. Each run replaces the draft below. */}
           {!caseIsClosed && (
-            <span style={{ marginLeft: 'auto' }}>
+            <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
               <RunAnalysisButton verificationId={id} hasDraft={!!v.final_report || !!v.gap_analysis} />
             </span>
           )}
@@ -582,6 +604,29 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   )
 }
 
+/** Short label for the document quick-link chips. `rcs` is the legacy
+ *  storage kind for "any other document the submitter attached". */
+function docChipLabel(kind: string): string {
+  if (kind === 'coi') return 'COI'
+  if (kind === 'requirements') return 'Standards'
+  if (kind === 'rcs') return 'Other'
+  return kind
+}
+
+/** Working-day age of an open case: green today, amber at 1-2, red from 3. */
+function AgeChip({ iso }: { iso: string }) {
+  const age = caseAge(iso)
+  return (
+    <span title={ageTitle(age)} style={{
+      fontSize: 12, fontWeight: 700, color: age.color,
+      background: `color-mix(in oklch, ${age.color} 13%, transparent)`,
+      padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+    }}>
+      {age.label}
+    </span>
+  )
+}
+
 /** Who to call: the producer (agency) named on the COI. Everything else the
  *  COI says lives on the OCR tab; this card is only the outreach target. */
 function InsurerCard({ coi }: { coi: COI }) {
@@ -598,7 +643,7 @@ function InsurerCard({ coi }: { coi: COI }) {
   return (
     <div style={card()}>
       <SectionTitle small>Insurer contact</SectionTitle>
-      <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+      <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
         {shown.map(([label, val]) => (
           <FactRow key={label} label={label} value={val!} />
         ))}
@@ -709,16 +754,99 @@ function groupCoiExtracted(coi: Record<string, unknown>) {
   return out
 }
 
+/**
+ * Extraction output, rendered as readable label/value rows rather than a raw
+ * JSON dump. The dump forced horizontal scrolling on every long value (and was
+ * unusable on a phone); this wraps instead, so nothing ever scrolls sideways.
+ * The raw JSON stays one tap away for when the exact stored shape matters.
+ */
 function JsonCard({ title, data }: { title: string; data: unknown }) {
   return (
     <div style={card()}>
       <SectionTitle small>{title}</SectionTitle>
       {data ? (
-        <pre style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: C.txt2, background: C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, overflowX: 'auto', margin: 0, maxHeight: 280 }}>
-          {JSON.stringify(data, null, 2)}
-        </pre>
+        <>
+          <DataView value={data} />
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ fontSize: 12, fontWeight: 600, color: C.txt3, cursor: 'pointer' }}>Raw JSON</summary>
+            <pre style={{ fontFamily: C.mono, fontSize: 11.5, color: C.txt2, background: C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, margin: '8px 0 0', maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {JSON.stringify(data, null, 2)}
+            </pre>
+          </details>
+        </>
       ) : <Muted>—</Muted>}
     </div>
+  )
+}
+
+/** True for values that should render as a dash rather than an empty row. */
+function isBlank(v: unknown): boolean {
+  return v === null || v === undefined || (typeof v === 'string' && !v.trim())
+}
+
+/**
+ * Recursive renderer for extraction JSON. Objects become labelled rows, arrays
+ * of objects become numbered blocks (the coverages list), and every value
+ * wraps. Keys are humanized (`named_insured` -> "Named insured") but nothing
+ * is dropped: unknown keys render just like known ones.
+ */
+function DataView({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  if (isBlank(value)) return <span style={{ fontSize: 13, color: C.txt3 }}>—</span>
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span style={{ fontSize: 13, color: C.txt3 }}>None</span>
+    // Arrays of primitives (VIN lists, notes) read best as plain lines.
+    if (value.every(v => typeof v !== 'object' || v === null)) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {value.map((v, i) => (
+            <span key={i} style={{ fontSize: 13.5, color: C.txt, overflowWrap: 'anywhere' }}>{String(v)}</span>
+          ))}
+        </div>
+      )
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {value.map((v, i) => (
+          <div key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 10, background: C.paper }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: C.txt3, marginBottom: 6 }}>
+              {String(i + 1).padStart(2, '0')}
+            </div>
+            <DataView value={v} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    if (entries.length === 0) return <span style={{ fontSize: 13, color: C.txt3 }}>—</span>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: depth === 0 ? 10 : 7 }}>
+        {entries.map(([k, v]) => {
+          const nested = !isBlank(v) && typeof v === 'object'
+          return (
+            <div key={k} style={nested
+              ? { borderTop: depth === 0 ? `1px solid ${C.border}` : 'none', paddingTop: depth === 0 ? 10 : 0 }
+              : undefined}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt3 }}>
+                {humanizeToken(k)}
+              </div>
+              <div style={{ marginTop: nested ? 8 : 2 }}>
+                <DataView value={v} depth={depth + 1} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>
+      {String(value)}
+    </span>
   )
 }
 function SectionTitle({ children, small }: { children: React.ReactNode; small?: boolean }) {
