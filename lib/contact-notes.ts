@@ -8,7 +8,7 @@ import type { ContactCheckEntry, Legitimacy, NoteContactCheck } from './types'
  */
 export function contactValue(s: string | undefined | null): string {
   const v = (s ?? '').trim()
-  return /^(n\/?a|none|-+|—)$/i.test(v) ? '' : v
+  return /^(n\/?a|none|not provided|unknown|no (e-?mail|phone|number)|none (given|provided|listed)|-+|—)$/i.test(v) ? '' : v
 }
 
 /**

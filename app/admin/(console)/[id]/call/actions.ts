@@ -18,6 +18,7 @@ import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
 import { generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
 import { questionsFromConfig } from '@/lib/extraction'
+import { recordEvent } from '@/lib/webhooks'
 import type { COIExtracted, ContactCheckEntry, Requirement } from '@/lib/types'
 
 /**
@@ -380,7 +381,7 @@ export async function publishAiCallNote(verificationId: string, aiCallId: string
   const summary_text = summaryPlainText(summary_html)
 
   const { data: v } = await supabase.from('verifications')
-    .select('insurance_contact, contact_checks')
+    .select('insurance_contact, contact_checks, org_id, display_id')
     .eq('id', verificationId)
     .maybeSingle()
   const savedContact = (v?.insurance_contact ?? {}) as { name?: string; phone?: string; email?: string }
@@ -409,6 +410,11 @@ export async function publishAiCallNote(verificationId: string, aiCallId: string
   if (werr) {
     console.error('publishAiCallNote failed', werr)
     return { error: 'Could not publish to the contact log. Please retry.' }
+  }
+  // Published AI calls land in the Activity feed too (feed-only insert).
+  if (v?.org_id) {
+    await recordEvent(v.org_id as string, 'call.made',
+      { id: verificationId, display_id: v.display_id }, verificationId)
   }
   revalidatePath(`/admin/${verificationId}`)
 }

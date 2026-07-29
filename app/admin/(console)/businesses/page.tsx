@@ -41,7 +41,7 @@ export default async function AdminBusinesses() {
     }
   }
 
-  const businesses = buildBusinessRows(source, eventsByVerification)
+  const businesses = buildBusinessRows(source, eventsByVerification, '/admin')
 
   return (
     <div style={{ fontFamily: C.sans, color: C.txt }}>

@@ -88,6 +88,8 @@ export interface BusinessSourceRow extends GroupableRow {
 export function buildBusinessRows(
   rows: BusinessSourceRow[],
   eventsByVerification: Map<string, FeedEventRow[]>,
+  /** Surface prefix ('/app' or '/admin') that makes feed VRF ids clickable. */
+  basePath?: string,
 ): BusinessRow[] {
   const countsFor = (r: BusinessSourceRow) => {
     if (!r.published_at) return null
@@ -109,7 +111,12 @@ export function buildBusinessRows(
       created_at: r.created_at,
       published_at: r.published_at,
       counts: countsFor(r),
-      feed: feedEntries({ created_at: r.created_at, display_id: r.display_id }, eventsByVerification.get(r.id) ?? [], r.display_id),
+      feed: feedEntries(
+        { created_at: r.created_at, display_id: r.display_id },
+        eventsByVerification.get(r.id) ?? [],
+        r.display_id,
+        basePath ? `${basePath}/${r.id}` : undefined,
+      ),
     })),
   }))
 }

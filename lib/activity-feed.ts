@@ -16,6 +16,8 @@ export interface FeedEntry {
   label: string
   /** Extra context on merged feeds (e.g. the display id on a business feed). */
   detail?: string
+  /** When set, the detail renders as a link (e.g. to the verification report). */
+  href?: string
 }
 
 export interface FeedEventRow {
@@ -29,6 +31,10 @@ const EVENT_LABEL: Record<string, string> = {
   'verification.published': 'Report published',
   'verification.reopened': 'Report reopened for review',
   'verification.failed': 'Marked could not complete',
+  // Recorded when a call lands in the contact log (manual log with a call
+  // method, or a published AI call). Feed-only via recordEvent, never emitted
+  // to webhook endpoints.
+  'call.made': 'Call made',
 }
 
 const closeInTime = (a: string, b: string, ms = 5000) =>
@@ -39,9 +45,11 @@ export function feedEntries(
   v: { created_at: string; display_id?: string | null },
   events: FeedEventRow[],
   detail?: string,
+  href?: string,
 ): FeedEntry[] {
   const published = events.filter(e => e.type === 'verification.published')
   const out: FeedEntry[] = []
+  const extra = { ...(detail ? { detail } : {}), ...(detail && href ? { href } : {}) }
   for (const e of events) {
     const label = EVENT_LABEL[e.type]
     if (!label) continue
@@ -50,9 +58,9 @@ export function feedEntries(
     // Publishing emits verification.updated (the webhook type) and
     // verification.published (the feed type) together; show one entry.
     if (e.type === 'verification.updated' && published.some(p => closeInTime(p.created_at, e.created_at))) continue
-    out.push({ at: e.created_at, label, ...(detail ? { detail } : {}) })
+    out.push({ at: e.created_at, label, ...extra })
   }
-  out.push({ at: v.created_at, label: 'Submitted', ...(detail ? { detail } : {}) })
+  out.push({ at: v.created_at, label: 'Submitted', ...extra })
   return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 }
 

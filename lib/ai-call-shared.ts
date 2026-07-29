@@ -147,45 +147,59 @@ function esc(s: string): string {
   return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
-const CUSTOM_FIELD_LABELS: Record<string, string> = {
-  responder_name: 'Spoke with',
-  responder_role: 'Role',
-  responder_department: 'Department',
-  all_questions_answered: 'All questions answered',
-  captured_email: 'Email captured',
-  refusal_reason: 'Refusal reason',
-  claimed_no_record: 'Claimed no record',
-  portal_named: 'Portal named',
-  other_entity_referred: 'Referred to',
-  fix_initiated: 'Fix initiated',
-}
+/**
+ * Custom analysis fields, in render order. These names mirror the Retell
+ * agent's post_call_analysis_data schema (dashboard-owned); a field absent
+ * from a call's analysis renders nothing.
+ * - alwaysShow: render 'yes' AND 'no' (the answer matters both ways).
+ *   Everything else renders only when meaningfully present: booleans only
+ *   when true ("Claimed no record: no" was pure noise, owner call
+ *   2026-07-29), strings only when non-empty and not 'none'.
+ */
+const CUSTOM_FIELDS: { key: string; label: string; alwaysShow?: boolean }[] = [
+  { key: 'all_questions_answered', label: 'All questions answered', alwaysShow: true },
+  { key: 'blockers_outcome', label: 'Blockers', alwaysShow: true },
+  { key: 'not_confirmed', label: 'Not confirmed', alwaysShow: true },
+  { key: 'responder_name', label: 'Spoke with' },
+  { key: 'responder_role', label: 'Role' },
+  { key: 'responder_department', label: 'Department' },
+  { key: 'captured_email', label: 'Email captured' },
+  { key: 'refusal_reason', label: 'Refusal reason' },
+  { key: 'claimed_no_record', label: 'Claimed no record' },
+  { key: 'portal_named', label: 'Portal named' },
+  { key: 'other_entity_referred', label: 'Referred to' },
+  { key: 'fix_initiated', label: 'Fix initiated' },
+]
 
 /**
- * Build the publishable summary HTML from Retell's post-call analysis:
- * the call_summary paragraph plus a key-facts list from the custom analysis
- * fields (voice spec §6.6). Output is plain p/ul/li markup that passes the
- * note sanitizer's allowlist unchanged.
+ * Build the publishable summary HTML from Retell's post-call analysis: the
+ * outcome summary paragraph (the custom outcome_summary field when the agent
+ * schema provides it, else Retell's call_summary) plus the key-facts list
+ * (voice spec §6.6). Output is plain p/ul/li markup that passes the note
+ * sanitizer's allowlist unchanged.
  */
 export function summaryHtmlFromAnalysis(analysis: RetellCallAnalysis | null): string {
   if (!analysis) return ''
   const parts: string[] = []
-  const summary = (analysis.call_summary ?? '').trim()
+  const custom = (analysis.custom_analysis_data ?? {}) as Record<string, unknown>
+  const summary = (String(custom.outcome_summary ?? '').trim() || (analysis.call_summary ?? '')).trim()
   if (summary) {
     for (const para of summary.split(/\n{2,}/)) {
       const p = para.trim()
       if (p) parts.push(`<p>${esc(p)}</p>`)
     }
   }
-  const custom = analysis.custom_analysis_data
-  if (custom && typeof custom === 'object') {
-    const items: string[] = []
-    for (const [key, label] of Object.entries(CUSTOM_FIELD_LABELS)) {
-      const raw = (custom as Record<string, unknown>)[key]
-      if (raw === undefined || raw === null || raw === '' || raw === 'none') continue
-      const value = typeof raw === 'boolean' ? (raw ? 'yes' : 'no') : String(raw)
-      items.push(`<li><strong>${esc(label)}:</strong> ${esc(value)}</li>`)
+  const items: string[] = []
+  for (const { key, label, alwaysShow } of CUSTOM_FIELDS) {
+    const raw = custom[key]
+    if (raw === undefined || raw === null || raw === '') continue
+    if (!alwaysShow) {
+      if (raw === false) continue
+      if (typeof raw === 'string' && /^(none|no|n\/?a)$/i.test(raw.trim())) continue
     }
-    if (items.length) parts.push(`<ul>${items.join('')}</ul>`)
+    const value = typeof raw === 'boolean' ? (raw ? 'yes' : 'no') : String(raw)
+    items.push(`<li><strong>${esc(label)}:</strong> ${esc(value)}</li>`)
   }
+  if (items.length) parts.push(`<ul>${items.join('')}</ul>`)
   return parts.join('')
 }

@@ -292,7 +292,7 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
     // from the SAME contact the RPC will store: the form contact when given,
     // otherwise the saved insurer contact it falls back to.
     const { data: row } = await supabase.from('verifications')
-      .select('insurance_contact, contact_checks')
+      .select('insurance_contact, contact_checks, org_id, display_id')
       .eq('id', verificationId)
       .maybeSingle()
     const effective = hasContact
@@ -318,6 +318,12 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
     if (error) {
       console.error('saveCallNote: append failed', error)
       return { error: 'Could not save. Your note is still here. Please retry.' }
+    }
+    // Logged calls land in the Activity feed (feed-only insert, no webhook
+    // delivery). Only call-method entries: emails/texts are not "Call made".
+    if (row?.org_id && contact_method.toLowerCase().includes('call')) {
+      await recordEvent(row.org_id as string, 'call.made',
+        { id: verificationId, display_id: row.display_id }, verificationId)
     }
   } else if (!hasContact) {
     // Nothing to append and no contact to update: tell the admin instead of

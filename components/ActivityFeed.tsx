@@ -38,7 +38,11 @@ export default function ActivityFeed({ entries, title = 'Activity' }: {
                   borderTop: i === 0 ? 'none' : `1px solid ${C.border}`,
                 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: C.txt }}>{e.label}</span>
-                  {e.detail && <span style={{ fontSize: 12.5, color: C.txt3 }}>{e.detail}</span>}
+                  {e.detail && (e.href ? (
+                    <a href={e.href} style={{ fontSize: 12.5, color: C.txt2, textDecorationColor: C.border, textUnderlineOffset: 3 }}>{e.detail}</a>
+                  ) : (
+                    <span style={{ fontSize: 12.5, color: C.txt3 }}>{e.detail}</span>
+                  ))}
                   <span style={{ marginLeft: 'auto', fontSize: 12.5, color: C.txt3, whiteSpace: 'nowrap' }}>
                     {pacificDateTime(e.at)}
                   </span>

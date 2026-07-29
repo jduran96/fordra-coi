@@ -334,15 +334,18 @@ function legitimacyColor(v: Legitimacy): string {
 }
 
 function StatusChip({ status }: { status?: OnlineListingStatus }) {
+  // No status = the online check never covered this field (often a value the
+  // log inherited rather than cited). Customers get no tag at all rather than
+  // a dashed "Not checked online" that reads like a finding (owner call
+  // 2026-07-29); the admin console keeps its dashed chip.
+  if (!status) return null
   const s = status === 'verified' ? { label: 'Found', color: C.ok }
     : status === 'differs' ? { label: 'Warning', color: C.error }
-    : status === 'not_found' ? { label: 'Not Found', color: C.warn }
-    : { label: 'Not checked online', color: C.txt3 }
+    : { label: 'Not Found', color: C.warn }
   return (
     <span style={{
       marginLeft: 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
-      color: s.color, background: status ? `color-mix(in oklch, ${s.color} 11%, transparent)` : 'transparent',
-      border: status ? 'none' : `1px dashed ${C.border}`,
+      color: s.color, background: `color-mix(in oklch, ${s.color} 11%, transparent)`,
       padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', verticalAlign: 'middle',
     }}>
       {s.label}

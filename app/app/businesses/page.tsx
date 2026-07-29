@@ -52,7 +52,7 @@ export default async function CustomerBusinesses() {
     }
   }
 
-  const businesses = buildBusinessRows(source, eventsByVerification)
+  const businesses = buildBusinessRows(source, eventsByVerification, '/app')
 
   return (
     <div style={{ fontFamily: C.sans, color: C.txt }}>

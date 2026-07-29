@@ -59,7 +59,10 @@ export default function BusinessesTable({ rows, basePath }: {
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const cur = Math.min(page, pages - 1)
   const pageRows = rows.slice(cur * PAGE_SIZE, (cur + 1) * PAGE_SIZE)
-  const cols = 5 + (showOrg ? 1 : 0)
+  // Expand + Legal entity + Address + Verifications + Coverage + Activity,
+  // plus the conditional Org column. An off-by-one here shrinks the expanded
+  // detail row and misaligns/clips its content (owner report 2026-07-29).
+  const cols = 6 + (showOrg ? 1 : 0)
 
   const toggle = (key: string) => setOpenKeys(prev => {
     const next = new Set(prev)
@@ -125,24 +128,28 @@ export default function BusinessesTable({ rows, basePath }: {
                         <tbody>
                           {b.verifications.map(v => {
                             const display = v.case_status === 'failed' ? 'failed' : v.status
+                            // One cell for id + status so the tag always sits
+                            // right next to the link (the old three-column
+                            // auto layout stretched the id column apart from
+                            // it), date right-aligned.
                             return (
                               <tr key={v.id} style={{ borderTop: `1px solid ${C.border}` }}>
                                 <td style={{ padding: '8px 10px 8px 0' }}>
-                                  <button type="button" onClick={() => setSelected(v)} style={{
-                                    padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-                                    color: C.txt, fontWeight: 600, fontSize: 13.5, fontFamily: C.sans,
-                                    textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3,
-                                  }}>
-                                    {v.display_id}
-                                  </button>
-                                </td>
-                                <td style={{ padding: '8px 10px' }}>
-                                  <span style={{
-                                    fontSize: 12, fontWeight: 600, color: statusColor(display), whiteSpace: 'nowrap',
-                                    background: `color-mix(in oklch, ${statusColor(display)} 12%, transparent)`,
-                                    padding: '2px 9px', borderRadius: 20,
-                                  }}>
-                                    {statusLabel(display)}
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+                                    <button type="button" onClick={() => setSelected(v)} style={{
+                                      padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+                                      color: C.txt, fontWeight: 600, fontSize: 13.5, fontFamily: C.sans,
+                                      textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3,
+                                    }}>
+                                      {v.display_id}
+                                    </button>
+                                    <span style={{
+                                      fontSize: 12, fontWeight: 600, color: statusColor(display), whiteSpace: 'nowrap',
+                                      background: `color-mix(in oklch, ${statusColor(display)} 12%, transparent)`,
+                                      padding: '2px 9px', borderRadius: 20,
+                                    }}>
+                                      {statusLabel(display)}
+                                    </span>
                                   </span>
                                 </td>
                                 <td style={{ padding: '8px 0 8px 10px', color: C.txt3, whiteSpace: 'nowrap', textAlign: 'right' }}>

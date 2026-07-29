@@ -405,29 +405,53 @@ function anchorInsuredByWords(
  * limit) anywhere in the document — how vehicle-schedule requirements find
  * the ACORD 101 page. Every line containing enough of the tokens lights up.
  */
-function tokenSearch(item: CheckItem, textByPage: TextByPage, linesByPage: Record<number, RuleLine[]>): FieldLocation[] {
-  const source = `${item.requirement?.minimum_limit ?? ''} ${item.requirement?.coverage_type ?? ''}`
-  const tokens = [...new Set(
+/** The check's searchable words: coverage type, limit, AND notes — condition
+ *  rows carry their whole substance (a VIN, a make/model, a value) in notes. */
+function checkTokens(item: CheckItem): string[] {
+  const source = `${item.requirement?.minimum_limit ?? ''} ${item.requirement?.coverage_type ?? ''} ${item.requirement?.notes ?? ''}`
+  return [...new Set(
     source.split(/[^A-Za-z0-9$,.]+/)
       .map(t => t.replace(/[$,.]/g, ''))
       .filter(t => t.length >= 4 && !STOPWORDS.has(t.toLowerCase())),
   )]
+}
+
+function tokenSearch(item: CheckItem, textByPage: TextByPage, linesByPage: Record<number, RuleLine[]>, additionalTerms?: string): FieldLocation[] {
+  const tokens = checkTokens(item)
   if (!tokens.length) return []
+  // A number the extraction also read in the remarks text (an insured value,
+  // a model year) is distinctive on its own even under 7 characters.
+  const terms = normText(additionalTerms ?? '')
+  const isStrong = (t: string) => t.length >= 7 || (/^\d{4,}$/.test(t) && !!terms && terms.includes(normText(t)))
   const locs: FieldLocation[] = []
   for (const [pageStr, items] of Object.entries(textByPage)) {
     const page = Number(pageStr)
     const lines = (linesByPage[page] ?? []).map(l => l.pct)
-    for (const it of items) {
-      const s = normText(it.str)
-      if (s.length < 4) continue
-      const hits = tokens.filter(t => s.includes(normText(t)))
-      // Two corroborating tokens, or one long distinctive one (a VIN, a
-      // policy number) that doesn't blanket the page.
-      const strong = hits.some(t => t.length >= 7)
-      if (hits.length >= 2 || (hits.length === 1 && strong)) {
-        const [gy0, gy1] = growToLines(it.y, it.y + it.h, lines)
-        locs.push({ page, box: padBox(it.x, gy0, it.x + it.w, gy1) })
-      }
+    // Group runs into printed lines first: ACORD remarks boxes emit many short
+    // runs per line, so per-run matching missed values split across runs
+    // ("2022" + "INTERNATIONAL LT625", or a VIN broken in half — VRF-1095).
+    const rows: TextItem[][] = []
+    for (const it of [...items].sort((a, b) => (a.y + a.h / 2) - (b.y + b.h / 2))) {
+      const last = rows[rows.length - 1]
+      if (last && Math.abs((it.y + it.h / 2) - (last[0].y + last[0].h / 2)) <= 1) last.push(it)
+      else rows.push([it])
+    }
+    for (const row of rows) {
+      const rowText = normText(row.slice().sort((a, b) => a.x - b.x).map(i => i.str).join(''))
+      if (rowText.length < 4) continue
+      const hits = tokens.filter(t => rowText.includes(normText(t)))
+      // Two corroborating tokens, or one distinctive one, on the same line.
+      if (!(hits.length >= 2 || (hits.length === 1 && isStrong(hits[0])))) continue
+      // Box only the runs carrying a token (or a fragment of one), so the
+      // highlight hugs the value instead of the whole line.
+      const carrying = row.filter(it => {
+        const s = normText(it.str)
+        return s.length >= 2 && hits.some(t => { const n = normText(t); return s.includes(n) || n.includes(s) })
+      })
+      const boxItems = carrying.length ? carrying : row
+      const [gy0, gy1] = growToLines(
+        Math.min(...boxItems.map(i => i.y)), Math.max(...boxItems.map(i => i.y + i.h)), lines)
+      locs.push({ page, box: padBox(Math.min(...boxItems.map(i => i.x)), gy0, Math.max(...boxItems.map(i => i.x + i.w)), gy1) })
     }
   }
   return locs.length <= 12 ? locs : [] // a token that lights half the page located nothing
@@ -470,6 +494,24 @@ function resolveChecks(
     return snappedCovs[i]?.location ? [snappedCovs[i].location!] : []
   }
 
+  // A check whose value the extraction read in the remarks text (VINs,
+  // vehicle descriptions, insured-at-purchase amounts routinely live there —
+  // VRF-1095) can always fall back to lighting the Description of Operations
+  // box, even on scans with no text layer.
+  const remarksNorm = normText(coi.additional_terms ?? '')
+  const valueInRemarks = (item: CheckItem) =>
+    !!remarksNorm && checkTokens(item).some(t => remarksNorm.includes(normText(t)))
+  const remarksRegion = (): FieldLocation[] => {
+    if (hasText) {
+      const anchored = anchorByNeedles(
+        regionNeedles.description_of_operations, textByPage, linesByPage,
+        fl.description_of_operations, { fullWidth: true },
+      )
+      if (anchored.length) return anchored
+    }
+    return fl.description_of_operations ? [fl.description_of_operations] : []
+  }
+
   return items.map(item => {
     const rule = ruleFor(item, coverages)
     switch (rule.type) {
@@ -490,10 +532,14 @@ function resolveChecks(
         // anchor couldn't confirm on its own page shouldn't jump to a stray
         // mention elsewhere in the document.
         if (prior) return [prior]
-        return hasText ? tokenSearch(item, textByPage, linesByPage) : []
+        return hasText ? tokenSearch(item, textByPage, linesByPage, coi.additional_terms) : []
       }
-      case 'coverage':
-        return coverageLocs(rule.index)
+      case 'coverage': {
+        const locs = coverageLocs(rule.index)
+        // e.g. a physical-damage insured amount graded against the vehicle
+        // value in the remarks: light the remarks box alongside the row.
+        return valueInRemarks(item) ? [...locs, ...remarksRegion()] : locs
+      }
       case 'dates': {
         if (hasText) {
           // Light the policy-period cells themselves: exact date strings.
@@ -512,8 +558,14 @@ function resolveChecks(
         }
         return coverages.map((_, i) => coverageLocs(i)).flat()
       }
-      case 'search':
-        return hasText ? tokenSearch(item, textByPage, linesByPage) : []
+      case 'search': {
+        const found = hasText ? tokenSearch(item, textByPage, linesByPage, coi.additional_terms) : []
+        if (found.length) return found
+        // The value lives in the remarks text but the text layer could not
+        // pin it (scan, odd run splitting): light the whole remarks box so
+        // the card is still interactive and points at the right place.
+        return valueInRemarks(item) ? remarksRegion() : []
+      }
     }
   })
 }
@@ -597,7 +649,7 @@ export default function CoiSplitReview({
             {item.evidence && (
               <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '6px 0 0' }}>{item.evidence}</p>
             )}
-            {item.insurer_confirmation && (
+            {item.insurer_confirmation ? (
               <p style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                   stroke={C.ok} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
@@ -605,6 +657,18 @@ export default function CoiSplitReview({
                 </svg>
                 <span style={{ fontSize: 12, fontWeight: 700, color: C.txt, whiteSpace: 'nowrap' }}>
                   Verified with insurer via {item.insurer_confirmation === 'call' ? 'call' : 'email'}
+                </span>
+              </p>
+            ) : (
+              /* Explicit negative state (owner call 2026-07-29): a small red
+                 x, so "no insurer confirmation" never reads as an omission. */
+              <p style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                  stroke={C.error} strokeWidth="3.5" strokeLinecap="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.txt3, whiteSpace: 'nowrap' }}>
+                  Not confirmed with insurer
                 </span>
               </p>
             )}

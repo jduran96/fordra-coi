@@ -3,6 +3,7 @@ import { downloadDocument } from '@/lib/storage'
 import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions, mandatoryInsurerQuestion } from '@/lib/claude'
 import { getExtractionConfig, getQuestionsConfig } from '@/lib/config'
 import { isCuratedQuestionList } from '@/lib/call-config'
+import { dispositionLabel, TERMINAL_STATUSES, type AiCall } from '@/lib/ai-call-shared'
 import { applyQuestionTokens, templateVariableValues, uncoveredRequirements } from '@/lib/question-config'
 import type { ContactNote, FinalReport, GapAnalysis, Requirement } from '@/lib/types'
 
@@ -249,6 +250,22 @@ function contactLogText(notes: ContactNote[]): string {
 }
 
 /**
+ * Serialize the AI dialer's call attempts for the assessment model. Calls
+ * that never landed (no answer, voicemail, busy, dial failed) never reach
+ * call_notes — the publish gate requires a transcript or summary — so
+ * without this the assessment cannot know contact was attempted and failed.
+ */
+function callAttemptsText(calls: Pick<AiCall, 'status' | 'disconnection_reason' | 'error' | 'created_at' | 'call_analysis'>[]): string {
+  return calls.map(c => {
+    const outcome = dispositionLabel(c) || c.status
+    const refusal = String(c.call_analysis?.custom_analysis_data?.refusal_reason ?? '').trim()
+    const bits = [`[${c.created_at}] AI phone call to the insurer: ${outcome}`]
+    if (refusal && refusal.toLowerCase() !== 'none') bits.push(`Refusal reason: ${refusal}`)
+    return bits.join('. ')
+  }).join('\n')
+}
+
+/**
  * The Analysis-tab assessment: judge the COI against the requirements using
  * the extraction output AND the insurer contact log, then write the verdicts
  * as gap_analysis and the editable draft (rows + narrative summary) as
@@ -271,8 +288,21 @@ export async function runAssessmentPipeline(verificationId: string): Promise<voi
   if (!requirements.length) throw new Error('No parsed requirements to judge. Run extraction first.')
 
   const notes = (Array.isArray(v.call_notes) ? v.call_notes : []) as ContactNote[]
+  // Ended AI calls, landed or not: unanswered/voicemail/refused attempts are
+  // invisible in call_notes (publish requires a transcript or summary), and
+  // the summary must be able to say contact was tried and did not land.
+  const { data: callRows, error: cerr } = await supabase
+    .from('ai_calls')
+    .select('status, disconnection_reason, error, created_at, call_analysis')
+    .eq('verification_id', verificationId)
+    .in('status', TERMINAL_STATUSES)
+    .order('created_at', { ascending: true })
+  if (cerr) throw new Error(`Could not load the AI call history: ${cerr.message}`)
+  const attempts = callAttemptsText((callRows ?? []) as Parameters<typeof callAttemptsText>[0])
+  const log = [contactLogText(notes), attempts ? `Call attempts (AI dialer, including ones that did not land):\n${attempts}` : '']
+    .filter(Boolean).join('\n\n')
   const report = ensureAllRequirementsJudged(
-    await assessVerification(requirements, v.coi_extracted as Parameters<typeof assessVerification>[1], contactLogText(notes), cfg.promptAssessment),
+    await assessVerification(requirements, v.coi_extracted as Parameters<typeof assessVerification>[1], log, cfg.promptAssessment),
     requirements,
   ) as FinalReport
 

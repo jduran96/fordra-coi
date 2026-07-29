@@ -8,6 +8,40 @@
 **2026-07-29, on `main` (pushed to prod same day, owner-directed):** changes
 from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
+Third round 2026-07-29 (owner's customer-path review):
+
+- **Assessment sees failed calls.** `runAssessmentPipeline` now also feeds the
+  model every TERMINAL ai_calls row as a "Call attempts" section (no answer /
+  voicemail / busy / refusal were structurally invisible: unanswered calls
+  never pass the publish gate into call_notes). The assessment prompt's
+  summary rule asks for ONE brief clause when outreach did not land.
+- **Retell agent v16 published** (via SDK createVersion → update → publish
+  script): three new post_call_analysis_data fields — `outcome_summary`
+  (2-sentence what happened / what was and was not confirmed),
+  `blockers_outcome` (per-gate-question outcomes), `not_confirmed` (list).
+  `summaryHtmlFromAnalysis` renders them first, prefers `outcome_summary`
+  over Retell's call_summary, and now shows boolean noise fields
+  (claimed_no_record, fix_initiated) only when TRUE.
+- **Insurer confirmation has an explicit negative state**: customer report
+  cards and the PDF show a small red x + "Not confirmed with insurer"
+  whenever `insurer_confirmation` is absent (green check unchanged).
+- **Highlight fix (VRF-1095)**: `tokenSearch` in CoiSplitReview now (a)
+  includes `requirement.notes` (condition rows keep their VIN/vehicle/value
+  there), (b) matches per printed LINE (grouped runs) instead of per text
+  run, (c) treats a ≥4-digit number also present in `additional_terms` as
+  distinctive; and checks whose values live in the remarks fall back to
+  lighting the Description of Operations box (works on scans too). Coverage
+  rows additionally light the remarks box when their value appears there.
+- **Customer surfaces drop orphaned contact tags**: no more dashed "Not
+  checked online" chip on /app or the PDF; a field with no check status
+  shows no tag (admin keeps the dashed chip). `contactValue` also treats
+  "not provided"/"unknown"/"no email" placeholders as missing.
+- **Businesses table**: expanded-row `colSpan` off-by-one fixed (6+org, was
+  5+org — clipped the date), VRF id + status tag now share one cell.
+- **Activity feed**: new `call.made` event ("Call made"), recorded via
+  `recordEvent` (never webhooks) on call-method contact logs and published
+  AI calls; business-feed VRF ids are now links (`FeedEntry.href`).
+
 Hotfix round (second push 2026-07-29):
 
 - **VIN reference details come from the standards only** (owner call,

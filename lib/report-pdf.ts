@@ -125,6 +125,17 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
           doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK)
             .text(`VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`, 56 + 12, cy, { width: width - 102, characterSpacing: 0.8 })
           doc.x = 56
+        } else {
+          // The explicit negative state (owner call 2026-07-29): a small red
+          // x + label, mirroring the web report.
+          doc.moveDown(0.15)
+          const cy = doc.y
+          doc.save().strokeColor(STATUS_COLOR.not_met).lineWidth(1.4).lineCap('round')
+            .moveTo(56.6, cy + 1.4).lineTo(62.4, cy + 7.2)
+            .moveTo(62.4, cy + 1.4).lineTo(56.6, cy + 7.2).stroke().restore()
+          doc.font('Helvetica-Bold').fontSize(8.5).fillColor(GREY)
+            .text('NOT CONFIRMED WITH INSURER', 56 + 12, cy, { width: width - 102, characterSpacing: 0.8 })
+          doc.x = 56
         }
         doc.moveDown(0.55)
       }
@@ -140,7 +151,7 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       s === 'verified' ? 'Found'
       : s === 'differs' ? 'Warning'
       : s === 'not_found' ? 'Not Found'
-      : 'Not checked online'
+      : ''
     const chipColor = (s?: OnlineListingStatus) =>
       s === 'verified' ? '#3f7d47' : s === 'differs' ? '#b3403a' : s === 'not_found' ? '#9a6b1f' : GREY
     if (notes.length > 0) {
@@ -159,8 +170,8 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         }
         doc.moveDown(0.2)
         // Contact verification: THIS log's cited phone/email web-checked
-        // against the issuing producer. A field with no check yet reads
-        // "Not checked online"; a blank field gets no row at all.
+        // against the issuing producer. A field with no check gets no tag;
+        // a blank field gets no row at all.
         const check = n.contact_check
         const verifiedBits: [string, string, OnlineListingStatus | undefined][] = []
         const phone = contactValue(n.contact?.phone)
@@ -172,11 +183,15 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
           // A pdfkit continued chain must END on a segment with
           // continued: false — an empty text('') does not flush the line and
           // the next heading overprints it.
+          // No status = the check never covered this field; print the value
+          // with no tag (customer surfaces drop "Not checked online",
+          // owner call 2026-07-29).
           verifiedBits.forEach(([label, val, status], i) => {
             const last = i === verifiedBits.length - 1
             doc.font('Helvetica').fontSize(9).fillColor(GREY)
               .text(`${i > 0 ? '   |   ' : ''}${label}: ${val}`, { continued: true })
-            doc.font('Helvetica-Bold').fillColor(chipColor(status)).text(`  (${chipLabel(status)})`, { continued: !last })
+            doc.font('Helvetica-Bold').fillColor(chipColor(status))
+              .text(status ? `  (${chipLabel(status)})` : '', { continued: !last })
           })
           if (check) {
             // Overall verdict of the two-pronged check (website alignment +
