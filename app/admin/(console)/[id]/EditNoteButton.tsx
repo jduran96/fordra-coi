@@ -30,6 +30,7 @@ export default function EditNoteButton({ note, action }: {
   )
   const [transcript, setTranscript] = useState(note.transcript ?? '')
   const [checkBlurb, setCheckBlurb] = useState(note.contact_check?.blurb ?? '')
+  const [agent, setAgent] = useState(note.agent ?? 'human')
   const [error, setError] = useState('')
 
   async function submit(formData: FormData) {
@@ -58,6 +59,17 @@ export default function EditNoteButton({ note, action }: {
             <input name="contact_phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={input()} />
             <input name="contact_email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={input()} />
             <input name="contact_method" value={method} onChange={e => setMethod(e.target.value)} placeholder="Contact method (email, text, call)" style={input()} />
+            <label style={label()}>Contacted by</label>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '2px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input type="radio" name="agent" value="human" checked={agent === 'human'} onChange={() => setAgent('human')} style={{ accentColor: C.txt }} />
+                Human
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input type="radio" name="agent" value="ai" checked={agent === 'ai'} onChange={() => setAgent('ai')} style={{ accentColor: C.txt }} />
+                AI
+              </label>
+            </div>
             {/* The log's contact verification write-up rides along here so the
                 whole entry is editable from one dialog. Absent until an online
                 check has covered this log's values. */}

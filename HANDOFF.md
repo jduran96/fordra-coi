@@ -10,6 +10,14 @@ from the owner's VRF-1095 review, plus a same-day settings hotfix round.
 
 Fourth round 2026-07-29 (deal assignment):
 
+- **Contact log AI/Human tag.** `ContactNote.agent?: 'ai' | 'human'`
+  (migration `0037`, applied to live: both append RPCs gained a defaulted
+  `agent` param; old 7-param calls keep resolving). Published AI calls stamp
+  'ai'; the Add contact note dialog has a Contacted by radio (default
+  Human), editable in the note Edit dialog. Renders as a tag on admin +
+  customer cards and "(AI)"/"(Human)" in the PDF's Contacted via line.
+  Legacy entries have no key and render no tag.
+
 - **Deal assignment** (owner call: admins were overlapping). New
   `verifications.assigned_admin` (migration `0036`, applied to live; text
   email, admin-only: no authenticated grant, not in my_verifications). The

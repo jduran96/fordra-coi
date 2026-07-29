@@ -540,6 +540,13 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                       {n.contact_method.trim()}
                     </span>
                   )}
+                  {/* Who made the contact: AI (published AI call) or Human
+                      (admin log). Absent on pre-2026-07-29 entries. */}
+                  {n.agent && (
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt2, background: C.paper, border: `1px solid ${C.border}`, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                      {n.agent === 'ai' ? 'AI' : 'Human'}
+                    </span>
+                  )}
                   <span style={{ fontSize: 13, color: C.txt3, whiteSpace: 'nowrap' }}>{pacificDateTime(n.at)}</span>
                   {!caseIsClosed && (
                     <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>

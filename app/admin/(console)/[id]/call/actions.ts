@@ -406,6 +406,7 @@ export async function publishAiCallNote(verificationId: string, aiCallId: string
     transcript: call.transcript ?? '',
     contact,
     check_data,
+    agent: 'ai',
   })
   if (werr) {
     console.error('publishAiCallNote failed', werr)

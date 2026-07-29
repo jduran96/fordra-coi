@@ -315,6 +315,7 @@ export async function saveCallNote(verificationId: string, formData: FormData): 
       transcript,
       contact: hasContact ? insurance_contact : null,
       check_data,
+      agent: formData.get('agent') === 'ai' ? 'ai' : 'human',
     })
     if (error) {
       console.error('saveCallNote: append failed', error)
@@ -400,6 +401,8 @@ export async function updateCallNote(verificationId: string, noteAt: string, for
   // Whole-object replacement. Legacy `text` is deliberately dropped: the edit
   // dialog prefills the summary editor from it, so its content survives as
   // summary_html/summary_text.
+  const agentRaw = String(formData.get('agent') || '')
+  const agent = agentRaw === 'ai' || agentRaw === 'human' ? agentRaw : note.agent
   const next: ContactNote = {
     at: note.at,
     ...(contact_method ? { contact_method } : {}),
@@ -407,6 +410,7 @@ export async function updateCallNote(verificationId: string, noteAt: string, for
     ...(transcript ? { transcript } : {}),
     contact: nextContact,
     ...(check ? { contact_check: check } : {}),
+    ...(agent ? { agent } : {}),
     edited_at: new Date().toISOString(),
   }
   const { error: werr } = await supabase.rpc('admin_update_call_note', {

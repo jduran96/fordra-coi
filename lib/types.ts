@@ -125,6 +125,9 @@ export interface ContactNote {
   contact?: { name?: string; phone?: string; email?: string };
   /** Per-log web verification of THIS entry's cited phone/email. */
   contact_check?: NoteContactCheck;
+  /** Who made the contact: 'ai' (published AI call) or 'human' (admin log).
+   *  Absent on entries from before 2026-07-29; those render no tag. */
+  agent?: 'ai' | 'human';
   /** Set when the note was edited after the fact; `at` never changes. */
   edited_at?: string;
 }

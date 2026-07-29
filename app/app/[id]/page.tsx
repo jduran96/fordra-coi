@@ -207,11 +207,23 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
               <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 5px' }}>
                 Contacted on: <span style={{ color: C.txt }}>{pacificDateAtTime(n.at)}</span>
               </p>
-              {(name || method) && (
+              {(name || method || n.agent) && (
                 <p style={{ fontSize: 12.5, color: C.txt3, margin: '0 0 10px' }}>
                   {name && <>Contact name: <span style={{ color: C.txt }}>{name}</span></>}
                   {name && method && <span style={{ margin: '0 7px' }}>|</span>}
                   {method && <>Contact method: <span style={{ color: C.txt }}>{method}</span></>}
+                  {/* Who made the contact; absent on entries logged before
+                      the tag existed (2026-07-29). */}
+                  {n.agent && (
+                    <span style={{
+                      marginLeft: (name || method) ? 7 : 0, fontSize: 10, fontWeight: 700,
+                      letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt2,
+                      background: C.paper, border: `1px solid ${C.border}`,
+                      padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', verticalAlign: 'middle',
+                    }}>
+                      {n.agent === 'ai' ? 'AI' : 'Human'}
+                    </span>
+                  )}
                 </p>
               )}
               {/* This log's cited phone/email, web-checked. Sits between the

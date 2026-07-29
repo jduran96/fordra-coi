@@ -160,8 +160,10 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
       for (const n of notes.slice().reverse()) {
         const method = n.contact_method?.trim()
         // Bold "Contacted via email", regular " on: <timestamp>" (owner spec).
+        // The AI/Human tag rides in the bold segment; absent on old entries.
+        const agentTag = n.agent === 'ai' ? ' (AI)' : n.agent === 'human' ? ' (Human)' : ''
         doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK)
-          .text(method ? `Contacted via ${method}` : 'Contacted', { continued: true })
+          .text((method ? `Contacted via ${method}` : 'Contacted') + agentTag, { continued: true })
         doc.font('Helvetica').text(` on: ${n.at ? pacificDateAtTime(n.at) : ''}`)
         const name = contactValue(n.contact?.name)
         if (name) {

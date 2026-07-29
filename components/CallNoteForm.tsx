@@ -65,6 +65,20 @@ export default function CallNoteForm({
             <input name="contact_phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={input()} />
             <input name="contact_email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={input()} />
             <input name="contact_method" value={method} onChange={e => setMethod(e.target.value)} placeholder="Contact method (email, text, call)" style={input()} />
+            {/* Who made the contact: shown as the AI/Human tag on the entry.
+                AI-published call notes stamp themselves; this covers manual
+                logs of either kind (e.g. pasting an AI transcript by hand). */}
+            <label style={label()}>Contacted by</label>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center', padding: '2px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input type="radio" name="agent" value="human" defaultChecked style={{ accentColor: C.txt }} />
+                Human
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.txt, cursor: 'pointer' }}>
+                <input type="radio" name="agent" value="ai" style={{ accentColor: C.txt }} />
+                AI
+              </label>
+            </div>
             <label style={label()}>Summary</label>
             <RichTextInput name="summary_html" value={summary} onChange={setSummary} />
             <label style={label()}>Transcript</label>
