@@ -55,7 +55,8 @@ export async function prepareUploads(files: UploadMeta[]): Promise<PreparedUploa
     const batch = randomUUID()
     // The index keeps two same-named files from colliding on one key.
     const uploads = await Promise.all(files.map((f, i) => {
-      const safeName = f.name.replace(/[^\w.\- ]+/g, '_')
+      // Must never emit characters ownsPath rejects (whitespace, '?', '#').
+      const safeName = f.name.replace(/[^\w.\-]+/g, '_')
       return createSignedUpload(`${profile.org_id}/incoming/${batch}/${i}-${f.kind}-${safeName}`)
     }))
     return { uploads }
@@ -84,7 +85,8 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
     const parsed = JSON.parse(String(formData.get('uploaded_files') || '[]'))
     if (!Array.isArray(parsed)) throw new Error('bad shape')
     uploaded = parsed
-  } catch {
+  } catch (e) {
+    console.error('submitVerification: unreadable uploaded_files field', e)
     return { error: 'Could not read the uploaded documents. Please retry the submission.' }
   }
 
@@ -101,6 +103,7 @@ export async function submitVerification(formData: FormData): Promise<SubmitStat
   const seenPaths = new Set<string>()
   for (const u of uploaded) {
     if (!ownsPath(u.path) || seenPaths.has(u.path) || !(KINDS as string[]).includes(u.kind)) {
+      console.error('submitVerification: rejected uploaded_files entry', { path: u.path, kind: u.kind })
       await removeDocuments(uploaded.filter(x => ownsPath(x.path)).map(x => x.path))
       return { error: 'Could not read the uploaded documents. Please retry the submission.' }
     }

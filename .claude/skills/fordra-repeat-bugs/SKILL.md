@@ -412,3 +412,25 @@ baked into the script: test-run status starts as 'pending' (not in the SDK
 enum); the simulated caller needs a strong model (claude-4.6-sonnet) or it
 will not follow its own state machine; `skip_response_edge` conditions must
 be the literal string 'Skip response'; `cool_down` must be >= 1.
+
+## 20. Web submission fails "Could not read the uploaded documents" for filenames with spaces
+
+**Symptom:** every /app/new submission fails with "Could not read the uploaded
+documents. Please retry the submission." even though the files upload fine and
+are valid; nothing in the server logs. Filenames contain spaces (most real COI
+PDFs do, e.g. `AJIT TRANS INC INS.pdf`).
+
+**Root cause:** two regexes in `app/app/actions.ts` disagreed. The
+`prepareUploads` key sanitizer kept spaces in the storage key, while
+`submitVerification`'s `ownsPath` guard rejects any whitespace in a path
+(URL-metacharacter defense from the security review, commit `20159c8`). So the
+bytes uploaded, then ownership validation failed, deleted the uploads, and
+returned this message — with zero logging on either branch.
+
+**Fix (in place — keep the contract):** the sanitizer in `prepareUploads` must
+never emit a character `ownsPath` rejects — its class is `[^\w.\-]+` (spaces ->
+`_`); `ownsPath` stays strict. Both rejection branches now `console.error`
+(`submitVerification: unreadable uploaded_files field` / `rejected
+uploaded_files entry`). If this message reappears, grep server logs for
+`submitVerification:` to see the offending path/reason. Note: the failed
+submission's uploads were already cleaned up, so retries re-upload.
