@@ -171,6 +171,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     contactChecks: checks,
     insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
     config: callConfig,
+    // Spoken in voicemails; old drafts lack the key so this prefill wins in the merge.
+    callbackNumber: process.env.RETELL_FROM_NUMBER ?? '',
     orgDetails,
   })
   const draftInput = (aiDraft?.draft_input ?? null) as (Partial<CallContextFields> & { details_json?: string }) | null

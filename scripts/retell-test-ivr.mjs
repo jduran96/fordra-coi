@@ -50,6 +50,8 @@ const DYNAMIC_VARIABLES = {
   agency_name: 'Colstan & Associates',
   agent_name: '',
   reference_id: 'VRF-TEST',
+  callback_number: '+14155550198',
+  callback_number_spoken: '4 1 5. 5 5 5. 0 1 9 8',
   reference_details: '- Policy number (Automobile Liability): NTL321510 [last four if asked: 5 1 0 | spoken: N T L. 3 2 1 5 1 0]\n- VIN: 1XKYD49X0MJ470445 [LEAD WITH LAST FOUR: 0 4 4 5 | full spoken: 1. X K Y D. 4 9 X. 0. M J. 4 7 0 4 4 5]',
   gate_questions: '1. Is the COI for Todd\'s Automotive Services Inc. still active and in force?\n2. Is a vehicle with a VIN ending in 0445 listed on the policy?',
   questions: '1. What is the per-occurrence limit on the Automobile Liability policy?',
@@ -84,6 +86,15 @@ Rules:
     metrics: [
       'The agent delivers its opening introduction to the human and obtains answers to its insurance questions (policy active, VIN, liability limit), whether by asking them or by accepting answers the rep volunteers. It does NOT need to verify the identity of the person answering.',
       'The agent never treats the human like an automated menu and never presses digits',
+    ],
+  },
+  {
+    key: 'already-verified',
+    name: 'fordra-already-verified-recovery',
+    user_prompt: `You are Jeff, a human receptionist at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, Jeff speaking." When the caller says they are verifying a certificate of insurance, respond "I've already done that one, we verified it last week." If the caller explains it is a quick re-confirmation for their records and asks to run through it, grudgingly agree ("Alright, go ahead, quickly") and answer their questions plausibly: the policy is active, the vehicle is listed, the limit is one million dollars. If the caller instead accepts your refusal, say goodbye and end.`,
+    metrics: [
+      'When told the verification was already done, the agent makes exactly one polite recovery attempt explaining this is a quick re-confirmation, instead of immediately ending the call and without arguing further after a second refusal',
+      'After the rep agrees, the agent proceeds with its verification questions and completes them',
     ],
   },
 ]

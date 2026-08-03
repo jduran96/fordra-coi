@@ -47,6 +47,7 @@ const LEGITIMACY_FIELDS: { field: keyof CallContextFields; label: string; hint?:
   { field: 'on_behalf_of_info', label: 'What the client does', hint: 'Said if the office asks who <On behalf of> is' },
   { field: 'reply_email', label: 'Reply email', hint: 'Offered only if the office asks to verify by email' },
   { field: 'reference_id', label: 'Reference ID' },
+  { field: 'callback_number', label: 'Callback number', hint: 'Spoken digit by digit if the call hits voicemail' },
 ]
 
 // Insurer name/contact are optional: many calls have no contact person, and a

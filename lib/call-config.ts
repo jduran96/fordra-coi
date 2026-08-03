@@ -82,6 +82,8 @@ export interface CallContextFields extends OrgCallConfig {
   agency_name: string
   agent_name: string
   reference_id: string
+  /** Spoken digit by digit in voicemails and identity answers (v19). */
+  callback_number: string
   call_context: 'new' | 'resumed'
 }
 
@@ -89,7 +91,7 @@ export const CONTEXT_FIELD_NAMES = [
   'assistant_name', 'assistant_last_name', 'languages',
   'on_behalf_of', 'relationship_line', 'on_behalf_of_info', 'reply_email',
   'insured_name', 'agency_name', 'agent_name',
-  'reference_id', 'call_context',
+  'reference_id', 'callback_number', 'call_context',
 ] as const
 
 export interface NumberCandidate {
@@ -179,6 +181,17 @@ export function valueSpoken(raw: string): string {
 /** Back-compat alias (older callers); same generator. */
 export const policyNumbersSpoken = valueSpoken
 
+/** Spoken digit-by-digit form of a phone number: "+14155550198" -> "4 1 5. 5 5 5. 0 1 9 8". */
+export function phoneSpoken(raw: string): string {
+  const digits = (normalizeE164(raw) ?? raw).replace(/[^\d]/g, '')
+  if (!digits) return ''
+  const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  const groups = national.length === 10
+    ? [national.slice(0, 3), national.slice(3, 6), national.slice(6)]
+    : (national.match(/.{1,3}/g) ?? [])
+  return groups.map(g => g.split('').join(' ')).join('. ')
+}
+
 /** An identifier-looking value: 6+ alphanumerics including a digit. */
 function isIdentifier(value: string): boolean {
   const alnum = value.replace(/[^a-z0-9]/gi, '')
@@ -252,10 +265,11 @@ export function renderQuestions(questions: AiCallQuestion[]): string {
 }
 
 /** The N1 opening line exactly as the agent will speak it (owner wording
- *  2026-07-28: no "digital assistant" up front — that disclosure moves to the
- *  who-are-you answer, given only when the office asks). */
-export function disclosurePreview(ctx: Pick<CallContextFields, 'assistant_name' | 'on_behalf_of' | 'insured_name'>): string {
-  return `Hi, I'm ${ctx.assistant_name || '(assistant name)'} from ${ctx.on_behalf_of || '(on behalf of)'} calling on a recorded line to verify a certificate of insurance from ${ctx.insured_name || '(insured name)'}.`
+ *  2026-08-03: no assistant name and no insured name up front; the insured's
+ *  name is offered as the lookup hook and given in N4c, the identity answers
+ *  stay in G1/N1q for when the office asks). */
+export function disclosurePreview(ctx: Pick<CallContextFields, 'on_behalf_of'>): string {
+  return `Hi, I'm calling from ${ctx.on_behalf_of || '(on behalf of)'} on a recorded line to verify a certificate of insurance. Do you need the insured's name to get started?`
 }
 
 /** A 17-character VIN (I, O, Q are never used in VINs). */
@@ -310,6 +324,8 @@ export function draftFromVerification(input: {
   contactChecks: ContactCheckEntry[]
   insuranceContact: { name?: string; phone?: string; email?: string } | null
   config: OrgCallConfig
+  /** Number the office can call back, spoken in voicemails (RETELL_FROM_NUMBER). */
+  callbackNumber: string
   /** Org-level predefined rows (settings → Calling → Reference details). */
   orgDetails?: ReferenceDetail[]
 }): { context: CallContextFields; questions: AiCallQuestion[]; numbers: NumberCandidate[]; details: ReferenceDetail[] } {
@@ -320,6 +336,7 @@ export function draftFromVerification(input: {
     agency_name: (coi?.producer ?? '').trim(),
     agent_name: (coi?.insurance_company_contact ?? input.insuranceContact?.name ?? '').trim(),
     reference_id: input.displayId,
+    callback_number: normalizeE164(input.callbackNumber) ?? input.callbackNumber.trim(),
     call_context: 'new',
   }
 
@@ -403,6 +420,8 @@ export function buildDynamicVariables(
     agency_name: s(ctx.agency_name),
     agent_name: s(ctx.agent_name),
     reference_id: s(ctx.reference_id),
+    callback_number: s(ctx.callback_number),
+    callback_number_spoken: phoneSpoken(s(ctx.callback_number)),
     reference_details: renderReferenceDetails(details),
     // Blockers go to the flow's gate node (negative answer ends the call);
     // the rest run in the main question loop.
@@ -428,6 +447,8 @@ const REQUIRED_FIELDS: { field: keyof CallContextFields; label: string }[] = [
   { field: 'insured_name', label: 'Insured name' },
   // reference_id and reply_email intentionally NOT required: legitimacy proof
   // points, spoken only if the office asks (flow nodes G1/N1q/N6c).
+  // Spoken in every voicemail (v19): a blank one leaves an un-actionable message.
+  { field: 'callback_number', label: 'Callback number' },
   { field: 'languages', label: 'Languages' },
 ]
 
@@ -456,6 +477,11 @@ export function validateDispatch(input: {
 
   const e164 = normalizeE164(toNumber)
   if (!e164) blocks.push('The number to dial is missing or not a valid US phone number.')
+
+  const callback = String(context.callback_number ?? '').trim()
+  if (callback && !normalizeE164(callback)) {
+    blocks.push('Callback number is not a valid phone number. It is spoken in voicemails.')
+  }
 
   const realQuestions = questions.filter(q => q.text.trim())
   if (realQuestions.length === 0) blocks.push('Add at least one question.')
