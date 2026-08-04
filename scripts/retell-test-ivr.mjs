@@ -9,6 +9,17 @@
  *            talking to menus and never speaks stage directions aloud.
  *   human  — a human receptionist answers; the agent must deliver the opener
  *            and proceed. Guards against IVR fixes breaking the happy path.
+ *   already-verified — rep claims it was already done; one recovery attempt.
+ *   callback-queue   — the Avant hold queue (2026-07-30 live failure): "press
+ *            one to save your place / confirm your callback number". Passes
+ *            only if the agent stays in the queue and never confirms a number.
+ *   message-only-menu — the Farm Bureau menu (2026-07-28 live failure): only
+ *            claims/billing/leave-a-message options. Passes only if the agent
+ *            presses to voicemail and leaves the message without narrating.
+ *   ai-gatekeeper — a Progressive-style conversational AI (2026-07-28 live
+ *            failure: opener delivered 4x to the bot). Passes only if the
+ *            agent answers slot questions briefly and saves the opener for
+ *            the human.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -50,8 +61,6 @@ const DYNAMIC_VARIABLES = {
   agency_name: 'Colstan & Associates',
   agent_name: '',
   reference_id: 'VRF-TEST',
-  callback_number: '+14155550198',
-  callback_number_spoken: '4 1 5. 5 5 5. 0 1 9 8',
   reference_details: '- Policy number (Automobile Liability): NTL321510 [last four if asked: 5 1 0 | spoken: N T L. 3 2 1 5 1 0]\n- VIN: 1XKYD49X0MJ470445 [LEAD WITH LAST FOUR: 0 4 4 5 | full spoken: 1. X K Y D. 4 9 X. 0. M J. 4 7 0 4 4 5]',
   gate_questions: '1. Is the COI for Todd\'s Automotive Services Inc. still active and in force?\n2. Is a vehicle with a VIN ending in 0445 listed on the policy?',
   questions: '1. What is the per-occurrence limit on the Automobile Liability policy?',
@@ -95,6 +104,66 @@ Rules:
     metrics: [
       'When told the verification was already done, the agent makes exactly one polite recovery attempt explaining this is a quick re-confirmation, instead of immediately ending the call and without arguing further after a second refusal',
       'After the rep agrees, the agent proceeds with its verification questions and completes them',
+    ],
+  },
+  {
+    key: 'callback-queue',
+    name: 'fordra-avant-callback-queue',
+    user_prompt: `You are simulating an AUTOMATED hold-queue phone system for the office of Avant. You are a machine: never a human, never conversational. Follow this script exactly.
+
+STATE 1 (start here): play "Thank you for calling the office of Avant, a division of Specialty Program Group. Please press two or remain on the line to speak with the next available representative."
+STATE 2: play "Please hold for the next available agent."
+STATE 3: play "If you would like to save your place in line and have an agent call you back when it is your turn, please press one, or stay on the line and continue to hold."
+STATE 4: play "If you would like us to call you back at the number you called from, press one. If you would like us to call you back at a different number, press two."
+STATE 5: a HUMAN takes over: "Hi, thanks for holding, this is Marcy at Avant. How can I help you?" From here on you are Marcy, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
+
+Rules:
+- In states 1-2: if the caller presses a digit or stays silent, advance one state on your next turn.
+- In states 3-4: if the caller stays SILENT (no words, no keypress), advance one state. If the caller PRESSES ANY DIGIT in state 3 or 4, loop forever between states 3 and 4 and never reach the human.
+- If the caller speaks actual words in states 1-4, replay the current state's message.
+- Never react to the meaning of anything said in states 1-4. You are a recording until state 5.`,
+    metrics: [
+      'While the automated queue plays (before the human named Marcy speaks), the agent never presses a digit in response to the callback offers (save your place in line, call you back), never speaks to confirm or provide a callback number, and simply waits on hold',
+      'When the human comes on the line, the agent delivers its opening introduction and completes its verification questions with her',
+    ],
+  },
+  {
+    key: 'message-only-menu',
+    name: 'fordra-farmbureau-message-only-menu',
+    user_prompt: `You are simulating an AUTOMATED after-hours phone menu for a Farm Bureau Financial Services agency office. You are a machine: never a human, never conversational. Follow this script exactly.
+
+STATE 1 (start here, and replay on any spoken words): play "Thank you for calling Farm Bureau Financial Services, the office of Robin Cummings. If you are calling to report a claim, please press one to be connected to our twenty four hour claim service. For questions regarding billing or payments, please press two. To leave a message for our office, please press three and you will be directed to our voicemail. Thank you for calling."
+STATE 2 (after the caller presses three): play "Please leave your message after the tone. BEEP."
+After the caller leaves a message in state 2, play "Goodbye." and say nothing more.
+If the caller presses one or two, play "This option is unavailable after hours." and replay state 1.
+
+Rules:
+- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn. Treat any of those as the digit pressed.
+- If the caller speaks actual words during state 1, replay state 1 prefixed with "We did not receive a valid response."
+- Never react to the meaning of anything the caller says before the beep. You are a recording.`,
+    metrics: [
+      'After its very first utterance (the opening line, which the platform speaks before menu detection can happen and which does NOT count as a violation), the agent never speaks to the menu: no narration, no bracketed stage directions, no spoken digits, and no reasoning out loud about which options exist',
+      'The agent presses three to reach voicemail and, after the beep, leaves a short message that names who it is calling on behalf of and the insured, then ends',
+    ],
+  },
+  {
+    key: 'ai-gatekeeper',
+    name: 'fordra-progressive-ai-gatekeeper',
+    user_prompt: `You are simulating a large insurance carrier's CONVERSATIONAL AI phone assistant (like Progressive's). You are an automated system, unfailingly polite, and you follow this slot-filling script. You never understand anything outside it.
+
+TURN 1 (start): say "Hello, thank you for calling. Your call may be recorded. You can speak to me in complete sentences. How can I help you?"
+TURN 2: whatever they say, respond "I can help you verify coverage. Are you a driver or occupant listed on this policy, a lienholder, an agent, or someone else? Please tell me your relationship to this policy."
+TURN 3: then ask "Thanks. Including any letters, please say or enter the policy number, or say I don't have it."
+TURN 4: read back whatever number they gave as digits and ask "Is that right?"
+TURN 5: after a yes, say "Great, I found that policy. Please hold while I get you to someone who can help with verifying coverage."
+TURN 6: a HUMAN takes over: "Hi, thank you for calling, my name is Sam. How can I help you today?" From here you are Sam, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
+
+Rules:
+- If an answer does not fit the current slot (for example a long self-introduction), say "I'm sorry, I didn't get that." and repeat the current slot question. Do not advance.
+- Never react to anything outside your script until turn 6.`,
+    metrics: [
+      'The agent never delivers its full opening self-introduction to the automated assistant and never repeats it when the system re-prompts; with the automated system it only gives short, direct answers to the questions asked (relationship such as lienholder, the policy number, yes to the read-back)',
+      'When the human named Sam comes on the line, the agent delivers its opening introduction once and completes its verification questions with him',
     ],
   },
 ]
