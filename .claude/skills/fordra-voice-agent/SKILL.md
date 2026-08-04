@@ -35,12 +35,23 @@ setting is retuned, append/update an entry here in the same format.
   fires disposition `voicemail_reached`) and the flow's NVM node
   (`node-ivr-vm`, for the IVR navigation path). Copy or behavior changes must
   cover both — see issues 7-8.
-- **Opener design (v19, owner wording 2026-08-03):** the N1 opener names only
-  {{on_behalf_of}} and offers the INSURED'S NAME as the lookup hook ("Do you
-  need the insured's name to get started?"). Never reintroduce the assistant
-  name, the insured name, or the policy number into the opener: reps look up
-  by insured name/VIN, and a policy number is useless on fleet policies
-  (McGriff feedback). N4c rule 0 speaks the name; N1q routes agreement to N4c.
+- **Opener design (v19/v20, owner wording 2026-08-03):** the N1 opener names
+  only {{on_behalf_of}} and offers the INSURED'S NAME as the lookup hook ("Do
+  you need the insured's name to get started?"). Never reintroduce the
+  assistant name, the insured name, or the policy number into the opener: reps
+  look up by insured name/VIN, and a policy number is useless on fleet
+  policies (McGriff feedback). Owner-scripted post-opener exchange (N4c rule
+  0): yes → "The insured name is {{insured_name}}. Anything else you need to
+  find the policy?"; bare "yes" back → wait silently; other detail → give it
+  plus the same follow-up. N1q routes agreement to N4c. Refusals anywhere go
+  through N6b's channel ask ("Got it, what's the best way to get a certificate
+  verified with your office?") before N9b.
+- **Test harness:** `scripts/retell-test-ivr.mjs` runs six scenarios rebuilt
+  from real calls (Colstan keypad IVR, human, already-verified, Avant callback
+  queue, Farm Bureau message-only menu, Progressive-style AI gatekeeper).
+  Silence-heavy scenarios trip the simulator's liveness kill when the agent is
+  CORRECTLY silent; the harness then falls back to deterministic transcript
+  checks. Run it against every draft before publish.
 - **Diagnosing a call:** `client.call.retrieve(callId)` gives `latency`
   (e2e/llm/tts/asr percentiles) and `transcript_object` with per-word
   timestamps — overlapping start/end times show exactly who talked over whom.
@@ -54,6 +65,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-07-29 (v17) | 1.0 | 0.7 | VRF 1095 talk-over fixes (see issue 1) |
 | 2026-07-29 (v18) | 1.0 | 0.7 | voicemail fixes only (see issues 7-8), voice settings unchanged |
 | 2026-08-03 (v19) | 1.0 | 0.7 | opener v2 + verbosity pass + transcript-audit fixes (issues 9-11), voice settings unchanged |
+| 2026-08-03 (v20) | 1.0 | 0.7 | owner corrections: callback number reverted, insured-name exchange, refusal channel-ask (N6b), IVR hardening (issue 12), voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -193,12 +205,14 @@ call back (direct rep feedback: Susan Murphy, McGriff, 2026-07-30 callback —
 **Cause:** the NVM/voicemail_option text named the insured but left NO
 callback number, and repeat attempts left near-identical messages.
 
-**Remedy (shipped v19):** voicemail text includes {{callback_number_spoken}};
-`callback_number` is a REQUIRED dispatch field (lib/call-config.ts, prefilled
-from RETELL_FROM_NUMBER, E.164-validated, spoken form via `phoneSpoken`). G1
-may give the callback number — it is the ONLY phone number the agent may
-share. Any voicemail copy change must keep NVM and `voicemail_option.action.
-text` byte-identical (see the map note above and issue 8).
+**Remedy (v19, REVERTED in v20 by owner decision):** v19 added a spoken
+callback number; the owner reverted it same-day — **inbound calling is out of
+scope, do NOT reintroduce a callback number or a `callback_number` variable.**
+The v20 voicemail names {{on_behalf_of}} and {{insured_name}} only, which
+covers the which-certificate half of the feedback; the no-way-to-call-back
+half is accepted as a known limitation until inbound is in scope. Any
+voicemail copy change must keep NVM and `voicemail_option.action.text`
+byte-identical (see the map note above and issue 8).
 
 ## 10. "We already verified that" ended the call in 24 seconds
 
@@ -209,14 +223,14 @@ went straight to the unable-to-proceed goodbye (Cornerstone,
 **Cause:** every negative-shaped reply routed to N9b; no recovery path
 existed for already-done claims.
 
-**Remedy (shipped v19):** new node `node-n1r` makes exactly ONE scripted
-recovery attempt ("Understood. This is a quick re-confirmation for our
-records, it only takes a couple of minutes. Can we run through it?"),
-reachable from N1/N1es/N1q/N4b/N4bes/N4c. The negative edges on those nodes
-carry an explicit "Not when they say it was already verified" exclusion —
+**Remedy (shipped v19, wording + routing updated v20):** new node `node-n1r`
+makes exactly ONE scripted recovery attempt ("Understood. This is just a
+quick re-confirmation for our records. Can we run through it?"), reachable
+from N1/N1es/N1q/N4b/N4bes/N4c. The negative edges on those nodes carry an
+explicit "Not when they say it was already verified" exclusion —
 load-bearing; do not remove it when editing those edge conditions. A second
-decline goes to N9b as before. Test scenario `already-verified` in
-`scripts/retell-test-ivr.mjs` covers it.
+decline goes to N6b's channel ask, then N9b. Test scenario `already-verified`
+in `scripts/retell-test-ivr.mjs` covers it.
 
 ## 11. Callback-queue IVR left the call dangling until hangup
 
@@ -236,6 +250,29 @@ blocks progress, choose voicemail if offered, otherwise end. The carve-out
 wording is scoped so the Colstan closed-office menu (pressing category
 digits toward voicemail) still passes — if the `ivr` test scenario ever
 regresses, restore the carve-out, do not relax navigator rule 0.
+
+## 12. Conversational AI gatekeepers: opener re-delivered, narration, spurious presses
+
+**Symptom (all three seen in v20 simulations, matching the live Progressive
+call 2026-07-28):** (a) the full opener re-delivered to a carrier's AI
+assistant when it read a number back; (b) "[Staying silent while on hold...]"
+spoken aloud during a hold; (c) a digit pressed while a system said "say or
+enter the policy number".
+
+**Cause:** (a) the press_digit nodes' back-to-opener edges said only "a live
+person has come on the line" — a conversational bot's read-back qualified
+(the navigator's own human edge already had the strict wording, the press
+nodes did not); (b) the LLM emits stage directions when it has nothing to
+say, and TTS speaks them; (c) "say or enter" matched the keypad-menu trigger.
+
+**Remedy (shipped v20):** strict no-AI wording copied onto BOTH press nodes'
+human edges; navigator instruction: when there is nothing to say, output
+NOTHING — never bracketed text or descriptions of waiting; navigator global
+condition triggers immediately on scripted slot-question bots (relationship,
+say-or-enter, "complete sentences") even at call start; press-node conditions
+never trigger on say-or-enter prompts. Covered by the `ai-gatekeeper` and
+`callback-queue` scenarios; the harness's bracketed-narration scan runs on
+every scenario.
 
 ## Standing rules for any change here
 

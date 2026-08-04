@@ -3,39 +3,52 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-08-03 — voice agent v19: opener v2, verbosity pass, transcript-audit fixes)
+## ⏱️ START HERE (as of 2026-08-03 — voice agent v20: opener v2, verbosity pass, transcript-audit fixes)
 
-**2026-08-03, on `main` (pushed to prod same day, owner-approved plan):** agent +
-flow v19 published after an audit of all 23 `ai_calls` transcripts plus the
-owner's 18 Notion baseline-call transcripts ("Verification calls" page). The
-audit findings (10 patterns validated, 7 failure cases diagnosed) are in the
-session plan file; the v19 remedies:
+**2026-08-03, on `main` (pushed to prod same day):** agent + flow v19 then v20
+published after an audit of all 23 `ai_calls` transcripts plus the owner's 18
+Notion baseline-call transcripts ("Verification calls" page). v19 shipped the
+owner-approved plan; v20 is the owner's same-day corrections ("check the path
+with me before building") — **v20 is the live version**, and the owner's rules
+below are design decisions, not suggestions:
 
 - **Opener v2 (owner wording):** "Hi, I'm calling from {{on_behalf_of}} on a
   recorded line to verify a certificate of insurance. Do you need the insured's
   name to get started?" No assistant name, no insured name up front; the
   insured's NAME (never the policy number — useless on fleet policies) is the
-  lookup hook, given by N4c's new rule 0. N1q now routes agree-to-proceed to
-  N4c (lookup first), not the gate. Spanish equivalents updated. Repo mirror:
-  `disclosurePreview` in `lib/call-config.ts`.
+  lookup hook. Repo mirror: `disclosurePreview` in `lib/call-config.ts`.
+- **Post-opener exchange (owner script, v20):** yes → "The insured name is
+  {{insured_name}}. Anything else you need to find the policy?"; a bare "yes"
+  back → wait silently; a different detail requested → give it + the same
+  follow-up. N1q routes agree-to-proceed to N4c (lookup first), not the gate.
+- **Refusals get a channel ask (owner script, v20):** every refusal point
+  (opener, re-disclosure, lookup, declined re-confirmation, gate refuse) goes
+  through new node N6b — "Got it, what's the best way to get a certificate
+  verified with your office?" — captured via N6, then goodbye. N9b only after
+  that.
+- **N1r already-verified recovery**: when the office says "we already did
+  that" (a live call quit in 24s): "Understood. This is just a quick
+  re-confirmation for our records. Can we run through it?" One attempt.
+- **Voicemail: NO callback number** (owner decision, v20: inbound calling is
+  out of scope — a v19 `callback_number` variable was reverted same day). Text
+  names on_behalf_of + insured only. NVM node and `voicemail_option.action.
+  text` stay byte-identical.
 - **Verbosity pass over every spoken line** (N4b/N4bes, N6, N9/N9b, NW, G1,
   G2, global-prompt canned answers, gate/N5 scripted phrases incl. their
   finetune examples: "Do you need anything else from me?" → "Anything else
   you need?").
-- **Voicemail is actionable now** (rep feedback, McGriff): includes
-  {{callback_number_spoken}}; new required dispatch fields `callback_number`
-  (+ `_spoken`), prefilled from `RETELL_FROM_NUMBER`, E.164-validated.
-  Agent-level `voicemail_option.action.text` kept byte-identical to NVM.
-- **N1r already-verified recovery** (new node): one scripted re-confirmation
-  attempt when the office says "we already did that" (a live call quit in 24s),
-  reachable from N1/N1es/N1q/N4b/N4bes/N4c; then N9b.
-- **IVR callback-queue rule** (Avant dangle): ignore "press 1 to save your
-  place / confirm callback number" offers, stay in queue, never confirm a
-  number; voicemail beats a dead end.
-- Verified: 3/3 simulation scenarios pass on v19 (Colstan IVR, human
-  receptionist, new already-verified scenario in `retell-test-ivr.mjs`);
-  29-point live triple-check after publish (settings, flow pin, node texts,
-  stale-copy sweep) all green. Details + issue entries: voice-agent skill.
+- **IVR hardening from the failed live calls:** callback-queue rule (stay in
+  queue, never press for or confirm a callback — Avant dangle); press-node
+  human edges no longer treat a conversational AI's read-back as "a live
+  person" (Progressive opener-re-delivery); navigator triggers immediately on
+  scripted slot-question bots; never speaks bracketed stage directions; no
+  keypress on "say or enter" prompts.
+- Verified: `retell-test-ivr.mjs` now runs SIX scenarios (Colstan keypad IVR,
+  human receptionist, already-verified, Avant callback queue, Farm Bureau
+  message-only menu, Progressive-style AI gatekeeper) — all pass on v20;
+  silence-heavy scenarios are judged by deterministic transcript checks when
+  the simulator liveness-kills a correctly-silent run. 16-point live
+  triple-check after publish all green. Details: voice-agent skill.
 
 ## Previous (as of 2026-07-29 — Questions List config, contact-check blurb/table cleanup)
 
