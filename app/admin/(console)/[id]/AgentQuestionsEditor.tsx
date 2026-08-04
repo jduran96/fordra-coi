@@ -43,7 +43,15 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
       return next
     })
 
+  // A checked follow-up must carry both its condition and its question text
+  // before the list can be saved (the flow rule needs both to act on it).
+  const incompleteFollowUp = questions.some(q => q.followUp && (!q.followUp.condition.trim() || !q.followUp.text.trim()))
+
   const save = () => {
+    if (incompleteFollowUp) {
+      setMessage({ kind: 'error', text: 'A follow-up needs both its condition and its question text. Fill them in or uncheck Follow-up.' })
+      return
+    }
     setMessage(null)
     startTransition(async () => {
       const fd = new FormData()
@@ -106,12 +114,37 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
               <button type="button" disabled={caseIsClosed} onClick={() => edit(prev => prev.filter((_, j) => j !== i))}
                 style={{ ...tinyBtn(caseIsClosed), color: C.error }} aria-label="Remove">✕</button>
             </div>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginLeft: 24, fontSize: 12.5, color: q.blocker ? C.error : C.txt2, cursor: caseIsClosed ? 'default' : 'pointer', userSelect: 'none', fontWeight: q.blocker ? 600 : 400 }}>
-              <input type="checkbox" checked={!!q.blocker} disabled={caseIsClosed}
-                onChange={e => setQuestion(i, { blocker: e.target.checked || undefined })}
-                style={{ accentColor: C.error }} />
-              Blocker: a negative answer ends the call
-            </label>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8, marginLeft: 24 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: q.blocker ? C.error : C.txt2, cursor: caseIsClosed ? 'default' : 'pointer', userSelect: 'none', fontWeight: q.blocker ? 600 : 400 }}>
+                <input type="checkbox" checked={!!q.blocker} disabled={caseIsClosed}
+                  onChange={e => setQuestion(i, { blocker: e.target.checked || undefined })}
+                  style={{ accentColor: C.error }} />
+                Blocker: a negative answer ends the call
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: caseIsClosed ? 'default' : 'pointer', userSelect: 'none', fontWeight: q.followUp ? 600 : 400 }}>
+                <input type="checkbox" checked={!!q.followUp} disabled={caseIsClosed}
+                  onChange={e => setQuestion(i, { followUp: e.target.checked ? { condition: '', text: '' } : undefined })}
+                  style={{ accentColor: C.earthy }} />
+                Follow-up: ask a second question only when the answer matches a condition
+              </label>
+            </div>
+            {q.followUp && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, marginLeft: 24 }}>
+                <label style={{ fontSize: 12, color: C.txt3 }}>
+                  Ask the follow-up only if...
+                  <input type="text" value={q.followUp.condition} disabled={caseIsClosed}
+                    placeholder={'e.g. they say yes'}
+                    onChange={e => setQuestion(i, { followUp: { condition: e.target.value, text: q.followUp?.text ?? '' } })}
+                    style={{ ...fieldStyle(!q.followUp.condition.trim()), marginTop: 4 }} />
+                </label>
+                <label style={{ fontSize: 12, color: C.txt3 }}>
+                  Follow-up question
+                  <textarea value={q.followUp.text} rows={2} disabled={caseIsClosed}
+                    onChange={e => setQuestion(i, { followUp: { condition: q.followUp?.condition ?? '', text: e.target.value } })}
+                    style={{ ...fieldStyle(!q.followUp.text.trim()), resize: 'vertical', lineHeight: 1.45, marginTop: 4 }} />
+                </label>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -123,9 +156,12 @@ export default function AgentQuestionsEditor({ verificationId, questions: initia
           <button type="button" disabled={pending} onClick={() => edit(prev => [...prev, { text: '' }])} style={btn(pending)}>
             Add question
           </button>
-          <button type="button" disabled={pending || !dirty} onClick={save} style={primaryBtn(pending || !dirty)}>
+          <button type="button" disabled={pending || !dirty || incompleteFollowUp} onClick={save} style={primaryBtn(pending || !dirty || incompleteFollowUp)}>
             {pending ? 'Saving...' : 'Save questions'}
           </button>
+          {incompleteFollowUp && (
+            <span style={{ fontSize: 12.5, color: C.warn }}>Fill in each follow-up&apos;s condition and question to save.</span>
+          )}
           {!regenConfirming ? (
             <button type="button" disabled={pending} onClick={() => setRegenConfirming(true)} style={{ ...btn(pending), marginLeft: 'auto' }}>
               Regenerate from standards

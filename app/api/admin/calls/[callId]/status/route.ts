@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ACTIVE_STATUSES, TERMINAL_STATUSES, syncAiCall, type AiCall } from '@/lib/ai-calls'
+import { compactTranscriptEntries } from '@/lib/call-transcript'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,12 +24,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cal
   let row = data as AiCall
   const needsSync = ACTIVE_STATUSES.includes(row.status)
     || (TERMINAL_STATUSES.includes(row.status) && !row.call_analysis)
+    // Lazy backfill: pre-0038 finished calls have a flat transcript but no
+    // structured detail; one more sync retrieves it from Retell.
+    || (TERMINAL_STATUSES.includes(row.status) && !!row.transcript && !row.transcript_detail)
   if (needsSync) row = await syncAiCall(supabase, row)
 
   return NextResponse.json({
     status: row.status,
     callStatus: row.call_status,
     transcript: row.transcript ?? '',
+    transcriptDetail: row.transcript_detail ? compactTranscriptEntries(row.transcript_detail) : null,
     disconnectionReason: row.disconnection_reason,
     durationMs: row.duration_ms,
     startedAt: row.started_at,

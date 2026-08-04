@@ -135,13 +135,18 @@ export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: bo
     return { error: 'Could not read the question rows. Please retry.' }
   }
   const questions = rows
-    .map(q => ({
-      coverage_type: String(q?.coverage_type ?? '').trim(),
-      requirement: String(q?.requirement ?? '').trim(),
-      question: String(q?.question ?? '').trim(),
-      ...(q?.blocker === true ? { blocker: true } : {}),
-      ...(q?.custom === true ? { custom: true } : {}),
-    }))
+    .map(q => {
+      const condition = String(q?.followUp?.condition ?? '').trim()
+      const fuText = String(q?.followUp?.text ?? '').trim()
+      return {
+        coverage_type: String(q?.coverage_type ?? '').trim(),
+        requirement: String(q?.requirement ?? '').trim(),
+        question: String(q?.question ?? '').trim(),
+        ...(q?.blocker === true ? { blocker: true } : {}),
+        ...(q?.custom === true ? { custom: true } : {}),
+        ...(condition && fuText ? { followUp: { condition, text: fuText } } : {}),
+      }
+    })
     // Template rows persist only with a question; custom rows have no
     // requirement key and persist on their question text alone.
     .filter(q => q.question && (q.coverage_type || q.custom))

@@ -107,7 +107,7 @@ function QuestionsEditor({ orgId, template, stored }: {
       .map((q): EditorRow | null => {
         if (q.custom) return { ...q }
         const row = templateRows.find(r => coverageMatches(q.coverage_type, r.coverage_type))
-        return row ? { ...row, question: q.question, ...(q.blocker ? { blocker: true } : {}) } : null
+        return row ? { ...row, question: q.question, ...(q.blocker ? { blocker: true } : {}), ...(q.followUp ? { followUp: q.followUp } : {}) } : null
       })
       .filter((r): r is EditorRow => !!r),
     ...templateRows
@@ -140,6 +140,12 @@ function QuestionsEditor({ orgId, template, stored }: {
   }
 
   const save = () => {
+    // The action drops a follow-up missing either field; block instead so a
+    // half-filled one is never silently lost.
+    if (rows.some(r => r.followUp && (!r.followUp.condition.trim() || !r.followUp.text.trim()))) {
+      setMessage({ kind: 'error', text: 'A follow-up needs both its condition and its question text. Fill them in or uncheck Follow-up.' })
+      return
+    }
     setMessage(null)
     startTransition(async () => {
       const fd = new FormData()
@@ -185,12 +191,37 @@ function QuestionsEditor({ orgId, template, stored }: {
                 style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove question">✕</button>
             )}
           </div>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12.5, color: row.blocker ? C.error : C.txt2, cursor: 'pointer', userSelect: 'none', fontWeight: row.blocker ? 600 : 400 }}>
-            <input type="checkbox" checked={!!row.blocker}
-              onChange={e => setRow(i, { blocker: e.target.checked || undefined })}
-              style={{ accentColor: C.error }} />
-            Default blocker: a negative answer ends the call
-          </label>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: row.blocker ? C.error : C.txt2, cursor: 'pointer', userSelect: 'none', fontWeight: row.blocker ? 600 : 400 }}>
+              <input type="checkbox" checked={!!row.blocker}
+                onChange={e => setRow(i, { blocker: e.target.checked || undefined })}
+                style={{ accentColor: C.error }} />
+              Default blocker: a negative answer ends the call
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: 'pointer', userSelect: 'none', fontWeight: row.followUp ? 600 : 400 }}>
+              <input type="checkbox" checked={!!row.followUp}
+                onChange={e => setRow(i, { followUp: e.target.checked ? { condition: '', text: '' } : undefined })}
+                style={{ accentColor: C.txt2 }} />
+              Follow-up: ask a second question only when the answer matches a condition
+            </label>
+          </div>
+          {row.followUp && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              <label style={{ fontSize: 12, color: C.txt3 }}>
+                Ask the follow-up only if...
+                <input type="text" value={row.followUp.condition}
+                  placeholder="e.g. they say yes"
+                  onChange={e => setRow(i, { followUp: { condition: e.target.value, text: row.followUp?.text ?? '' } })}
+                  style={{ ...inputStyle, marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: 12, color: C.txt3 }}>
+                Follow-up question
+                <textarea value={row.followUp.text} rows={2}
+                  onChange={e => setRow(i, { followUp: { condition: row.followUp?.condition ?? '', text: e.target.value } })}
+                  style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.45, marginTop: 4 }} />
+              </label>
+            </div>
+          )}
         </div>
       ))}
       {orphaned.length > 0 && (

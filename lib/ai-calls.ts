@@ -23,7 +23,10 @@ export async function syncAiCall(
 ): Promise<AiCall> {
   if (!row.retell_call_id) return row
   const terminal = TERMINAL_STATUSES.includes(row.status)
-  if (terminal && row.call_analysis) return row
+  // Terminal rows re-sync once more if the structured transcript is missing
+  // but a flat one exists (pre-0038 rows); failed/no-answer calls with no
+  // transcript at all will never grow one, so they stay no-ops.
+  if (terminal && row.call_analysis && (row.transcript_detail || !row.transcript)) return row
   let snapshot: RetellCallSnapshot
   try {
     snapshot = await retrieveCall(row.retell_call_id) as RetellCallSnapshot

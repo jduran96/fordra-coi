@@ -56,6 +56,11 @@ setting is retuned, append/update an entry here in the same format.
   (e2e/llm/tts/asr percentiles) and `transcript_object` with per-word
   timestamps — overlapping start/end times show exactly who talked over whom.
   Post-call extraction lands in `call_analysis.custom_analysis_data`.
+  Since 2026-08-04, `transcript_with_tool_calls` is also persisted to
+  `ai_calls.transcript_detail` (jsonb; lazy-backfilled by the admin status
+  route) and rendered structured in the admin console (`TranscriptView`,
+  formatter `lib/call-transcript.ts`) — the flat `transcript` string stays
+  for extraction and is low-fidelity (interleaved overlap, no DTMF/holds).
 
 ## Settings history
 
@@ -66,6 +71,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-07-29 (v18) | 1.0 | 0.7 | voicemail fixes only (see issues 7-8), voice settings unchanged |
 | 2026-08-03 (v19) | 1.0 | 0.7 | opener v2 + verbosity pass + transcript-audit fixes (issues 9-11), voice settings unchanged |
 | 2026-08-03 (v20) | 1.0 | 0.7 | owner corrections: callback number reverted, insured-name exchange, refusal channel-ask (N6b), IVR hardening (issue 12), voice settings unchanged |
+| 2026-08-04 (v21) | 1.0 | 0.7 | VRF-1110 fixes (issues 13-15): live-rep hold rule, answer-pacing rules, IVR call-start hardening, conditional follow-up rule; `reminder_trigger_ms` 30000 → 45000 |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -273,6 +279,78 @@ say-or-enter, "complete sentences") even at call start; press-node conditions
 never trigger on say-or-enter prompts. Covered by the `ai-gatekeeper` and
 `callback-queue` scenarios; the harness's bracketed-narration scan runs on
 every scenario.
+
+## 13. Live rep says "give me a second" — agent kept firing questions
+
+**Symptom (VRF-1110, call_2ae55580c7e18aa6944e1fd2692, 2026-08-04, v20):**
+rep said "Give me one second, please, I verify this information"; 6s later
+the agent asked the NEXT question, the 30s reminder nudged mid-check, and
+when she returned (~110s later) it re-asked a question she was answering.
+Repeated twice more in the same call; once it skipped the pending question.
+
+**Cause:** global-prompt rule 8 (stay silent on hold) exists, but the Gate
+and N5 node prompts dominate each turn and had a wait rule ONLY for
+transfers; nothing covered "let me check". The agent-level
+`reminder_trigger_ms: 30000` fired regardless.
+
+**Remedy (shipped v21):** explicit hold rule on node-gate, node-n5, AND
+node-n4c — cues include "give me a second", "let me check", "let me check
+on that", bare "checking", "one moment", "hold on" (owner-broadened
+2026-08-04); on any of them say only "Of course." then full silence ("Of
+course." is the ENTIRE turn; a still-checking update gets NOTHING, not
+"Understood"); no new question, no re-ask, no check-in; on return resume
+the pending question (or accept the answer given). `reminder_trigger_ms`
+raised to 45000 (`reminder_max_count` stays 1). Test scenario
+`hold-live-rep` (deterministic fallback: the correct behavior is silent
+turns, which trips the simulator's liveness kill). The exact-silence
+wording took three iterations — the LLM pads acknowledgments unless told
+the ack is the entire turn and never repeats. It then emitted a literal
+"[No response.]" placeholder on silent turns (issue 12 through a new
+door), so every silence-required node (gate/N5/N4c hold rule, navigator,
+both press nodes) carries an explicit "never emit placeholder text such
+as [No response.] - an empty output is the correct response" clause.
+Reuse that clause verbatim anywhere silence is added.
+
+## 14. Barreling past partial/list answers
+
+**Symptom (same VRF-1110 call):** "Who are all the insured parties?" — rep
+gave ONE name, agent moved on 1.1s later without "anyone else?". "Year,
+make, and model?" — rep said only "two thousand twenty four", agent moved on.
+
+**Cause:** N5 rule 4 covers replies that don't answer the question at all;
+nothing covered partially-answered or list questions, and rule 5 ("take
+answers as given and move on") won.
+
+**Remedy (shipped v21):** N5 gets a GENERIC patience rule only — give
+people time to finish, never treat the first words as the whole answer,
+and ask for the missing part of a multi-part question. Question-specific
+re-asks ("Is that everyone listed?") are NOT prompt text by owner decision
+(2026-08-04, "let admin decide what needs reasking"): configure them as
+per-question follow-ups (issue 15), e.g. condition "they name only one
+party" → "Is that everyone listed on the certificate?". Do NOT touch
+responsiveness/interruption_sensitivity for this (see issues 1-2). Test
+scenario `partial-answer` (its question list carries the configured
+follow-up).
+
+## 15. Conditional follow-up questions are DATA, not prompt text
+
+The admin can attach `followUp: {condition, text}` to any question
+(per-deal AI-tab editor and org-level settings Questions List;
+`lib/call-config.ts` AiCallQuestion). `renderQuestions` emits it as an
+indented `- Follow-up (only if: <condition>): <text>` line, and ONE generic
+rule on node-gate + node-n5 (shipped v21) interprets all of them: never read
+the line with the main question, ask it as its own question only when the
+answer matches the condition, never repeat. New follow-ups need NO flow
+change. Keep the rendered wording and the flow rule in sync if either
+changes. Test scenarios `conditional-followup` / `conditional-followup-no`.
+First use: the NTL/Bobtail + operator-primary-coverage combo question is now
+split into main + follow-up instead of one confusing mega-question.
+
+**Also fixed in v21 (extends issue 12):** the opener was spoken over a
+"For English, press one" menu at call start (VRF-1110: pressed 1 only on the
+menu's third replay). Both `node-ivr-press` and `node-ivr` global conditions
+now say to trigger even on the very first thing heard, BEFORE any opening
+line is spoken — a keypad menu answer means keypress first, opener never.
 
 ## Standing rules for any change here
 

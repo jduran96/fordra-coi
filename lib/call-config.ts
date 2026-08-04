@@ -23,10 +23,17 @@ import type { COIExtracted, ContactCheckEntry, OnlineListingStatus, Requirement 
  * One question for the voice agent, exactly as it should be asked.
  * `blocker` questions are asked FIRST, in the flow's gate node: a negative
  * answer (policy not active, vehicle not listed) ends the call immediately.
+ * `followUp` is an optional conditional second question, asked separately
+ * right after the main answer ONLY when that answer matches `condition`
+ * (e.g. condition "they say yes", text "Do you have details on the
+ * operator's primary coverage?"). One generic flow rule interprets the
+ * rendered "Follow-up (only if: ...)" line; per-question logic lives here
+ * in data, never in the flow prompt.
  */
 export interface AiCallQuestion {
   text: string
   blocker?: boolean
+  followUp?: { condition: string; text: string }
 }
 
 /** One certificate/deal fact the agent may state: label + value, admin-edited. */
@@ -229,7 +236,13 @@ export function defaultQuestionsFromAgentQuestions(raw: unknown): AiCallQuestion
       if (q && typeof q === 'object' && typeof (q as { text?: unknown }).text === 'string') {
         const text = (q as { text: string }).text.trim()
         if (!text) return null
-        return (q as { blocker?: unknown }).blocker === true ? { text, blocker: true } : { text }
+        const out: AiCallQuestion = (q as { blocker?: unknown }).blocker === true ? { text, blocker: true } : { text }
+        const fu = (q as { followUp?: { condition?: unknown; text?: unknown } }).followUp
+        if (fu && typeof fu.condition === 'string' && typeof fu.text === 'string'
+          && fu.condition.trim() && fu.text.trim()) {
+          out.followUp = { condition: fu.condition.trim(), text: fu.text.trim() }
+        }
+        return out
       }
       return null
     })
@@ -246,9 +259,19 @@ export function isCuratedQuestionList(raw: unknown): boolean {
   return Array.isArray(raw) && raw.some(q => !!q && typeof q === 'object')
 }
 
-/** Render the question list into a plain numbered list. */
+/**
+ * Render the question list into a plain numbered list. A question's
+ * conditional follow-up renders as an indented line in a fixed convention
+ * the flow's follow-up rule keys on; keep the "Follow-up (only if: ...)"
+ * wording in sync with that rule when changing either.
+ */
 export function renderQuestions(questions: AiCallQuestion[]): string {
-  return questions.map((q, i) => `${i + 1}. ${q.text.trim()}`).join('\n')
+  return questions.map((q, i) => {
+    const main = `${i + 1}. ${q.text.trim()}`
+    return q.followUp
+      ? `${main}\n   - Follow-up (only if: ${q.followUp.condition.trim()}): ${q.followUp.text.trim()}`
+      : main
+  }).join('\n')
 }
 
 /** The N1 opening line exactly as the agent will speak it (owner wording

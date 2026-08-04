@@ -14,6 +14,7 @@ import {
   type AiCall,
 } from '@/lib/ai-calls'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
+import { formatTranscriptText } from '@/lib/call-transcript'
 import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
 import { generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
@@ -69,10 +70,16 @@ function parseQuestions(formData: FormData): AiCallQuestion[] | null {
     if (!Array.isArray(raw)) return null
     return raw
       .filter((q): q is Record<string, unknown> => !!q && typeof q === 'object')
-      .map((q): AiCallQuestion => ({
-        text: String(q.text ?? '').trim(),
-        ...(q.blocker === true ? { blocker: true } : {}),
-      }))
+      .map((q): AiCallQuestion => {
+        const fu = (q.followUp ?? null) as { condition?: unknown; text?: unknown } | null
+        const condition = String(fu?.condition ?? '').trim()
+        const fuText = String(fu?.text ?? '').trim()
+        return {
+          text: String(q.text ?? '').trim(),
+          ...(q.blocker === true ? { blocker: true } : {}),
+          ...(condition && fuText ? { followUp: { condition, text: fuText } } : {}),
+        }
+      })
       .filter(q => q.text)
   } catch {
     return null
@@ -403,7 +410,10 @@ export async function publishAiCallNote(verificationId: string, aiCallId: string
     contact_method: 'call',
     summary_html,
     summary_text,
-    transcript: call.transcript ?? '',
+    // The note's transcript is what the customer page renders (pre-wrap):
+    // prefer the readable structured rendering (timestamps, keypad presses,
+    // hold gaps) over Retell's flat interleaved string.
+    transcript: call.transcript_detail?.length ? formatTranscriptText(call.transcript_detail) : (call.transcript ?? ''),
     contact,
     check_data,
     agent: 'ai',

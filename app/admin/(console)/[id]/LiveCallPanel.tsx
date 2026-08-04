@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { C } from '@/lib/theme'
 import { stopAiCall } from './call/actions'
+import TranscriptView from './TranscriptView'
+import type { TranscriptEntry } from '@/lib/ai-call-shared'
 
 /**
  * Live view of one in-flight AI call: polls the admin status endpoint every
@@ -16,6 +18,7 @@ interface StatusPayload {
   status: string
   callStatus?: string | null
   transcript: string
+  transcriptDetail?: TranscriptEntry[] | null
   disconnectionReason?: string | null
   durationMs?: number | null
   startedAt?: string | null
@@ -69,7 +72,7 @@ export default function LiveCallPanel({ verificationId, aiCallId, initial }: {
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
-  }, [state.transcript])
+  }, [state.transcript, state.transcriptDetail])
 
   const elapsed = (() => {
     if (typeof state.durationMs === 'number' && state.durationMs > 0) return format(state.durationMs)
@@ -118,7 +121,7 @@ export default function LiveCallPanel({ verificationId, aiCallId, initial }: {
       {stopError && <p style={{ fontSize: 13, color: C.error, margin: '8px 0 0' }}>{stopError}</p>}
       {state.error && <p style={{ fontSize: 13, color: C.error, margin: '8px 0 0' }}>{state.error}</p>}
       <div ref={transcriptRef} style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, paddingLeft: 12, borderLeft: `2px solid ${C.border}` }}>
-        {state.transcript || (active ? '' : 'No transcript.')}
+        <TranscriptView detail={state.transcriptDetail ?? null} flat={state.transcript} emptyText={active ? '' : 'No transcript.'} />
       </div>
     </div>
   )

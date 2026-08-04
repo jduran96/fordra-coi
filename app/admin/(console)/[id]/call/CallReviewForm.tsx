@@ -172,7 +172,8 @@ export default function CallReviewForm({ verificationId, context: initialContext
         <Title>Questions</Title>
         <p style={{ fontSize: 13.5, color: C.txt2, margin: 0 }}>
           This call asks the {questions.filter(q => q.text.trim()).length} questions from the master list in the AI tab
-          {questions.some(q => q.blocker) ? `, ${questions.filter(q => q.blocker).length} of them blockers asked first` : ''}. Edit them there before dispatching.
+          {questions.some(q => q.blocker) ? `, ${questions.filter(q => q.blocker).length} of them blockers asked first` : ''}
+          {questions.some(q => q.followUp) ? `, ${questions.filter(q => q.followUp).length} with a conditional follow-up` : ''}. Edit them there before dispatching.
         </p>
       </section>
 

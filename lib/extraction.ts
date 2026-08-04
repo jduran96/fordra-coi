@@ -81,7 +81,7 @@ export async function questionsFromConfig(input: {
   requirements: Requirement[]
   coiExtracted: unknown
   promptOverride?: string
-}): Promise<(string | { text: string; blocker?: boolean })[] | null> {
+}): Promise<(string | { text: string; blocker?: boolean; followUp?: { condition: string; text: string } })[] | null> {
   if (!input.orgId || !input.templateId) return null
   try {
     const config = await getQuestionsConfig(input.orgId, input.templateId)
@@ -95,6 +95,12 @@ export async function questionsFromConfig(input: {
       .map(q => ({
         text: applyQuestionTokens(q.question, values),
         ...(q.blocker ? { blocker: true as const } : {}),
+        ...(q.followUp ? {
+          followUp: {
+            condition: q.followUp.condition,
+            text: applyQuestionTokens(q.followUp.text, values),
+          },
+        } : {}),
       }))
     if (!configured.length) return null
     // The config replaces generation only for the rows it covers; the rest

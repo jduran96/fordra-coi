@@ -32,6 +32,10 @@ export interface ConfiguredQuestion {
   /** Free-standing question not tied to any template requirement row: always
    *  populated, never counts as covering a requirement. */
   custom?: boolean
+  /** Conditional second question, asked separately only when the main answer
+   *  matches `condition` (same shape as AiCallQuestion.followUp; rides into
+   *  the per-deal list verbatim, still editable in the AI tab). */
+  followUp?: { condition: string; text: string }
 }
 
 export interface QuestionsListConfig {
@@ -48,14 +52,18 @@ export function parseQuestionsConfig(value: unknown): QuestionsListConfig | null
   const questions = raw
     .map((q): ConfiguredQuestion | null => {
       if (!q || typeof q !== 'object') return null
-      const { coverage_type, requirement, question, blocker, custom } = q as Record<string, unknown>
+      const { coverage_type, requirement, question, blocker, custom, followUp } = q as Record<string, unknown>
       if (typeof coverage_type !== 'string' || typeof question !== 'string') return null
+      const fu = followUp as { condition?: unknown; text?: unknown } | undefined
+      const fuCondition = typeof fu?.condition === 'string' ? fu.condition.trim() : ''
+      const fuText = typeof fu?.text === 'string' ? fu.text.trim() : ''
       return {
         coverage_type: coverage_type.trim(),
         requirement: typeof requirement === 'string' ? requirement : coverage_type.trim(),
         question: question.trim(),
         ...(blocker === true ? { blocker: true } : {}),
         ...(custom === true ? { custom: true } : {}),
+        ...(fuCondition && fuText ? { followUp: { condition: fuCondition, text: fuText } } : {}),
       }
     })
     .filter((q): q is ConfiguredQuestion => !!q && (!!q.coverage_type || (!!q.custom && !!q.question)))

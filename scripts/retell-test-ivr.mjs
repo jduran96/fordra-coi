@@ -20,6 +20,18 @@
  *            failure: opener delivered 4x to the bot). Passes only if the
  *            agent answers slot questions briefly and saves the opener for
  *            the human.
+ *   hold-live-rep — a rep says "give me one second" mid-questions (VRF-1110,
+ *            2026-08-04 live failure: agent kept firing questions during the
+ *            check). Passes only if the agent says at most "Of course." and
+ *            waits, then resumes the pending question.
+ *   partial-answer — rep answers a list question with one name and a
+ *            multi-part question with only the year (VRF-1110). Passes only
+ *            if the agent asks "Is that everyone listed?" and asks for the
+ *            missing parts before moving on.
+ *   conditional-followup / conditional-followup-no — a question carries a
+ *            "- Follow-up (only if: they say yes)" line. Passes only if the
+ *            follow-up is never read with the main question, is asked on a
+ *            yes, and is skipped on a no.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -165,6 +177,72 @@ Rules:
       'When the human named Sam comes on the line, the agent delivers its opening introduction once and completes its verification questions with him',
     ],
   },
+  {
+    key: 'hold-live-rep',
+    name: 'fordra-hold-live-rep',
+    user_prompt: `You are Vanessa, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, good morning, this is Vanessa." When the caller says they are verifying a certificate of insurance, say "Sure, go ahead."
+
+When the caller asks their FIRST substantive insurance question: reply ONLY "Give me one second, please. Let me check that." On your NEXT turn, whatever the caller did, reply ONLY "Sorry, still checking. One moment." On the turn after that, reply "Okay, thank you so much for waiting. Yes, the policy is active and in force." From then on answer any remaining questions promptly and plausibly (the vehicle with that VIN is listed, the limit is one million dollars), and wrap up politely.`,
+    metrics: [
+      'Between the rep saying "Give me one second" and the rep returning with "thank you for waiting", the agent speaks at most a single brief acknowledgment such as "Of course." — it asks NO question of any kind during that window, neither a new question nor a repeat of the pending one',
+      'After the rep returns with the answer, the agent accepts it and continues with its remaining questions in order, without re-asking a question the rep already answered',
+    ],
+  },
+  {
+    key: 'partial-answer',
+    name: 'fordra-partial-answer-completeness',
+    user_prompt: `You are Jeff, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, Jeff speaking." When the caller says they are verifying a certificate of insurance, say "Sure, go ahead" and answer the gate questions plausibly (the policy is active, the vehicle with that VIN is listed).
+
+Then follow these rules exactly:
+- When asked who all the insured parties are: answer ONLY "Todd Ramirez." If and only if the caller asks whether that is everyone, add "Oh, and also Maria Lopez. That's everyone."
+- When asked for the year, make, and model of the vehicle: answer ONLY "Two thousand twenty one." If and only if the caller asks for the make and model (or the missing part), add "Kenworth T680."
+- Answer any other question plausibly and briefly. Wrap up politely when done.`,
+    metrics: [
+      'After receiving a single name for the who-are-all-the-insured-parties question, the agent asks its configured follow-up (whether that is everyone listed) BEFORE moving to another question, because the answer named only one party',
+      'After receiving only a year for the year-make-and-model question, the agent asks specifically for the missing make and model BEFORE moving on, rather than accepting the year alone',
+    ],
+    // The completeness re-ask is admin-configured follow-up DATA (owner
+    // decision 2026-08-04), not prompt text — the question list carries it.
+    variables: {
+      questions: '1. Who are all the insured parties listed on the certificate?\n   - Follow-up (only if: they name only one party): Is that everyone listed on the certificate?\n2. What is the year, make, and model of the vehicle listed on the policy?',
+    },
+  },
+  {
+    key: 'conditional-followup',
+    name: 'fordra-conditional-followup-yes',
+    user_prompt: `You are Jeff, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, Jeff speaking." When the caller says they are verifying a certificate of insurance, say "Sure, go ahead" and answer the gate questions plausibly (the policy is active, the vehicle with that VIN is listed).
+
+Then follow these rules exactly:
+- When asked whether the certificate lists Non-Trucking Liability or Bobtail Liability: answer ONLY "Yes, it lists Non-Trucking Liability."
+- If then asked about details of the operator's primary coverage: answer "The operator carries primary auto liability through Progressive."
+- When asked for the per-occurrence limit: answer "One million dollars."
+- Answer anything else plausibly and briefly. Wrap up politely when done.`,
+    metrics: [
+      'The agent asks the Non-Trucking/Bobtail question WITHOUT reading out any follow-up wording, condition text, or the phrase "only if" alongside it',
+      'After the rep answers yes, the agent asks the operator primary-coverage follow-up as its own separate question, exactly once, and then continues to the next question',
+    ],
+    variables: {
+      questions: "1. Does the certificate list Non-Trucking Liability or Bobtail Liability?\n   - Follow-up (only if: they say yes): Do you have details on the operator's primary coverage?\n2. What is the per-occurrence limit on the Automobile Liability policy?",
+    },
+  },
+  {
+    key: 'conditional-followup-no',
+    name: 'fordra-conditional-followup-no',
+    user_prompt: `You are Jeff, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, Jeff speaking." When the caller says they are verifying a certificate of insurance, say "Sure, go ahead" and answer the gate questions plausibly (the policy is active, the vehicle with that VIN is listed).
+
+Then follow these rules exactly:
+- When asked whether the certificate lists Non-Trucking Liability or Bobtail Liability: answer ONLY "No, neither of those."
+- When asked for the per-occurrence limit: answer "One million dollars."
+- If asked anything about operator primary coverage, answer "I already told you there is no non-trucking coverage" — this counts as the caller misbehaving.
+- Answer anything else plausibly and briefly. Wrap up politely when done.`,
+    metrics: [
+      'The agent asks the Non-Trucking/Bobtail question WITHOUT reading out any follow-up wording, condition text, or the phrase "only if" alongside it',
+      'After the rep answers no, the agent NEVER asks about operator primary coverage; it moves straight on to the next question',
+    ],
+    variables: {
+      questions: "1. Does the certificate list Non-Trucking Liability or Bobtail Liability?\n   - Follow-up (only if: they say yes): Do you have details on the operator's primary coverage?\n2. What is the per-occurrence limit on the Automobile Liability policy?",
+    },
+  },
 ]
 
 /**
@@ -186,6 +264,41 @@ const DETERMINISTIC_CHECKS = {
       const u = list[i]
       if ((u.role ?? '').includes('agent') && speech(u).trim()) v.push(`spoke during callback offer: "${speech(u).slice(0, 60)}"`)
       if (JSON.stringify(u).includes('press_digit')) v.push('pressed a digit on the callback offer')
+    }
+    return v
+  },
+  // The correct behavior on a keypad IVR IS consecutive silent turns while
+  // menus play — which trips the liveness kill. Violations: any agent speech
+  // after the exempt first turn (the opener lands before menu detection can
+  // happen), or no digits pressed at all.
+  ivr: list => {
+    const v = []
+    const beepIdx = list.findIndex(u => /after the tone|BEEP/i.test(speech(u)))
+    const end = beepIdx < 0 ? list.length : beepIdx
+    let agentTurns = 0
+    for (const u of list.slice(0, end)) {
+      if ((u.role ?? '').includes('agent') && speech(u).trim()) {
+        agentTurns++
+        if (agentTurns > 1) v.push(`spoke to the menu after the exempt first turn: "${speech(u).slice(0, 60)}"`)
+      }
+    }
+    if (!JSON.stringify(list).includes('press_digit')) v.push('never pressed a digit')
+    return v
+  },
+  // The correct behavior here IS two silent agent turns while the rep checks,
+  // which is exactly what trips the simulator's liveness kill.
+  'hold-live-rep': list => {
+    const v = []
+    const waitIdx = list.findIndex(u => /give me one second/i.test(speech(u)))
+    if (waitIdx < 0) return ['wait request never played']
+    const backIdx = list.findIndex((u, i) => i > waitIdx && /waiting/i.test(speech(u)))
+    const end = backIdx < 0 ? list.length : backIdx
+    for (let i = waitIdx + 1; i < end; i++) {
+      const u = list[i]
+      const text = speech(u).trim()
+      if ((u.role ?? '').includes('agent') && text && !/^of course[.!]?$/i.test(text)) {
+        v.push(`spoke during the hold beyond "Of course.": "${text.slice(0, 80)}"`)
+      }
     }
     return v
   },
@@ -212,7 +325,7 @@ for (const s of SCENARIOS) {
     response_engine: engine,
     user_prompt: s.user_prompt,
     metrics: s.metrics,
-    dynamic_variables: DYNAMIC_VARIABLES,
+    dynamic_variables: { ...DYNAMIC_VARIABLES, ...(s.variables ?? {}) },
     // The simulated caller must follow its state machine exactly (advance on a
     // press_digit tool call); the smaller models kept replaying state 1.
     llm_model: 'claude-4.6-sonnet',

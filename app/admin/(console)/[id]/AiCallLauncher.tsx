@@ -10,6 +10,7 @@ import type { AiCallQuestion, CallContextFields, NumberCandidate, ReferenceDetai
 import CallReviewForm from './call/CallReviewForm'
 import LiveCallPanel from './LiveCallPanel'
 import PublishCallButton from './PublishCallButton'
+import TranscriptView from './TranscriptView'
 
 /**
  * The AI-calling section: one button that opens the whole call lifecycle in a
@@ -67,6 +68,7 @@ export default function AiCallLauncher({ verificationId, context, questions, det
           initial={{
             status: activeCall.status,
             transcript: activeCall.transcript ?? '',
+            transcriptDetail: activeCall.transcript_detail,
             durationMs: activeCall.duration_ms,
             startedAt: activeCall.started_at,
             error: activeCall.error,
@@ -199,23 +201,29 @@ function CallView({ verificationId, caseIsClosed, call, callId }: {
   const router = useRouter()
   const terminal = !!call && TERMINAL_STATUSES.includes(call.status)
   const hasAnalysis = !!call?.call_analysis
+  // Pre-0038 rows: a flat transcript with no structured detail. Polling the
+  // status endpoint makes it backfill transcript_detail from Retell.
+  const needsDetail = terminal && !!call?.transcript && !call?.transcript_detail
 
   // Retell's summary lands up to a minute AFTER the call ends, and the live
   // panel stops polling at the terminal status. The status endpoint syncs
-  // analysis for terminal rows when polled (the webhook only covers
-  // production), so keep polling while this view waits on the summary.
+  // analysis (and lazily backfills transcript_detail) for terminal rows when
+  // polled (the webhook only covers production), so keep polling while this
+  // view waits on either.
   useEffect(() => {
-    if (!terminal || hasAnalysis) return
+    if (!terminal || (hasAnalysis && !needsDetail)) return
     const t = setInterval(async () => {
       try {
         const res = await fetch(`/api/admin/calls/${callId}/status`, { cache: 'no-store' })
-        if (res.ok && (await res.json()).hasAnalysis) router.refresh()
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.hasAnalysis && (!needsDetail || data.transcriptDetail)) router.refresh()
       } catch {
         // Transient poll failure: try again next tick.
       }
     }, 5000)
     return () => clearInterval(t)
-  }, [terminal, hasAnalysis, callId, router])
+  }, [terminal, hasAnalysis, needsDetail, callId, router])
   if (!terminal) {
     return (
       <LiveCallPanel
@@ -224,6 +232,7 @@ function CallView({ verificationId, caseIsClosed, call, callId }: {
         initial={{
           status: call?.status ?? 'dispatched',
           transcript: call?.transcript ?? '',
+          transcriptDetail: call?.transcript_detail ?? null,
           durationMs: call?.duration_ms,
           startedAt: call?.started_at,
           error: call?.error,
@@ -256,7 +265,7 @@ function CallView({ verificationId, caseIsClosed, call, callId }: {
         <div>
           <h3 style={sub}>Transcript</h3>
           <div style={{ fontSize: 13, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere', maxHeight: 300, overflowY: 'auto', paddingLeft: 14, borderLeft: `2px solid ${C.border}` }}>
-            {call.transcript.trim()}
+            <TranscriptView detail={call.transcript_detail} flat={call.transcript.trim()} />
           </div>
         </div>
       )}

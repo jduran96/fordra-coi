@@ -41,6 +41,7 @@ export interface AiCall {
   retell_call_id: string | null
   call_status: string | null
   transcript: string | null
+  transcript_detail: TranscriptEntry[] | null
   call_analysis: RetellCallAnalysis | null
   recording_url: string | null
   disconnection_reason: string | null
@@ -60,11 +61,27 @@ export interface RetellCallAnalysis {
   in_voicemail?: boolean
 }
 
+/**
+ * Retell's transcript_with_tool_calls entries, hand-declared so client
+ * components can consume them without importing retell-sdk (see the module
+ * header). A strict superset of transcript_object: speech utterances with
+ * per-word timings plus tool calls, node transitions, and DTMF presses.
+ */
+export type TranscriptWord = { word?: string; start?: number; end?: number }
+export type TranscriptEntry =
+  | { role: 'agent' | 'user' | 'transfer_target'; content: string; words?: TranscriptWord[] }
+  | { role: 'tool_call_invocation'; name: string; arguments: string; tool_call_id?: string }
+  | { role: 'tool_call_result'; content: string; tool_call_id?: string }
+  | { role: 'node_transition'; former_node_name?: string; new_node_name?: string }
+  | { role: 'dtmf'; digit: string }
+  | { role: 'sms'; content: string; time_sec?: number }
+
 /** The subset of Retell's call object the mapper reads. */
 export interface RetellCallSnapshot {
   call_id?: string
   call_status?: 'registered' | 'not_connected' | 'ongoing' | 'ended' | 'error'
   transcript?: string
+  transcript_with_tool_calls?: TranscriptEntry[]
   call_analysis?: RetellCallAnalysis
   recording_url?: string
   recording_multi_channel_url?: string
@@ -98,6 +115,7 @@ export function applyRetellCall(call: RetellCallSnapshot): Partial<AiCall> {
   const patch: Partial<AiCall> = {}
   if (call.call_status) patch.call_status = call.call_status
   if (call.transcript) patch.transcript = call.transcript
+  if (call.transcript_with_tool_calls?.length) patch.transcript_detail = call.transcript_with_tool_calls
   if (call.call_analysis) patch.call_analysis = call.call_analysis
   const recording = call.recording_multi_channel_url || call.recording_url
   if (recording) patch.recording_url = recording
