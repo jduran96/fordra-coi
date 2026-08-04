@@ -73,6 +73,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-03 (v20) | 1.0 | 0.7 | owner corrections: callback number reverted, insured-name exchange, refusal channel-ask (N6b), IVR hardening (issue 12), voice settings unchanged |
 | 2026-08-04 (v21) | 1.0 | 0.7 | VRF-1110 fixes (issues 13-15): live-rep hold rule, answer-pacing rules, IVR call-start hardening, conditional follow-up rule; `reminder_trigger_ms` 30000 → 45000 |
 | 2026-08-04 (v22) | 1.0 | 0.7 | settings-only (flow byte-identical to v21): `reminder_trigger_ms` 45000 → 60000 — owner call after VRF-1111 showed real holds run past 45s and the reminder cannot be exercised in the simulator |
+| 2026-08-04 (v23) | 1.0 | 0.7 | VRF-1111 fixes (issue 16): transfer ack once per transfer, thinking-aloud patience, hold-noise silence; voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -257,6 +258,12 @@ blocks progress, choose voicemail if offered, otherwise end. The carve-out
 wording is scoped so the Colstan closed-office menu (pressing category
 digits toward voicemail) still passes — if the `ivr` test scenario ever
 regresses, restore the carve-out, do not relax navigator rule 0.
+Harness note (2026-08-04): the simulator's LLM judge once failed this
+scenario by inferring a keypress from `node_transition` entries alone (no
+press_digit tool call existed); the metric now tells the judge that only
+explicit press_digit invocations count. If a scenario fails on judge
+reasoning that contradicts the raw transcript, check for that artifact
+before touching the flow.
 
 ## 12. Conversational AI gatekeepers: opener re-delivered, narration, spurious presses
 
@@ -353,6 +360,57 @@ split into main + follow-up instead of one confusing mega-question.
 menu's third replay). Both `node-ivr-press` and `node-ivr` global conditions
 now say to trigger even on the very first thing heard, BEFORE any opening
 line is spoken — a keypad menu answer means keypress first, opener never.
+
+## 16. One-line interjections re-triggered rules meant to fire once (VRF-1111)
+
+**Symptom (NASTC call, 2026-08-04, agent v21):** three flavors of the same
+failure — the agent answered every callee turn, including turns that
+deserved silence: (a) James said "I'm gonna send you to Michelle" → agent
+"Thank you." → James's stray "Yes," → agent "Thank you." AGAIN; (b) rep
+exclaimed "Oh my goodness." at a list question, paused 3s, and the agent's
+re-ask (rule 2, reply-doesn't-answer) landed exactly as she resumed with
+"It is..." — cut her off; (c) during a lookup hold, a burst of
+unintelligible audio drew a SECOND "Of course.".
+
+**Cause:** the transfer, re-ask, and hold-acknowledgment rules were written
+per-trigger, not per-episode — every callee utterance is a fresh turn, so a
+fragment, exclamation, or noise re-matched the rule. Nothing distinguished
+"speech addressed to the agent" from noise/asides.
+
+**Remedy (shipped v23, six flow iterations):** a compact SILENCE CHECK
+block at the very TOP of gate/N5/N4c (exclamations and false starts,
+mumbles/noise, anything during a hold after the single "Of course.",
+anything during a transfer after the single "Thank you." → output
+nothing; never describe waiting); the hold rule rebuilt with the
+once-guard AT THE TRIGGER sentence; transfer-ack-once on gate/N5/N4c AND
+**node-n4** (N1's transfer edge routes there — the first run failed
+because n4's own "say Thank you" rule was missed; sweep every node that
+speaks an acknowledgment) with an explicit boundary: the transfer is
+OVER the moment a new person greets you (without it the agent muted the
+new person's greeting too); the exclamation exception INLINE in the
+re-ask rules it overrides; and an N4c guard (never announce completion
+or wrap up from the lookup step — a sim run had the agent say "That's
+all I need for now" before any question was asked).
+
+Placement lessons (gpt-4.1 nodes, ~5k-char instructions): a limit stated
+below its trigger loses to the trigger re-firing on every fragment — put
+the once-per-episode cap in the trigger sentence itself; an exception to
+a rule must sit inline in that rule, not in a tail paragraph; when rules
+still lose mid-prompt, hoist a compact decision block to the TOP of the
+instruction (primacy beats one more mid-list rule).
+
+Harness lessons: test scenarios `transfer-fragment` / `thinking` /
+`hold-noise` rebuild the NASTC call as THREE scenarios with ONE silent
+beat each — the simulator kills a conversation-node run at the first
+empty-output turn it dislikes, so a scenario with two silent beats can
+never reach its second one. `hold-live-rep`'s deterministic check now
+also fails a repeated "Of course.". Deterministic checks are now
+authoritative over a failing judge (two judge false positives observed:
+a keypress inferred from node_transitions, the exempt first turn counted
+as a violation); the `ivr` check only counts speech that directly
+follows a menu-like utterance, because the sim sometimes hallucinates a
+live human mid-menu and answering that is correct. `--only=key1,key2`
+re-rolls a subset without burning a full batch.
 
 ## Standing rules for any change here
 
