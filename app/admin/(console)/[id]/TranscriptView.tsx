@@ -32,7 +32,7 @@ export default function TranscriptView({ detail, flat, emptyText = '' }: {
         if (t.kind === 'keypress') {
           return (
             <span key={i} style={{ fontSize: 12, color: C.txt3, fontFamily: C.mono }}>
-              [keypad] pressed {t.digit}
+              [keypad] {t.digit ? `pressed ${t.digit}` : 'key press attempted but failed'}
             </span>
           )
         }

@@ -19,10 +19,31 @@ export function formatSec(sec: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/**
+ * Retell lists entries in creation order, which for overlapping speech can
+ * put a later-starting utterance first (an agent line split around a menu
+ * replay shows [0:12] before [0:11]). Stable-sort by each entry's first-word
+ * start; entries without timings (keypresses, live partials) inherit the
+ * previous entry's time so they keep their relative position.
+ */
+function chronological(entries: TranscriptEntry[]): TranscriptEntry[] {
+  let carry = 0
+  return entries
+    .map((e, i) => {
+      const start = (e.role === 'agent' || e.role === 'user' || e.role === 'transfer_target')
+        ? e.words?.[0]?.start
+        : undefined
+      if (start !== undefined) carry = start
+      return { e, i, t: carry }
+    })
+    .sort((a, b) => (a.t - b.t) || (a.i - b.i))
+    .map(k => k.e)
+}
+
 export function formatTranscript(entries: TranscriptEntry[], pauseThresholdSec = 15): TranscriptTurn[] {
   const turns: TranscriptTurn[] = []
   let prevEndSec: number | undefined
-  for (const e of entries) {
+  for (const e of chronological(entries)) {
     if (e.role === 'agent' || e.role === 'user' || e.role === 'transfer_target') {
       const text = (e.content ?? '').trim()
       if (!text) continue
@@ -60,7 +81,9 @@ export function formatTranscriptText(entries: TranscriptEntry[]): string {
         ? `(${t.seconds} second pause)`
         : `(${Math.round(t.seconds / 60)} minute pause)`
     }
-    if (t.kind === 'keypress') return `(pressed ${t.digit} on the phone menu)`
+    if (t.kind === 'keypress') {
+      return t.digit ? `(pressed ${t.digit} on the phone menu)` : '(key press attempted but failed)'
+    }
     const stamp = t.atSec !== undefined ? `[${formatSec(t.atSec)}] ` : ''
     return `${stamp}${t.speaker === 'agent' ? 'Agent' : 'Insurer'}: ${t.text}`
   }).join('\n')

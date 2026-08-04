@@ -72,6 +72,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-03 (v19) | 1.0 | 0.7 | opener v2 + verbosity pass + transcript-audit fixes (issues 9-11), voice settings unchanged |
 | 2026-08-03 (v20) | 1.0 | 0.7 | owner corrections: callback number reverted, insured-name exchange, refusal channel-ask (N6b), IVR hardening (issue 12), voice settings unchanged |
 | 2026-08-04 (v21) | 1.0 | 0.7 | VRF-1110 fixes (issues 13-15): live-rep hold rule, answer-pacing rules, IVR call-start hardening, conditional follow-up rule; `reminder_trigger_ms` 30000 → 45000 |
+| 2026-08-04 (v22) | 1.0 | 0.7 | settings-only (flow byte-identical to v21): `reminder_trigger_ms` 45000 → 60000 — owner call after VRF-1111 showed real holds run past 45s and the reminder cannot be exercised in the simulator |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -300,7 +301,8 @@ on that", bare "checking", "one moment", "hold on" (owner-broadened
 course." is the ENTIRE turn; a still-checking update gets NOTHING, not
 "Understood"); no new question, no re-ask, no check-in; on return resume
 the pending question (or accept the answer given). `reminder_trigger_ms`
-raised to 45000 (`reminder_max_count` stays 1). Test scenario
+raised to 45000 (`reminder_max_count` stays 1); v22 raised it to 60000
+(see the settings table) since real holds can outlast 45s. Test scenario
 `hold-live-rep` (deterministic fallback: the correct behavior is silent
 turns, which trips the simulator's liveness kill). The exact-silence
 wording took three iterations — the LLM pads acknowledgments unless told

@@ -97,7 +97,7 @@ export async function questionsFromConfig(input: {
         ...(q.blocker ? { blocker: true as const } : {}),
         ...(q.followUp ? {
           followUp: {
-            condition: q.followUp.condition,
+            condition: applyQuestionTokens(q.followUp.condition, values),
             text: applyQuestionTokens(q.followUp.text, values),
           },
         } : {}),
