@@ -7,7 +7,7 @@ import type { Requirement } from '@/lib/types'
  * an OCR generation pass, so repeat deals on the same standard skip the
  * hand-editing. Question text may embed {tokens}: tokens matching the
  * template's per-deal variables substitute automatically (e.g. {vin_number});
- * any other {token} is left in the text for the admin to fill in the AI tab
+ * any other {token} is left in the text for the admin to fill in the Call tab
  * before dialing (dispatch blocks while one remains).
  *
  * Stored in app_config under `questions_config:<orgId>:<templateId>`
@@ -27,14 +27,14 @@ export interface ConfiguredQuestion {
   /** The question, possibly with {tokens}. Blank = no configured question for this row. */
   question: string
   /** Default blocker: populates the flag the AI call's gate node reads (a
-   *  negative answer ends the call). Still editable per deal in the AI tab. */
+   *  negative answer ends the call). Still editable per deal in the Call tab. */
   blocker?: boolean
   /** Free-standing question not tied to any template requirement row: always
    *  populated, never counts as covering a requirement. */
   custom?: boolean
   /** Conditional second question, asked separately only when the main answer
    *  matches `condition` (same shape as AiCallQuestion.followUp; rides into
-   *  the per-deal list verbatim, still editable in the AI tab). */
+   *  the per-deal list verbatim, still editable in the Call tab). */
   followUp?: { condition: string; text: string }
 }
 

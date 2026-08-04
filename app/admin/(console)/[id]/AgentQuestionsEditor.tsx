@@ -8,7 +8,7 @@ import { saveAgentQuestions, regenerateAgentQuestions } from './call/actions'
 
 /**
  * The verification's master question list (verifications.agent_questions),
- * editable in place on the AI tab. Saved lists are curated: extraction re-runs
+ * editable in place on the Call tab. Saved lists are curated: extraction re-runs
  * stop regenerating over them, and the pre-dial modal prefills from here.
  * Regenerate is the explicit way back to a fresh standards-derived list.
  */

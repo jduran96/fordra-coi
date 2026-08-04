@@ -9,7 +9,7 @@ import { saveQuestionsConfig } from './actions'
 /**
  * Per-org, per-template AI call question lists: pick an org, pick one of its
  * insurance standards, and write the standard question for each requirement
- * row. Saved lists prefill the verification's question list (AI tab) on every
+ * row. Saved lists prefill the verification's question list (Call tab) on every
  * deal submitted against that template, in the order saved here and with the
  * blocker flags set here; AI drafting only runs for rows the list does not
  * cover (special instructions, rows added after saving). Question text may

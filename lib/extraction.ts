@@ -215,7 +215,7 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // Insurer call questions track the CURRENT standards on every run (one per
   // requirement, additions and removals included); they prefill the AI call.
   // EXCEPT once the admin has hand-edited the list (object-shaped entries):
-  // curated lists are never overwritten — the AI tab's Regenerate button is
+  // curated lists are never overwritten — the Call tab's Regenerate button is
   // the explicit way back (owner decision 2026-07-28). On generation failure,
   // keep the old questions rather than wiping them.
   if (!isCuratedQuestionList(v.agent_questions)) {

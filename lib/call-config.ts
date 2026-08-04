@@ -484,7 +484,7 @@ export function validateDispatch(input: {
   const realQuestions = questions.filter(q => q.text.trim())
   if (realQuestions.length === 0) blocks.push('Add at least one question.')
   // Configured question lists (settings → Calling → Questions List) can carry
-  // per-deal {tokens} the admin fills in the AI tab; an unfilled one would be
+  // per-deal {tokens} the admin fills in the Call tab; an unfilled one would be
   // spoken literally on the call.
   const withToken = realQuestions.filter(q => /\{[a-z0-9_]+\}/i.test(q.text))
   if (withToken.length > 0) {

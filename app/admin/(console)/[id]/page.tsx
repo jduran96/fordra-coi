@@ -184,7 +184,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     }
   }
   const callContext: CallContextFields = draftInput ? { ...callPrefill.context, ...draftContext } : callPrefill.context
-  // Questions always come from the master list (the AI tab editor), never the
+  // Questions always come from the master list (the Call tab editor), never the
   // draft: the modal no longer edits them and dispatch re-reads the master.
   const callQuestions = callPrefill.questions
   const callDetails = (() => {
@@ -384,7 +384,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         </section>
         ) },
 
-        { label: 'Outreach', content: (
+        { label: 'Contacts', content: (
         <section>
           {/* Who to call (from the COI) + the contact web check, one section.
               The check is the ONE place a contact web search runs (manually
@@ -478,8 +478,27 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         </section>
         ) },
 
-        { label: 'AI', content: (
+        { label: 'Call', content: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        {/* Submitter-entered template variables, repeated from the Submissions
+            tab so values can be copy/pasted while editing questions. */}
+        <section>
+          <SectionTitle>Context</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <div style={card()}>
+              {templateVariables.length > 0 ? (
+                <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+                  {templateVariables.map(([key, val]) => (
+                    <FactRow key={key} label={humanizeToken(key)} value={val?.trim() || '—'} />
+                  ))}
+                </dl>
+              ) : (
+                <Muted>No variable inputs from submitter.</Muted>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* Master question list: edits persist on the verification and prefill
             every new call. Keyed by the data so a revalidated save remounts
             with fresh state (same React 19 staleness fix as AssessmentForm). */}

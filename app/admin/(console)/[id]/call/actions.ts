@@ -103,7 +103,7 @@ async function logActivity(
 }
 
 /**
- * Persist the master question list on the verification itself (the AI tab's
+ * Persist the master question list on the verification itself (the Call tab's
  * editor). Curated lists are stored as {text, blocker} objects — the shape
  * itself marks them hand-edited, so runExtractionPipeline stops regenerating
  * over them. Dispatch reads THIS list at dial time (the pre-dial modal does
