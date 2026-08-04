@@ -128,11 +128,12 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
 
   // Per-deal template variable values ride in the same provenance (web keeps
   // them on the object, API on the { type: 'template' } entry).
-  const templateVariables = (() => {
+  const templateVariableMap = (() => {
     const r = v.requirements as { variables?: Record<string, string> } | { type?: string; variables?: Record<string, string> }[] | null
     const vars = Array.isArray(r) ? r.find(x => x?.type === 'template')?.variables : r?.variables
-    return Object.entries(vars ?? {})
+    return vars && typeof vars === 'object' ? vars : {}
   })()
+  const templateVariables = Object.entries(templateVariableMap)
 
   const adminStatus = deriveAdminStatus(v)
   const statusCol = adminStatusColor(adminStatus)
@@ -172,6 +173,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
     config: callConfig,
     orgDetails,
+    templateVariables: templateVariableMap,
   })
   const draftInput = (aiDraft?.draft_input ?? null) as (Partial<CallContextFields> & { details_json?: string }) | null
   // Only known fields survive the merge: drafts saved before a schema change

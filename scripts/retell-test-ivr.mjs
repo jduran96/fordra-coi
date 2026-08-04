@@ -296,6 +296,22 @@ CHARACTER 2 - Michelle, insurance department rep. Greet: "NASTC Insurance. How c
       questions: "1. What is the name of the entity that holds this operator's primary coverage?\n2. What is the per-occurrence limit on the Automobile Liability policy?",
     },
   },
+  {
+    // VRF-1112: the rep demanded a detail the agent did not have (vehicle
+    // make); the agent deflected with its own gate question and the call died.
+    key: 'missing-detail',
+    name: 'fordra-progressive-missing-detail',
+    user_prompt: `You are Priya, a human rep on the commercial lines desk at Progressive Insurance. Answer the phone: "Thank you for calling Progressive commercial lines, this is Priya." When the caller explains they are verifying a certificate of insurance, say "Sure, I can pull that up. What's the insured's name?" Whatever name they give, say "Okay, I found the policy." Then follow these rules exactly:
+- Immediately after finding the policy, say: "Before I can verify anything, I need to confirm the license plate number on the vehicle. What is the plate number?"
+- If the caller says they do not have it, or offers something else instead: reply "No, I need the plate number specifically. Without it I can't verify this policy for you."
+- If the caller then asks how else or what the best way is to get the certificate verified: reply "You would need to email our verifications department, verifications at progressive dot com." Then wrap up politely and end.
+- If the caller asks you a verification question of their own (whether the policy is active, whether a vehicle is listed, who the certificate holder is, and so on) while your plate-number request stands unanswered: reply "I already told you, I can't verify anything without the plate number."
+- Never volunteer any policy information yourself.`,
+    metrics: [
+      'When asked for the plate number (which is not among its reference details), the agent says it does not have it and offers to provide something else instead; it NEVER responds to the rep\'s information request with a verification question of its own (policy active, vehicle listed, certificate holder, etc.)',
+      'After the rep says she cannot verify without the plate number, the agent asks for the best way to get the certificate verified with her office instead of pressing more verification questions, and ends politely after her answer',
+    ],
+  },
 ]
 
 /**
@@ -412,6 +428,28 @@ const DETERMINISTIC_CHECKS = {
     silentWindow(list, v, /look that up/i, /progressive/i, /^of course[.!]?$/i, 'lookup hold', 1)
     return v
   },
+  // VRF-1112: the reply to a request for a detail the agent lacks must be the
+  // miss line, never one of the agent's own verification questions; the dead
+  // end must land on the channel ask.
+  'missing-detail': list => {
+    const v = []
+    const askIdx = list.findIndex(u => (u.role ?? '') === 'user' && /plate number/i.test(speech(u)))
+    if (askIdx < 0) return ['plate-number request never played']
+    const reply = list.slice(askIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const text = reply ? speech(reply).trim() : ''
+    if (!/don'?t have/i.test(text)) v.push(`first reply to the missing detail was not the miss line: "${text.slice(0, 80)}"`)
+    if (/active|in force|certificate holder|listed on the policy/i.test(text)) {
+      v.push(`deflected the rep's request with a verification question: "${text.slice(0, 80)}"`)
+    }
+    const blockIdx = list.findIndex((u, i) => i > askIdx && /can'?t verify this policy/i.test(speech(u)))
+    if (blockIdx >= 0) {
+      const after = list.slice(blockIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+      if (after && !/best way/i.test(speech(after))) {
+        v.push(`after the dead end, did not go to the channel ask: "${speech(after).slice(0, 80)}"`)
+      }
+    }
+    return v
+  },
   'ai-gatekeeper': list => {
     const v = []
     const humanIdx = list.findIndex(u => /my name is Sam/i.test(speech(u)))
@@ -430,7 +468,7 @@ const createdIds = []
 const engine = { type: 'conversation-flow', conversation_flow_id: flowId, version }
 
 // --only=key1,key2 runs a subset (re-rolling a flaky scenario without
-// burning a full 13-simulation batch).
+// burning a full 14-simulation batch).
 const only = typeof flags.only === 'string' ? new Set(flags.only.split(',')) : null
 const selected = only ? SCENARIOS.filter(s => only.has(s.key)) : SCENARIOS
 if (only && selected.length !== only.size) {

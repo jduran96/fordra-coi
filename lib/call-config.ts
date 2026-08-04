@@ -186,8 +186,12 @@ export function valueSpoken(raw: string): string {
 /** Back-compat alias (older callers); same generator. */
 export const policyNumbersSpoken = valueSpoken
 
-/** An identifier-looking value: 6+ alphanumerics including a digit. */
+/** An identifier-looking value: a single token of 6+ alphanumerics including a
+ *  digit. Multi-word values (addresses, vehicle descriptions like
+ *  "2019 International 4300") are prose, not identifiers — hinting them with
+ *  last-four/spoken forms made the agent recite them letter by letter. */
 function isIdentifier(value: string): boolean {
+  if (/\s/.test(value.trim())) return false
   const alnum = value.replace(/[^a-z0-9]/gi, '')
   return alnum.length >= 6 && /\d/.test(alnum)
 }
@@ -301,6 +305,47 @@ export function collectVins(requirements: Requirement[]): string[] {
   return [...vins]
 }
 
+/** A label that reads like a vehicle description (not a VIN, not a dollar figure). */
+const VEHICLE_LABEL_RE = /vehicle|year|make|model|unit|truck|trailer|equipment/i
+const VEHICLE_LABEL_EXCLUDE_RE = /vin|amount|price|value|deductible|limit/i
+
+/**
+ * Vehicle description rows (year/make/model) out of the submitted standards:
+ * resolved per-deal template variables (e.g. {vehicle_listed} =
+ * "2019 International 4300") and requirement rows whose title reads
+ * vehicle-ish with the description in the limit cell. Insurers ask for
+ * year/make/model when verifying by vehicle (Progressive, VRF-1112), so the
+ * agent needs it on hand. Same submitted-standards-only sourcing as
+ * collectVins (VRF-1083). Variables are checked first: the requirements
+ * parser often rewrites row values into prose notes, where they are
+ * unrecoverable — the provenance variables keep the clean value.
+ */
+export function collectVehicleDescriptions(
+  requirements: Requirement[],
+  templateVariables?: Record<string, string>,
+): ReferenceDetail[] {
+  const details: ReferenceDetail[] = []
+  const seenValue = new Set<string>()
+  const add = (label: string, value: string) => {
+    if (!label || !value) return
+    if (!VEHICLE_LABEL_RE.test(label) || VEHICLE_LABEL_EXCLUDE_RE.test(label)) return
+    // A bare VIN is a VIN row wearing another title; collectVins has it.
+    if (/^[A-HJ-NPR-Z0-9]{17}$/.test(value.toUpperCase())) return
+    if (seenValue.has(value.toLowerCase())) return
+    seenValue.add(value.toLowerCase())
+    details.push({ label, value })
+  }
+  for (const [key, value] of Object.entries(templateVariables ?? {})) {
+    // '{vehicle_listed}' token key -> spoken-friendly 'Vehicle listed' label.
+    const label = key.replaceAll('_', ' ').trim()
+    add(label.charAt(0).toUpperCase() + label.slice(1), (value ?? '').trim())
+  }
+  for (const r of requirements) {
+    add((r.coverage_type ?? '').trim(), (r.minimum_limit ?? '').trim())
+  }
+  return details
+}
+
 /**
  * Org-level predefined reference details (settings → Calling → Reference
  * details), stored in app_config under `reference_details:<orgId>`. They are
@@ -336,6 +381,8 @@ export function draftFromVerification(input: {
   config: OrgCallConfig
   /** Org-level predefined rows (settings → Calling → Reference details). */
   orgDetails?: ReferenceDetail[]
+  /** Resolved per-deal template variable values (requirements provenance). */
+  templateVariables?: Record<string, string>
 }): { context: CallContextFields; questions: AiCallQuestion[]; numbers: NumberCandidate[]; details: ReferenceDetail[] } {
   const { coi, config } = input
   const context: CallContextFields = {
@@ -376,6 +423,7 @@ export function draftFromVerification(input: {
   } else {
     push('Certificate holder', coi?.certificate_holder)
   }
+  for (const d of collectVehicleDescriptions(input.requirements, input.templateVariables)) details.push(d)
   for (const vin of collectVins(input.requirements)) push('VIN', vin)
   push('USDOT number', coi?.usdot_number)
   push('MC number', coi?.mc_number)

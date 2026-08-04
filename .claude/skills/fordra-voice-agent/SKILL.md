@@ -46,6 +46,12 @@ setting is retuned, append/update an entry here in the same format.
   plus the same follow-up. N1q routes agreement to N4c. Refusals anywhere go
   through N6b's channel ask ("Got it, what's the best way to get a certificate
   verified with your office?") before N9b.
+- **Reference details prefill** (`draftFromVerification` in
+  `lib/call-config.ts`): org rows, then per-deal computed rows — policy
+  numbers, addresses, certificate holder, vehicle descriptions
+  (year/make/model from template variables/requirement rows, issue 17),
+  VINs, USDOT/MC. Insurers verify by vehicle: keep the vehicle description
+  row next to its VIN.
 - **Test harness:** `scripts/retell-test-ivr.mjs` runs six scenarios rebuilt
   from real calls (Colstan keypad IVR, human, already-verified, Avant callback
   queue, Farm Bureau message-only menu, Progressive-style AI gatekeeper).
@@ -74,6 +80,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-04 (v21) | 1.0 | 0.7 | VRF-1110 fixes (issues 13-15): live-rep hold rule, answer-pacing rules, IVR call-start hardening, conditional follow-up rule; `reminder_trigger_ms` 30000 → 45000 |
 | 2026-08-04 (v22) | 1.0 | 0.7 | settings-only (flow byte-identical to v21): `reminder_trigger_ms` 45000 → 60000 — owner call after VRF-1111 showed real holds run past 45s and the reminder cannot be exercised in the simulator |
 | 2026-08-04 (v23) | 1.0 | 0.7 | VRF-1111 fixes (issue 16): transfer ack once per transfer, thinking-aloud patience, hold-noise silence; voice settings unchanged |
+| 2026-08-04 (v24) | 1.0 | 0.7 | VRF-1112 fixes (issue 17): gate/N5 miss branch for details not in the list, dead-end routes to N6b channel ask; voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -411,6 +418,49 @@ as a violation); the `ivr` check only counts speech that directly
 follows a menu-like utterance, because the sim sometimes hallucinates a
 live human mid-menu and answering that is correct. `--only=key1,key2`
 re-rolls a subset without burning a full batch.
+
+## 17. Rep asked for a detail the agent lacked; agent deflected with its own question (VRF-1112)
+
+**Symptom (Progressive, 2026-08-04, agent v23):** commercial-lines rep asked
+to "verify year, make, model, last four of the VIN." The agent gave the VIN
+last-4 (correct), but when pressed for the **make** it answered with its own
+gate question ("Is this COI currently active?"). The rep refused twice ("I
+need additional information for verification") and the call ended with
+nothing verified.
+
+**Cause (two halves):** (a) the deal HAD the vehicle description — template
+variable `vehicle_listed = "2019 International 4300"` — but
+`draftFromVerification` only extracted VINs into reference details, so the
+agent never received it (and the requirements parser rewrites row values
+into prose notes, so the normalized rows are not a recoverable source; the
+provenance variables are). (b) Gate and N5 rule 0 covered only requests for
+details that ARE in the reference list; N4c's "I don't have that in front
+of me" rule had no counterpart there, so an unmatched request fell through
+to the node's default job: ask the next question.
+
+**Remedy (app + flow v24, 2026-08-04):**
+- `lib/call-config.ts`: `collectVehicleDescriptions()` adds vehicle
+  year/make/model rows from resolved template variables + requirement rows
+  (submitted standards only, VRF-1083 rule); the admin page now passes
+  `templateVariables` into `draftFromVerification`. `isIdentifier` also
+  tightened to single-token values — multi-word values (vehicle
+  descriptions, addresses) were getting last-four/spoken hints and would
+  have been recited letter by letter.
+- Flow v24: gate + N5 rule 0 gained the miss branch — "I don't have that in
+  front of me." then "Is there anything else I could give you instead?",
+  with an explicit NEVER-answer-an-information-request-with-your-own-
+  question clause (inline in rule 0 per the issue-16 placement lessons).
+  Gate's and N4c's N6b refusal edges extended to cover "cannot verify
+  without information you do not have" (a blocked-but-willing rep is not a
+  "refusal", so the old wording never fired — the first sim run had the
+  agent wrap up with "My team will follow up" and DECLINE the rep's own
+  offer of a better channel); N5 gained its own N6b edge with that
+  condition (it had none). A dead end in any of the three nodes now lands
+  on the channel ask instead of more questions. N4c's already-verified
+  exclusion kept (issue 10).
+- Test scenario `missing-detail` (Progressive-style rep demands a license
+  plate number, which is never in the details): deterministic check asserts
+  the miss line, no deflection, and the channel ask after the dead end.
 
 ## Standing rules for any change here
 
