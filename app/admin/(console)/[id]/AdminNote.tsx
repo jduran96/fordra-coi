@@ -21,7 +21,7 @@ import { pacificDateAtTime, timeAgo } from '@/lib/dates'
  * EXISTS plus a hover preview, so the note stays a note and the queue stays
  * scannable.
  */
-export default function AdminNote({ note, at, by, action }: {
+export default function AdminNote({ note, at, by, action, triggerStyle, rowBefore, rowAfter }: {
   /** Saved note body, '' when there is none. */
   note: string
   /** ISO timestamp of the last save, null when there is no note. */
@@ -29,6 +29,14 @@ export default function AdminNote({ note, at, by, action }: {
   /** Email of the admin who last saved it, '' when unknown. */
   by: string
   action: (formData: FormData) => Promise<{ error?: string } | void>
+  /** Overrides the "+ Add admin note" pill's default look (header button
+   *  row); the dashed "add" border is kept regardless. */
+  triggerStyle?: React.CSSProperties
+  /** Siblings rendered around the trigger in one shared header button row
+   *  (Assign/Activity before, document chips after). This component owns the
+   *  row because the trigger shares its editing state. */
+  rowBefore?: React.ReactNode
+  rowAfter?: React.ReactNode
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(note)
@@ -57,15 +65,14 @@ export default function AdminNote({ note, at, by, action }: {
     })
   }
 
-  if (!editing && !note) {
-    return (
-      <button type="button" onClick={() => { setDraft(''); setEditing(true) }} style={addBtn}>
-        + Add admin note
-      </button>
-    )
-  }
+  const trigger = !editing && !note && (
+    <button type="button" onClick={() => { setDraft(''); setEditing(true) }}
+      style={triggerStyle ? { ...triggerStyle, border: `1px dashed ${C.borderStrong}` } : addBtn}>
+      + Add admin note
+    </button>
+  )
 
-  return (
+  const noteCard = (editing || note) && (
     <div style={{
       background: editing ? C.surface : C.marker,
       border: `1px solid ${editing ? C.border : 'transparent'}`,
@@ -135,6 +142,19 @@ export default function AdminNote({ note, at, by, action }: {
 
       {error && <p style={{ fontSize: 12.5, color: C.error, margin: '8px 0 0' }}>{error}</p>}
     </div>
+  )
+
+  return (
+    <>
+      {rowBefore != null || rowAfter != null ? (
+        <div className="fx-scroll-x" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 18px', paddingBottom: 2 }}>
+          {rowBefore}
+          {trigger}
+          {rowAfter}
+        </div>
+      ) : trigger}
+      {noteCard}
+    </>
   )
 }
 

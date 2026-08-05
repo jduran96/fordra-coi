@@ -20,11 +20,16 @@ export function useAnalysisBodyVisible() {
   return useContext(AnalysisBodyContext)
 }
 
-export default function AdminTabs({ tabs, analysisForm }: {
+export default function AdminTabs({ tabs, analysisForm, analysisExtra }: {
   /** The LAST tab is Analysis: its content renders above the assessment form body. */
   tabs: { label: string; content: React.ReactNode }[]
   /** The AssessmentForm element: body shown only on the Analysis tab, action footer always. */
   analysisForm: React.ReactNode
+  /** Extra Analysis-tab content (the insurer contact log) rendered after the
+   *  assessment form — it holds its own <form>s, which must stay siblings of
+   *  the assessment <form>, never children. Kept mounted, shown only on the
+   *  Analysis tab. */
+  analysisExtra?: React.ReactNode
 }) {
   const [active, setActive] = useState(0)
   const analysisIdx = tabs.length - 1
@@ -57,6 +62,9 @@ export default function AdminTabs({ tabs, analysisForm }: {
       <AnalysisBodyContext.Provider value={active === analysisIdx}>
         {analysisForm}
       </AnalysisBodyContext.Provider>
+      {analysisExtra != null && (
+        <div style={{ display: active === analysisIdx ? 'block' : 'none' }}>{analysisExtra}</div>
+      )}
     </div>
   )
 }

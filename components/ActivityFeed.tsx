@@ -12,9 +12,11 @@ import type { FeedEntry } from '@/lib/activity-feed'
  * from the admin ActivityLog, which is the admin's own outreach bookkeeping;
  * this feed is built from the customer-visible `events` rows.
  */
-export default function ActivityFeed({ entries, title = 'Activity' }: {
+export default function ActivityFeed({ entries, title = 'Activity', buttonStyle }: {
   entries: FeedEntry[]
   title?: string
+  /** Overrides the trigger pill's default look (admin header button row). */
+  buttonStyle?: React.CSSProperties
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -23,6 +25,7 @@ export default function ActivityFeed({ entries, title = 'Activity' }: {
         padding: '8px 18px', fontSize: 13, fontWeight: 600, fontFamily: C.sans,
         borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent',
         color: C.txt2, cursor: 'pointer', whiteSpace: 'nowrap',
+        ...buttonStyle,
       }}>
         Activity
       </button>

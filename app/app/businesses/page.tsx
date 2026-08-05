@@ -9,9 +9,10 @@ export const dynamic = 'force-dynamic'
 
 /**
  * The org's insured businesses: verifications grouped by insured legal entity
- * (name + address), with a coverage rollup per entity. The publish-gated
- * report columns come back null for pending rows through my_verifications,
- * which is exactly the "ignore unpublished" rule coverageStatus applies.
+ * (name + address), with coverage per entity from its latest published
+ * verification. The publish-gated report columns come back null for pending
+ * rows through my_verifications, which is exactly the "ignore unpublished"
+ * rule coverageStatus applies.
  */
 export default async function CustomerBusinesses() {
   const profile = await getProfile()

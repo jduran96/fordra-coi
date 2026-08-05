@@ -45,8 +45,14 @@ export default function EditorModal({ title, onClose, children, maxWidth = 880 }
         boxShadow: '0 25px 50px -12px rgba(20,20,19,0.25)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 10 }}>
-          <h2 style={{ fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0 }}>{title}</h2>
+          {/* Long titles (business legal names) truncate with an ellipsis on
+              one line instead of wrapping a widowed word; full text on hover. */}
+          <h2 title={title} style={{
+            fontFamily: C.serif, fontSize: 22, fontWeight: 400, color: C.txt, margin: 0,
+            minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{title}</h2>
           <button onClick={onClose} aria-label="Close" style={{
+            flexShrink: 0,
             width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: C.paper, border: 'none', color: C.txt3, fontSize: 20, cursor: 'pointer',
             borderRadius: 9999, lineHeight: 1,

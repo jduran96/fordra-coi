@@ -11,12 +11,14 @@ import { adminInitials } from '@/lib/admin-activity'
  * takes effect only on Confirm. The queue's Admin column and the header
  * initials tag render from the saved assignment.
  */
-export default function AssignButton({ assigned, admins, action }: {
+export default function AssignButton({ assigned, admins, action, buttonStyle }: {
   /** Currently assigned admin email, '' when unassigned. */
   assigned: string
   /** Admin emails from the allowlist, the popup's options. */
   admins: string[]
   action: (formData: FormData) => Promise<{ error?: string } | void>
+  /** Overrides the trigger pill's default look (header button row). */
+  buttonStyle?: React.CSSProperties
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -27,6 +29,7 @@ export default function AssignButton({ assigned, admins, action }: {
           fontSize: 12, fontWeight: 600, fontFamily: C.sans, color: C.txt2,
           background: C.surface, border: `1px solid ${C.border}`, borderRadius: 20,
           padding: '4px 12px', cursor: 'pointer', whiteSpace: 'nowrap',
+          ...buttonStyle,
         }}>
         Assign
       </button>

@@ -8,13 +8,14 @@
 import { feedEntries, type FeedEventRow } from '@/lib/activity-feed'
 import type { BusinessRow } from '@/components/BusinessesTable'
 
-export type CoverageStatus = 'active' | 'uncertain' | 'lapsed'
+export type CoverageStatus = 'verified' | 'uncertain' | 'failed'
 
 interface ReportBuckets { met?: unknown[]; not_met?: unknown[]; uncertain?: unknown[] }
 
 export interface GroupableRow {
   insured_name: string | null
   insured_address: string | null
+  created_at: string
   published_at: string | null
   final_report?: ReportBuckets | null
   gap_analysis?: ReportBuckets | null
@@ -26,24 +27,23 @@ const bucketCount = (r: ReportBuckets | null | undefined) =>
   r ? (r.met?.length ?? 0) + (r.not_met?.length ?? 0) + (r.uncertain?.length ?? 0) : 0
 
 /**
- * Coverage rollup across a business's verifications, published reports only
- * (pending rows carry no verdicts and are ignored by owner decision
- * 2026-07-28): any failed check anywhere = lapsed; else any warning =
- * uncertain; all green = active. Zero published reports = uncertain.
- * Per row the admin's final_report outranks the automated gap_analysis,
- * matching the report page and PDF.
+ * Coverage of the business's MOST RECENT published verification only (owner
+ * decision 2026-08-04, replacing the 2026-07-28 all-rows rollup — one old
+ * failed report must not poison a business whose latest check is clean):
+ * any failed check = failed; else any warning = uncertain; all green =
+ * verified. Newer rows that are still unpublished don't change the badge;
+ * zero published reports = uncertain. Per row the admin's final_report
+ * outranks the automated gap_analysis, matching the report page and PDF.
  */
 export function coverageStatus(rows: GroupableRow[]): CoverageStatus {
   const published = rows.filter(r => r.published_at)
   if (!published.length) return 'uncertain'
-  let sawWarning = false
-  for (const r of published) {
-    const rep = (r.final_report && bucketCount(r.final_report) ? r.final_report : r.gap_analysis) ?? null
-    if (!rep || !bucketCount(rep)) { sawWarning = true; continue }
-    if ((rep.not_met?.length ?? 0) > 0) return 'lapsed'
-    if ((rep.uncertain?.length ?? 0) > 0) sawWarning = true
-  }
-  return sawWarning ? 'uncertain' : 'active'
+  const latest = published.reduce((a, b) => (b.created_at > a.created_at ? b : a))
+  const rep = (latest.final_report && bucketCount(latest.final_report) ? latest.final_report : latest.gap_analysis) ?? null
+  if (!rep || !bucketCount(rep)) return 'uncertain'
+  if ((rep.not_met?.length ?? 0) > 0) return 'failed'
+  if ((rep.uncertain?.length ?? 0) > 0) return 'uncertain'
+  return 'verified'
 }
 
 /**
@@ -75,7 +75,6 @@ export interface BusinessSourceRow extends GroupableRow {
   display_id: string
   status: string
   case_status: string | null
-  created_at: string
   /** Admin page only: the owning org's name. */
   orgName?: string
 }

@@ -246,51 +246,46 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             then a red day count. Only open cases: a closed one is no longer
             against the clock. */}
         {!caseIsClosed && <AgeChip iso={String(v.created_at)} />}
-        <span className="fx-unpin" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-          <ActivityFeed entries={statusFeed} />
-          <AssignButton
-            assigned={assignedAdmin}
-            admins={[...adminEmails()]}
-            action={assignVerification.bind(null, id)}
-          />
-        </span>
       </div>
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 12px' }}>
         {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}
       </p>
 
-      {/* Admin-to-admin sticky note. Above the tabs on purpose: "why is this
-          still open" has to be readable without opening anything. */}
+      {/* One uniform row of case actions + document quick links under the
+          subtitle (owner spec 2026-08-04, replacing the mismatched pinned
+          pills and separate chip row). AdminNote owns the row because its
+          "+ Add admin note" trigger shares the note's editing state; the
+          sticky note card itself still renders right below, above the tabs,
+          where "why is this still open" is readable without opening anything.
+          Documents stay one tap from anywhere on the page — the review flow
+          is "read the standards, open the COI in another tab". */}
       <AdminNote
         note={String(v.admin_note ?? '')}
         at={(v.admin_note_at as string | null) ?? null}
         by={String(v.admin_note_by ?? '')}
         action={saveAdminNote.bind(null, id)}
+        triggerStyle={headerPill}
+        rowBefore={<>
+          <AssignButton
+            assigned={assignedAdmin}
+            admins={[...adminEmails()]}
+            action={assignVerification.bind(null, id)}
+            buttonStyle={headerPill}
+          />
+          <ActivityFeed entries={statusFeed} buttonStyle={headerPill} />
+        </>}
+        rowAfter={docsWithUrls.filter(d => d.url).map(d => (
+          <a key={d.id} href={d.url!} target="_blank" rel="noreferrer" style={headerPill}>
+            {docChipLabel(d.kind)} ↗
+          </a>
+        ))}
       />
-
-      {/* Every uploaded document, one tap from anywhere on the page. The
-          review flow is "read the standards, open the COI in another tab",
-          so these must not be buried under a tab. */}
-      {docsWithUrls.some(d => d.url) && (
-        <div className="fx-scroll-x" style={{ display: 'flex', gap: 8, margin: '0 0 20px', paddingBottom: 2 }}>
-          {docsWithUrls.filter(d => d.url).map(d => (
-            <a key={d.id} href={d.url!} target="_blank" rel="noreferrer" style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-              fontSize: 12.5, fontWeight: 600, color: C.txt, textDecoration: 'none',
-              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9999,
-              padding: '7px 14px', whiteSpace: 'nowrap',
-            }}>
-              {docChipLabel(d.kind)} ↗
-            </a>
-          ))}
-        </div>
-      )}
 
       {/* Tabbed layout: panels stay mounted (hidden) so form state survives
           switching; the assessment form renders below the panels so its
           Save draft / Reject / Publish footer is visible under every tab. */}
       <AdminTabs tabs={[
-        { label: 'Submissions', content: (
+        { label: 'Submission', content: (
         <section>
           <SectionTitle>Uploads</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -330,17 +325,19 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 </dd>
                 <FactRow label="Uploaded by" value={uploader?.email ?? (v.source === 'web' ? '—' : `via ${v.source}`)} />
                 <FactRow label="Organization" value={(v.orgs as { name?: string } | null)?.name ?? '—'} />
+                {/* One row per uploaded document, filename linked to the file
+                    (opens in a new tab). This replaced the per-document cards
+                    below; the header chips are the same links without names. */}
+                {docsWithUrls.map(d => (
+                  <FactRow key={d.id} label={docChipLabel(d.kind)} value={d.url ? (
+                    <a href={d.url} target="_blank" rel="noreferrer" style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3, overflowWrap: 'anywhere' }}>
+                      {d.file_name} ↗
+                    </a>
+                  ) : d.file_name} />
+                ))}
               </dl>
             </div>
             {docsWithUrls.length === 0 && <Muted>No documents uploaded.</Muted>}
-            {docsWithUrls.map(d => (
-              <div key={d.id} style={card()}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: C.txt2 }}>{d.kind === 'rcs' ? 'Other' : d.kind}</span>
-                  {d.url && <a href={d.url} target="_blank" rel="noreferrer" style={{ color: C.txt, fontWeight: 600, fontSize: 13, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>View {d.file_name} ↗</a>}
-                </div>
-              </div>
-            ))}
             {/* Uploaded-doc standards get no card: it would be empty until OCR
                 runs, and after OCR the admin reads the normalized JSON below. */}
             {(templateName || requirementsText) && (
@@ -376,12 +373,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
               </div>
             )}
           </div>
-        </section>
-        ) },
-
-        { label: 'OCR', content: (
-        <section>
-          <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* OCR output lives on the same tab as the submission it was read
+              from (owner spec 2026-08-04, formerly its own tab). */}
+          <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
             <SectionTitle>OCR Analysis</SectionTitle>
             <form action={runExtraction.bind(null, id)} className="fx-unpin" style={{ marginLeft: 'auto' }}>
               <PendingButton pendingLabel="Extracting… (can take a minute)" style={smallBtn()}>
@@ -391,8 +385,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {!v.coi_extracted && <Muted>Not extracted yet. Run extraction to parse the COI & requirements.</Muted>}
-            <JsonCard title="Requirements (normalized)" data={v.requirements_normalized} />
-            <JsonCard title="COI extracted" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} />
+            <JsonCard title="Requirements (OCR)" data={v.requirements_normalized} />
+            <JsonCard title="COI (OCR)" data={coi ? groupCoiExtracted(coi as unknown as Record<string, unknown>) : v.coi_extracted} raw={v.coi_extracted} />
           </div>
         </section>
         ) },
@@ -409,7 +403,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {coi
               ? <InsurerCard coi={coi} />
-              : <Muted>Run extraction (OCR tab) to pull the insurer contact off the COI.</Muted>}
+              : <Muted>Run extraction (Submission tab) to pull the insurer contact off the COI.</Muted>}
             {!!v.coi_extracted && (
               <div style={card()}>
                 <SectionTitle small>Contact check</SectionTitle>
@@ -491,9 +485,32 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
         </section>
         ) },
 
-        { label: 'Call', content: (
+        { label: 'Calls', content: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-        {/* Submitter-entered template variables, repeated from the Submissions
+        {/* AI verification calls first — initiating a call must not need a
+            scroll (owner spec 2026-08-04); the context/questions to review
+            before dialing sit right below. The launcher modal is the whole
+            lifecycle (pre-dial review gate → live call + kill switch →
+            summary/transcript + add-to-contact-log); the table is the audit
+            history. */}
+        <section>
+          <SectionTitle>AI Calls</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <AiCallLauncher
+              verificationId={id}
+              context={callContext}
+              questions={callQuestions}
+              details={callDetails}
+              numbers={callPrefill.numbers}
+              coiPhone={coi?.insurance_company_phone ?? ''}
+              draftId={aiDraft?.id ?? null}
+              caseIsClosed={caseIsClosed}
+              calls={aiCalls}
+            />
+          </div>
+        </section>
+
+        {/* Submitter-entered template variables, repeated from the Submission
             tab so values can be copy/pasted while editing questions. */}
         <section>
           <SectionTitle>Context</SectionTitle>
@@ -526,33 +543,34 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             />
           </div>
         </section>
+        </div>
+        ) },
 
-        {/* AI verification calls: the launcher modal is the whole lifecycle
-            (pre-dial review gate → live call + kill switch → summary/
-            transcript + add-to-contact-log); the table is the audit history. */}
-        <section>
-          <SectionTitle>AI Calls</SectionTitle>
-          <div style={{ marginTop: 10 }}>
-            <AiCallLauncher
-              verificationId={id}
-              context={callContext}
-              questions={callQuestions}
-              details={callDetails}
-              numbers={callPrefill.numbers}
-              coiPhone={coi?.insurance_company_phone ?? ''}
-              draftId={aiDraft?.id ?? null}
-              caseIsClosed={caseIsClosed}
-              calls={aiCalls}
-            />
-          </div>
-        </section>
-
-        {/* Insurer contact log (calls, emails, texts): input first, entries below. */}
+        { label: 'Analysis', content: (
+        <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <SectionTitle>Assessment</SectionTitle>
+          {/* Generates verdicts + draft summary from the OCR extraction AND
+              the contact log — deliberately its own step, never part of Run
+              extraction. Each run replaces the draft below. */}
+          {!caseIsClosed && (
+            <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
+              <RunAnalysisButton verificationId={id} />
+            </span>
+          )}
+        </div>
+        ) },
+      ]}
+      analysisExtra={
+        /* Insurer contact log (calls, emails, texts): input first, entries
+           below. Lives at the bottom of the Analysis tab (owner spec
+           2026-08-04) so everything published to the customer reads on one
+           tab; kept mounted across tab switches so a half-typed entry
+           survives. Its forms must stay siblings of the assessment form. */
         <section>
           <SectionTitle>Insurer Contact Log</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {caseIsClosed ? (
-              <Muted>This case is closed. Click Edit Status below to reopen it before adding contact logs.</Muted>
+              <Muted>This case is closed. Click Edit Status to reopen it before adding contact logs.</Muted>
             ) : (
               <CallNoteForm action={saveCallNote.bind(null, id)} />
             )}
@@ -646,23 +664,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             )})}
           </div>
         </section>
-        </div>
-        ) },
-
-        { label: 'Analysis', content: (
-        <div className="fx-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <SectionTitle>Assessment</SectionTitle>
-          {/* Generates verdicts + draft summary from the OCR extraction AND
-              the contact log — deliberately its own step, never part of Run
-              extraction. Each run replaces the draft below. */}
-          {!caseIsClosed && (
-            <span className="fx-unpin" style={{ marginLeft: 'auto' }}>
-              <RunAnalysisButton verificationId={id} />
-            </span>
-          )}
-        </div>
-        ) },
-      ]}
+      }
       analysisForm={
         /* Keyed by the analysis content: when extraction or a saved draft
            changes the verdict data, the form remounts with fresh rows;
@@ -771,7 +773,7 @@ function NoteStatusChip({ status, stacked }: { status?: OnlineListingStatus; sta
   )
 }
 
-function FactRow({ label, value }: { label: string; value: string }) {
+function FactRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <>
       <dt style={{ fontSize: 13, color: C.txt3 }}>{label}</dt>
@@ -783,8 +785,11 @@ function FactRow({ label, value }: { label: string; value: string }) {
 /**
  * Display-only grouping of the flat COIExtracted shape: the raw field list is
  * hard to scan, so bucket it by who/what each field describes. Unknown keys
- * (prompt evolves) land in `other` so nothing silently disappears. The STORED
- * shape stays flat — the pipeline and customer views depend on it.
+ * (prompt evolves) land in `other` so nothing silently disappears — with one
+ * exception: positional box metadata (field_locations, per-coverage location)
+ * drives report highlighting, means nothing to a reviewer, and is dropped
+ * here; the Raw JSON toggle still shows it. The STORED shape stays flat — the
+ * pipeline and customer views depend on it.
  */
 function groupCoiExtracted(coi: Record<string, unknown>) {
   const groups: Record<string, string[]> = {
@@ -797,20 +802,32 @@ function groupCoiExtracted(coi: Record<string, unknown>) {
       'insurance_company_phone', 'insurance_company_email', 'insurance_company_address',
     ],
     parties_on_certificate: [
-      'certificate_holder', 'additional_insured', 'loss_payee', 'other_named_parties',
+      'certificate_holder', 'certificate_holder_name', 'certificate_holder_address',
+      'additional_insured', 'loss_payee', 'other_named_parties',
     ],
     coverages: ['coverages'],
+    vehicles: ['vehicle_vins'],
     terms_and_notes: ['additional_terms', 'raw_notes'],
   }
+  const hidden = new Set(['field_locations'])
   const placed = new Set(Object.values(groups).flat())
   const out: Record<string, unknown> = {}
   for (const [group, keys] of Object.entries(groups)) {
     const section: Record<string, unknown> = {}
     for (const k of keys) if (k in coi) section[k] = coi[k]
-    if (Object.keys(section).length) out[group] = group === 'coverages' ? section.coverages : section
+    if (!Object.keys(section).length) continue
+    if (group === 'coverages') {
+      out[group] = Array.isArray(section.coverages)
+        ? (section.coverages as Record<string, unknown>[]).map(({ location: _loc, ...rest }) => rest)
+        : section.coverages
+    } else if (group === 'vehicles') {
+      out[group] = section.vehicle_vins
+    } else {
+      out[group] = section
+    }
   }
   const other: Record<string, unknown> = {}
-  for (const k of Object.keys(coi)) if (!placed.has(k)) other[k] = coi[k]
+  for (const k of Object.keys(coi)) if (!placed.has(k) && !hidden.has(k)) other[k] = coi[k]
   if (Object.keys(other).length) out.other = other
   return out
 }
@@ -821,7 +838,7 @@ function groupCoiExtracted(coi: Record<string, unknown>) {
  * unusable on a phone); this wraps instead, so nothing ever scrolls sideways.
  * The raw JSON stays one tap away for when the exact stored shape matters.
  */
-function JsonCard({ title, data }: { title: string; data: unknown }) {
+function JsonCard({ title, data, raw }: { title: string; data: unknown; raw?: unknown }) {
   return (
     <div style={card()}>
       <SectionTitle small>{title}</SectionTitle>
@@ -831,7 +848,7 @@ function JsonCard({ title, data }: { title: string; data: unknown }) {
           <details style={{ marginTop: 12 }}>
             <summary style={{ fontSize: 12, fontWeight: 600, color: C.txt3, cursor: 'pointer' }}>Raw JSON</summary>
             <pre style={{ fontFamily: C.mono, fontSize: 11.5, color: C.txt2, background: C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, margin: '8px 0 0', maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-              {JSON.stringify(data, null, 2)}
+              {JSON.stringify(raw ?? data, null, 2)}
             </pre>
           </details>
         </>
@@ -856,14 +873,14 @@ function DataView({ value, depth = 0 }: { value: unknown; depth?: number }) {
 
   if (Array.isArray(value)) {
     if (value.length === 0) return <span style={{ fontSize: 13, color: C.txt3 }}>None</span>
-    // Arrays of primitives (VIN lists, notes) read best as plain lines.
+    // Arrays of primitives (VIN lists, notes) flow as one comma-joined line
+    // across the full width — stacking each element made short values look
+    // narrowly cut off (owner report 2026-08-04, VRF-1115).
     if (value.every(v => typeof v !== 'object' || v === null)) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {value.map((v, i) => (
-            <span key={i} style={{ fontSize: 13.5, color: C.txt, overflowWrap: 'anywhere' }}>{String(v)}</span>
-          ))}
-        </div>
+        <span style={{ fontSize: 13.5, color: C.txt, fontWeight: 500, overflowWrap: 'anywhere', lineHeight: 1.6 }}>
+          {value.map(String).join(', ')}
+        </span>
       )
     }
     return (
@@ -883,23 +900,34 @@ function DataView({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
     if (entries.length === 0) return <span style={{ fontSize: 13, color: C.txt3 }}>—</span>
+    // Label-left/value-right facts grid for flat fields (same fx-facts
+    // pattern as the Submission and Insurer cards, so values extend across
+    // the page); only genuinely nested values get the stacked block
+    // treatment. Arrays of primitives count as flat — they render inline.
+    const flat = (v: unknown) =>
+      isBlank(v) || typeof v !== 'object' ||
+      (Array.isArray(v) && v.every(x => typeof x !== 'object' || x === null))
+    const flatEntries = entries.filter(([, v]) => flat(v))
+    const nestedEntries = entries.filter(([, v]) => !flat(v))
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: depth === 0 ? 10 : 7 }}>
-        {entries.map(([k, v]) => {
-          const nested = !isBlank(v) && typeof v === 'object'
-          return (
-            <div key={k} style={nested
-              ? { borderTop: depth === 0 ? `1px solid ${C.border}` : 'none', paddingTop: depth === 0 ? 10 : 0 }
-              : undefined}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt3 }}>
-                {humanizeToken(k)}
-              </div>
-              <div style={{ marginTop: nested ? 8 : 2 }}>
-                <DataView value={v} depth={depth + 1} />
-              </div>
+        {flatEntries.length > 0 && (
+          <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+            {flatEntries.map(([k, v]) => (
+              <FactRow key={k} label={humanizeToken(k)} value={<DataView value={v} depth={depth + 1} />} />
+            ))}
+          </dl>
+        )}
+        {nestedEntries.map(([k, v]) => (
+          <div key={k} style={{ borderTop: depth === 0 ? `1px solid ${C.border}` : 'none', paddingTop: depth === 0 ? 10 : 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.txt3 }}>
+              {humanizeToken(k)}
             </div>
-          )
-        })}
+            <div style={{ marginTop: 8 }}>
+              <DataView value={v} depth={depth + 1} />
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -917,6 +945,15 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <p style={{ color: C.txt3, fontSize: 13.5, margin: 0 }}>{children}</p>
 }
 const card = () => ({ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 })
+/** Shared pill for the header action row: every trigger and document link
+ *  gets the same height and footprint so the row reads as one control set. */
+const headerPill: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  height: 34, minWidth: 104, padding: '0 16px', boxSizing: 'border-box',
+  fontSize: 12.5, fontWeight: 600, fontFamily: C.sans, color: C.txt,
+  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9999,
+  cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none', flexShrink: 0,
+}
 const checkTh: React.CSSProperties = { padding: '8px 12px', fontWeight: 600 }
 const checkTd: React.CSSProperties = { padding: '8px 12px', verticalAlign: 'middle' }
 const smallBtn = () => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600 as const, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: 'pointer' })
