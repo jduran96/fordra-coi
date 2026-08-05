@@ -19,12 +19,13 @@ import AssessmentForm from '@/components/AssessmentForm'
 import CallNoteForm from '@/components/CallNoteForm'
 import NoteCheckControls from '@/components/NoteCheckControls'
 import ContactCheckTask from '@/components/ContactCheckTask'
-import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, updateInsuredName, assignVerification } from '../actions'
+import { runExtraction, runOnlineContactCheck, saveContactCheckEdit, saveCallNote, saveAssessment, saveNoteCheck, deleteCallNote, updateCallNote, updateInsuredName, assignVerification, saveAdminNote } from '../actions'
 import { adminInitials } from '@/lib/admin-activity'
 import { adminEmails } from '@/lib/admin-emails'
 import DeleteNoteButton from './DeleteNoteButton'
 import EditNoteButton from './EditNoteButton'
 import AssignButton from './AssignButton'
+import AdminNote from './AdminNote'
 import ActivityFeed from '@/components/ActivityFeed'
 import { feedEntries } from '@/lib/activity-feed'
 import AiCallLauncher from './AiCallLauncher'
@@ -241,8 +242,9 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
             {adminInitials(assignedAdmin)}
           </span>
         )}
-        {/* Working-day age against the same-day target, red from 3 days.
-            Only open cases: a closed one is no longer against the clock. */}
+        {/* Age against the business-day target: hours for the first two days,
+            then a red day count. Only open cases: a closed one is no longer
+            against the clock. */}
         {!caseIsClosed && <AgeChip iso={String(v.created_at)} />}
         <span className="fx-unpin" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
           <ActivityFeed entries={statusFeed} />
@@ -256,6 +258,15 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
       <p style={{ color: C.txt3, fontSize: 13, margin: '0 0 12px' }}>
         {v.display_id} · {(v.orgs as { name?: string } | null)?.name ?? '—'} · {v.source} · {pacificDateTime(v.created_at)}
       </p>
+
+      {/* Admin-to-admin sticky note. Above the tabs on purpose: "why is this
+          still open" has to be readable without opening anything. */}
+      <AdminNote
+        note={String(v.admin_note ?? '')}
+        at={(v.admin_note_at as string | null) ?? null}
+        by={String(v.admin_note_by ?? '')}
+        action={saveAdminNote.bind(null, id)}
+      />
 
       {/* Every uploaded document, one tap from anywhere on the page. The
           review flow is "read the standards, open the COI in another tab",
@@ -683,7 +694,7 @@ function docChipLabel(kind: string): string {
   return kind
 }
 
-/** Working-day age of an open case: green today, amber at 1-2, red from 3. */
+/** Age of an open case: hours until 2 days old, then a red day count. */
 function AgeChip({ iso }: { iso: string }) {
   const age = caseAge(iso)
   return (

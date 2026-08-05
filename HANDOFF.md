@@ -3,7 +3,59 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-08-03 — voice agent v20: opener v2, verbosity pass, transcript-audit fixes)
+## ⏱️ START HERE (as of 2026-08-04 — admin queue triage: hour-granular age, sticky notes, agency timezone)
+
+**2026-08-04, on `quesoDev`:** three admin-only quality-of-life changes from the
+owner. None of them touch how customers upload, submit, or read anything, and
+none change how data is handled — they only change what an admin can see
+without opening a case.
+
+> **Deploy order: migration FIRST.** `supabase/migrations/0039_admin_note.sql`
+> adds `admin_note` / `admin_note_at` / `admin_note_by` to `verifications`, and
+> the queue now selects those columns. Ship the code before the migration and
+> `/admin` throws `column verifications.admin_note does not exist` on every
+> load. Same additive, no-grant pattern as `assigned_admin` (0036).
+
+- **Case age reads in HOURS under two days** (`lib/sla.ts`). "Today" covered
+  both a case that landed 20 minutes ago and one that landed nine hours ago
+  and is about to blow the business-day turnaround, which is useless for
+  sequencing work. `caseAge` now returns `hours` + `inHours`; the pill reads
+  "Just now" / "7 hours ago" up to 48h, then flips red and reads "3 days ago".
+  Green under 12h, amber 12-48h, red past 48h. **The desktop queue shows the
+  pill too** (it previously only had a date, phone-only pill) with the exact
+  Pacific timestamp underneath. Past the cutoff the day count is derived from
+  the same elapsed hours, not the Pacific calendar date, so the pill can never
+  disagree with itself. Working-day counting survives in `ageTitle`'s tooltip,
+  where the Friday-to-Monday nuance still gets explained.
+- **Admin sticky note** — free text, one per verification, admin to admin.
+  New `AdminNote.tsx` sits above the tabs on `/admin/[id]`; `saveAdminNote`
+  in `(console)/actions.ts` writes it (plain text, 1000 char cap, clearing the
+  body clears the byline). It answers "why is this still open" in the admin's
+  own words, replacing the old dig of open case -> AI tab -> scroll the contact
+  log -> find the latest outreach attempt inside uniformly-styled prose.
+  **Never customer-visible:** no grant to `authenticated`, absent from
+  `my_verifications`, never published, never in the report. Distinct from
+  `manual_notes`, which IS customer-facing.
+- **Queue shows only that a note exists** (`components/NotePeek.tsx`): a small
+  lime badge next to the display ID, hover (or tap, on a phone) pops the note
+  attached to its row. The bubble is `position: fixed`, because the table body
+  is an `overflow-x: auto` scroller that would clip an absolutely positioned
+  one; it also carries a native `title` fallback. Present on both the desktop
+  row and the mobile card.
+- **Agency time column** (`lib/timezone.ts`, open queue only). Derives the
+  issuing agency's timezone from OCR data already on hand — the state in
+  `coi_extracted.insurance_company_address`, with the area code from
+  `insurance_company_phone` disambiguating states that straddle two zones
+  (El Paso's 915 is Mountain while the rest of Texas is Central) and covering
+  certs with a phone but no parseable address. Renders local time + zone abbr;
+  "closing within the hour" is the only state that gets a warning color, so a
+  full queue is not a wall of green. Genuinely split area codes (FL 850, MI
+  906, southern IN, the western Plains) resolve to the dominant zone and get a
+  `?` suffix plus a tooltip that says it is a best guess. Unplaceable = a dash;
+  a wrong timezone is worse than none when the whole point is calling before
+  5pm their time.
+
+## Previous (as of 2026-08-03 — voice agent v20: opener v2, verbosity pass, transcript-audit fixes)
 
 **2026-08-03, on `main` (pushed to prod same day):** agent + flow v19 then v20
 published after an audit of all 23 `ai_calls` transcripts plus the owner's 18

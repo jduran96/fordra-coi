@@ -652,6 +652,34 @@ export async function assignVerification(verificationId: string, formData: FormD
   revalidatePath(`/admin/${verificationId}`)
 }
 
+/** Hard cap on the sticky note: a scratchpad, not a second report. */
+const ADMIN_NOTE_MAX = 1000
+
+/**
+ * Save (or clear) the admin-to-admin sticky note on a verification.
+ *
+ * Plain text on purpose — it renders as text everywhere, so there is no HTML
+ * to sanitize and no rich-text surface to keep in sync with the customer
+ * report. Clearing the body clears the byline too, so a blank note never
+ * shows a stale "EM, 3 days ago".
+ */
+export async function saveAdminNote(verificationId: string, formData: FormData): Promise<{ error?: string } | void> {
+  const admin = await requireAdmin()
+  const note = String(formData.get('note') || '').trim().slice(0, ADMIN_NOTE_MAX)
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('verifications')
+    .update(note
+      ? { admin_note: note, admin_note_at: new Date().toISOString(), admin_note_by: admin.email ?? null }
+      : { admin_note: null, admin_note_at: null, admin_note_by: null })
+    .eq('id', verificationId)
+  if (error) {
+    console.error('saveAdminNote failed', error)
+    return { error: 'Could not save the note. Please retry.' }
+  }
+  revalidatePath('/admin')
+  revalidatePath(`/admin/${verificationId}`)
+}
+
 export interface CreateOrgState { ok?: boolean; error?: string }
 
 /** Create a new customer org. Members are then added via Invite User. */

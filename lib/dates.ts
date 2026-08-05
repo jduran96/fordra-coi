@@ -40,3 +40,18 @@ export function pacificDateAtTime(iso: string): string {
 export function pacificDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { timeZone: PACIFIC })
 }
+
+/**
+ * 'just now' / '3 hours ago' / '2 days ago' — how fresh something is, for
+ * admin bylines where the exact timestamp belongs in the tooltip rather than
+ * on screen. Timezone-free by construction: it measures elapsed time, so it
+ * needs no Pacific pinning.
+ */
+export function timeAgo(iso: string, now: Date = new Date()): string {
+  const mins = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 60_000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  return `${Math.floor(hours / 24)} days ago`
+}
