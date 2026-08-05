@@ -52,7 +52,7 @@ setting is retuned, append/update an entry here in the same format.
   (year/make/model from template variables/requirement rows, issue 17),
   VINs, USDOT/MC. Insurers verify by vehicle: keep the vehicle description
   row next to its VIN.
-- **Test harness:** `scripts/retell-test-ivr.mjs` runs twenty scenarios
+- **Test harness:** `scripts/retell-test-ivr.mjs` runs twenty-one scenarios
   rebuilt from real calls (Colstan keypad IVR, human, already-verified, Avant
   callback queue, Farm Bureau message-only menu, Progressive-style AI
   gatekeeper, the VRF-1110/1111/1112 hold/patience/deflection cases, plus
@@ -86,6 +86,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-04 (v24) | 1.0 | 0.7 | VRF-1112 fixes (issue 17): gate/N5 miss branch for details not in the list, dead-end routes to N6b channel ask; voice settings unchanged |
 | 2026-08-04 (v25) | 1.0 | 0.7 | VRF-1112 second call, fixes (issue 18): request-handling hoisted above gate/N5 headline job, mid-hold-question exception inline in the hold rule (gate/N5/N4c); voice settings unchanged |
 | 2026-08-05 (v26) | 1.0 | 0.7 | VRF-1113/1114 IVR fixes (issues 19-20): two-pass keypad selection, retry-then-escalate on failed lookups, DOB-wall agent ask, partial-identifier + producer-state answers, new node-n1h human-arrival answer-first; voice settings unchanged |
+| 2026-08-05 (v27) | 1.0 | 0.7 | VRF-1113 third call, fixes (issue 21): n1h repeat-only-the-value, strong-identifier not-found confirm-then-goodbye (N4c/gate + broadened NW edges), `not_found_identifier` post-call field; voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -595,6 +596,63 @@ or while any digit is on offer, and require an agent ask before ending.
 Navigator rule 2 mirrors the two-pass logic for spoken menus. Test
 scenario `qualified-menu` (deterministic check: reaching Dana proves the
 press was 1; menu speech after the exempt first turn is a violation).
+
+## 21. Policy-not-found dragged through channel ask + follow-up logistics (VRF-1113, third call)
+
+**Symptom (GEICO, 2026-08-05, `call_0772d18d72155e60ad858cae9a6`, agent
+v26):** the call itself was v26's validation lap — escalation, DOB-wall
+line, producer-state answer (Virginia, correct: GEICO's producer box is
+Fredericksburg VA), and n1h all worked. Two rough edges: (a) the human
+rep's "repeat that policy number" got the ENTIRE n1h first-turn shape
+again, identification line included; (b) her "We do not have that policy
+number here" routed to N6b's channel ask and then a how-should-we-follow-
+up question, ending on the rep's useless "just call back" — when a
+strong-identifier miss is itself the answer (owner rule: policy number
+and VIN are sources of truth; an insured-name miss alone is weak).
+
+**Cause:** (a) n1h prescribed the first-turn shape but had no repeat rule,
+so a repeat request re-ran the whole shape. (b) N4c's NW edge covered only
+"cannot find any record of the insured" — a policy-number miss fell
+through to the cannot-verify edge (N6b). NW itself could not host a
+confirming read-back either: NW and N9b end calls via
+`skip_response_edge` → node-hangup, i.e. they speak and hang up WITHOUT
+waiting for a reply — any question added there dies mid-air. Check for a
+skip_response_edge before making a terminal node conversational.
+
+**Remedy (v27, app + flow):**
+- n1h: repeat requests repeat ONLY the value, from its spoken form.
+- N4c rule 8 + gate NO-RECORD RULE: on a policy-number/VIN miss, confirm
+  ONCE ("Just to confirm, you're showing no record under {identifier}?"),
+  offer the other strong identifier if untried, then stop — no channel
+  ask, no follow-up logistics; NW's existing terminal goodbye ("Thanks
+  for checking. Goodbye.") fires via the broadened N4c/gate NW edges
+  (condition now requires the confirming read-back to have happened).
+  n1h routes no-record claims into N4c where the confirm rule lives.
+- Post-call analysis: new enum `not_found_identifier`
+  (none/insured_name/policy_number/vin/multiple). App: `callRedFlag()` in
+  `lib/ai-call-shared.ts` shows "Policy not found" in red on the admin
+  call tab + calls index when `claimed_no_record` is true with a strong
+  identifier. The failed-verification verdict stays with the admin at
+  publish — the flag is a signal, not an auto-fail (owner decision
+  2026-08-05: offices are sometimes wrong; name misses never flag).
+- Test scenario `not-found` (deterministic: first reply after the miss is
+  the confirm, and no best-way/follow-up question ever appears after it).
+
+**Two more fixes surfaced by the v27 harness runs (same publish):**
+- The "Great." stall: N4c rule 2's 'say only "Great."' re-fired on every
+  fresh "go ahead, what are your questions?" turn (issue-16 class — no
+  once-guard at the trigger), stalling the `human` scenario in 2 of 3
+  runs while the N4c→gate edge never named question-invitations. Fixed
+  with a ONCE-per-call guard in the rule and an invitation clause on the
+  gate edge.
+- A rogue rationale line: gpt-4.1 sometimes answers a request for a
+  detail it lacks by verbalizing the global prompt's independence
+  principle ("I'm asked to have your office state the details, so the
+  verification stays independent") instead of the miss line. Gate + N5
+  rule 0 now say the miss line plus the offer is the ENTIRE reply —
+  never explain why, never mention verification independence. If that
+  phrasing reappears from another node, hunt for the same
+  principle-verbalization pattern.
 
 ## Standing rules for any change here
 

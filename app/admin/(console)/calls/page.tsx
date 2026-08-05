@@ -5,7 +5,7 @@ import { withRetry } from '@/lib/db'
 import { C } from '@/lib/theme'
 import { pacificDateTime } from '@/lib/dates'
 import PaginatedTable from '@/components/PaginatedTable'
-import { ACTIVE_STATUSES, dispositionLabel, type AiCall } from '@/lib/ai-calls'
+import { ACTIVE_STATUSES, callRedFlag, dispositionLabel, type AiCall } from '@/lib/ai-calls'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,7 +93,10 @@ export default async function AdminCallsPage() {
               <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5, whiteSpace: 'nowrap' }}>{call.to_number ?? ''}</td>
               <td style={td}><StatusPill call={call} /></td>
               <td style={{ ...td, fontFamily: C.mono, fontSize: 12.5 }}>{duration(call)}</td>
-              <td style={{ ...td, color: C.txt2 }}>{dispositionLabel(call)}</td>
+              <td style={{ ...td, color: C.txt2 }}>
+                {dispositionLabel(call)}
+                {callRedFlag(call) && <span style={{ color: C.error, fontWeight: 700 }}> · {callRedFlag(call)}</span>}
+              </td>
               <td style={{ ...td, color: C.txt3, whiteSpace: 'nowrap' }}>{call.published_note_at ? 'Published' : ''}</td>
             </tr>
           ))}
@@ -115,9 +118,10 @@ export default async function AdminCallsPage() {
               <div style={{ fontSize: 12, color: C.txt3, marginTop: 3 }}>
                 {pacificDateTime(call.approved_at ?? call.created_at)}
               </div>
-              {(dispositionLabel(call) || call.published_note_at) && (
+              {(dispositionLabel(call) || call.published_note_at || callRedFlag(call)) && (
                 <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 4 }}>
                   {[dispositionLabel(call), call.published_note_at ? 'Published' : ''].filter(Boolean).join(' · ')}
+                  {callRedFlag(call) && <span style={{ color: C.error, fontWeight: 700 }}> · {callRedFlag(call)}</span>}
                 </div>
               )}
             </Link>

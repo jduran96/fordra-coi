@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { C } from '@/lib/theme'
 import { pacificDateTime } from '@/lib/dates'
 import EditorModal from '@/components/EditorModal'
-import { ACTIVE_STATUSES, TERMINAL_STATUSES, dispositionLabel, type AiCall } from '@/lib/ai-call-shared'
+import { ACTIVE_STATUSES, TERMINAL_STATUSES, callRedFlag, dispositionLabel, type AiCall } from '@/lib/ai-call-shared'
 import type { AiCallQuestion, CallContextFields, NumberCandidate, ReferenceDetail } from '@/lib/call-config'
 import CallReviewForm from './call/CallReviewForm'
 import LiveCallPanel from './LiveCallPanel'
@@ -96,7 +96,10 @@ export default function AiCallLauncher({ verificationId, context, questions, det
                     <td style={{ ...td, fontFamily: C.mono }}>{call.to_number ?? '—'}</td>
                     <td style={td}><StatusPill call={call} /></td>
                     <td style={{ ...td, fontFamily: C.mono, color: C.txt3 }}>{c.duration}</td>
-                    <td style={{ ...td, color: C.txt2 }}>{c.outcome}</td>
+                    <td style={{ ...td, color: C.txt2 }}>
+                      {c.outcome}
+                      {c.redFlag && <span style={{ color: C.error, fontWeight: 700 }}> · {c.redFlag}</span>}
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       <button type="button" onClick={() => setModal({ mode: 'call', callId: call.id })}
                         style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, fontFamily: C.sans, borderRadius: 9999, border: `1px solid ${C.border}`, background: 'transparent', color: C.txt2, cursor: 'pointer' }}>
@@ -126,7 +129,10 @@ export default function AiCallLauncher({ verificationId, context, questions, det
                   <div style={{ fontSize: 12, color: C.txt3, marginTop: 2 }}>
                     {pacificDateTime(call.approved_at ?? call.created_at)}
                   </div>
-                  <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 4 }}>{c.outcome}</div>
+                  <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 4 }}>
+                    {c.outcome}
+                    {c.redFlag && <span style={{ color: C.error, fontWeight: 700 }}> · {c.redFlag}</span>}
+                  </div>
                 </button>
               )
             })}
@@ -167,6 +173,7 @@ function callChrome(call: AiCall) {
       ? `${Math.floor(call.duration_ms / 60000)}:${String(Math.floor((call.duration_ms % 60000) / 1000)).padStart(2, '0')}`
       : '—',
     outcome: call.published_note_at ? 'In contact log' : dispositionLabel(call) || (call.error ? 'Error' : '—'),
+    redFlag: callRedFlag(call),
   }
 }
 
@@ -251,6 +258,11 @@ function CallView({ verificationId, caseIsClosed, call, callId }: {
         {call.to_number && <span style={{ fontFamily: C.mono, fontSize: 13, color: C.txt }}>{call.to_number}</span>}
         <span style={{ fontSize: 13, color: C.txt3 }}>{pacificDateTime(call.approved_at ?? call.created_at)}</span>
         {dispositionLabel(call) && <span style={{ fontSize: 12.5, color: C.txt2 }}>{dispositionLabel(call)}</span>}
+        {callRedFlag(call) && (
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.error, background: `color-mix(in oklch, ${C.error} 12%, transparent)`, padding: '3px 10px', borderRadius: 20 }}>
+            {callRedFlag(call)}
+          </span>
+        )}
       </div>
       {call.error && <p style={{ fontSize: 13, color: C.error, margin: 0 }}>{call.error}</p>}
       {summary ? (

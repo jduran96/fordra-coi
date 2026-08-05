@@ -73,6 +73,11 @@
  *   human-midivr — a human takes over mid-IVR and immediately asks a direct
  *            question. Passes only if the reply is the short identification
  *            plus the answer (owner copy 2026-08-05), never the full opener.
+ *   not-found — the office finds no record by the policy number (VRF-1113
+ *            third call, 2026-08-05: the miss got the channel ask + a
+ *            follow-up question). Passes only if the agent confirms once
+ *            (optionally offering the VIN) and then ends with no channel
+ *            ask and no follow-up logistics.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -467,6 +472,25 @@ Rules:
       'After Sam finds the policy, the agent proceeds with its verification questions and completes them',
     ],
   },
+  {
+    // VRF-1113 third call (2026-08-05): "We do not have that policy number
+    // here" got the channel ask + a how-do-we-follow-up question before the
+    // goodbye. A strong-identifier miss (policy number / VIN) gets ONE
+    // confirming read-back (offering the other strong identifier), then the
+    // no-record goodbye - no channel ask, no follow-up logistics.
+    key: 'not-found',
+    name: 'fordra-policy-not-found-wrapup',
+    user_prompt: `You are Zoila, a human rep at a GEICO service center. Answer the phone: "Thank you for calling GEICO. My name is Zoila. Please provide me with the policy number or phone number connected to the account." Then follow these rules exactly:
+- When the caller gives a policy number: reply "We do not have that policy number here."
+- If the caller asks you to confirm that, or reads the number back: reply "That's right, nothing under that number."
+- If the caller offers or asks you to try a VIN: reply "Let me check... no, nothing under that VIN either."
+- If the caller asks how else to verify, how to follow up, or for any contact channel: reply "Just give us a callback whenever." (This should never happen - the caller should simply end.)
+- Never volunteer any policy information. Wrap up politely if the caller says goodbye.`,
+    metrics: [
+      "After Zoila says she does not have the policy number, the agent confirms exactly once (reading the number back or asking her to confirm no record) and may offer the VIN as an alternative; once she confirms nothing is found, the agent thanks her and ends the call WITHOUT asking how else to get the certificate verified and WITHOUT asking how to follow up or reach anyone",
+      'The agent never repeats its own identification line more than once to Zoila and never pushes her to search again after she has confirmed no record',
+    ],
+  },
 ]
 
 /**
@@ -707,6 +731,25 @@ const DETERMINISTIC_CHECKS = {
         const sText = speech(sReply)
         if (!/arizona/i.test(sText)) v.push(`state answer was not Arizona (producer state): "${sText.slice(0, 80)}"`)
         if (/florida/i.test(sText)) v.push('answered with the insured state despite a producer address being present')
+      }
+    }
+    return v
+  },
+  // VRF-1113 third call: a strong-identifier miss gets one confirm, then
+  // the goodbye - never the channel ask or follow-up logistics.
+  'not-found': list => {
+    const v = []
+    const missIdx = list.findIndex(u => (u.role ?? '') === 'user' && /do not have that policy number/i.test(speech(u)))
+    if (missIdx < 0) return ['no-record line never played']
+    const after = list.slice(missIdx + 1)
+    const agentTurns = after.filter(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    if (!agentTurns.length) { v.push('agent said nothing after the no-record claim'); return v }
+    if (!/confirm|no record|nothing under|showing no/i.test(speech(agentTurns[0]))) {
+      v.push(`first reply was not the confirming read-back: "${speech(agentTurns[0]).slice(0, 80)}"`)
+    }
+    for (const u of agentTurns) {
+      if (/best way|how should|reach you|follow up/i.test(speech(u))) {
+        v.push(`asked channel/follow-up logistics after a strong-identifier miss: "${speech(u).slice(0, 80)}"`)
       }
     }
     return v

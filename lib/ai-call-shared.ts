@@ -160,6 +160,20 @@ export function dispositionLabel(row: Pick<AiCall, 'status' | 'disconnection_rea
   }
 }
 
+/**
+ * Red flag for a finished call: the office affirmatively found no record by a
+ * STRONG identifier (policy number / VIN — the sources of truth). An
+ * insured-name miss alone never flags: offices mis-search names, so the agent
+ * offers a strong identifier first and only a strong miss is a signal. The
+ * admin still issues the failed-verification verdict at publish.
+ */
+export function callRedFlag(row: Pick<AiCall, 'call_analysis'>): string | null {
+  const custom = (row.call_analysis?.custom_analysis_data ?? {}) as Record<string, unknown>
+  if (custom.claimed_no_record !== true) return null
+  const id = String(custom.not_found_identifier ?? '')
+  return id === 'policy_number' || id === 'vin' || id === 'multiple' ? 'Policy not found' : null
+}
+
 /** Escape a string for embedding in the summary HTML. */
 function esc(s: string): string {
   return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -184,6 +198,7 @@ const CUSTOM_FIELDS: { key: string; label: string; alwaysShow?: boolean }[] = [
   { key: 'captured_email', label: 'Email captured' },
   { key: 'refusal_reason', label: 'Refusal reason' },
   { key: 'claimed_no_record', label: 'Claimed no record' },
+  { key: 'not_found_identifier', label: 'Not found by' },
   { key: 'portal_named', label: 'Portal named' },
   { key: 'other_entity_referred', label: 'Referred to' },
   { key: 'fix_initiated', label: 'Fix initiated' },
