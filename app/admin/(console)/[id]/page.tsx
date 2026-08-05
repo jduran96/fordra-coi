@@ -164,7 +164,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
   // Pre-dial prefill for the launcher modal: COI extraction + org call config,
   // overridden by the saved draft's own edits (same merge the old /call page did).
   const callConfig = await getCallConfig(v.org_id as string | null)
-  const orgDetails = await getReferenceDetails(v.org_id as string | null)
+  const orgRef = await getReferenceDetails(v.org_id as string | null)
   const callPrefill = draftFromVerification({
     displayId: String(v.display_id ?? ''),
     agentQuestions: v.agent_questions,
@@ -173,7 +173,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     contactChecks: checks,
     insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
     config: callConfig,
-    orgDetails,
+    orgDetails: orgRef.details,
+    labelOverrides: orgRef.labels,
     templateVariables: templateVariableMap,
   })
   const draftInput = (aiDraft?.draft_input ?? null) as (Partial<CallContextFields> & { details_json?: string }) | null

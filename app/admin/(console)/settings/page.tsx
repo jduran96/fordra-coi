@@ -18,7 +18,7 @@ import CallConfigCard from './CallConfigCard'
 import QuestionsListCard from './QuestionsListCard'
 import ReferenceDetailsCard from './ReferenceDetailsCard'
 import { CALL_CONFIG_KEY } from '@/lib/config'
-import { parseReferenceDetails, REFERENCE_DETAILS_KEY, type OrgCallConfig, type ReferenceDetail } from '@/lib/call-config'
+import { parseReferenceDetails, parseReferenceLabelOverrides, REFERENCE_DETAILS_KEY, type OrgCallConfig, type ReferenceDetail, type ReferenceLabelOverrides } from '@/lib/call-config'
 import { parseQuestionsConfig, QUESTIONS_CONFIG_KEY, type ConfiguredQuestion } from '@/lib/question-config'
 import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
 
@@ -71,10 +71,13 @@ export default async function AdminSettings({ searchParams }: {
   const { data: refCfgRows, error: refCfgError } = await svc
     .from('app_config').select('key, value').like('key', `${REFERENCE_DETAILS_KEY}:%`)
   if (refCfgError) throw new Error(`Could not load reference details configs: ${refCfgError.message}`)
-  const refByOrg: Record<string, ReferenceDetail[]> = {}
+  const refByOrg: Record<string, { details: ReferenceDetail[]; labels: ReferenceLabelOverrides }> = {}
   for (const r of refCfgRows ?? []) {
     const details = parseReferenceDetails(r.value)
-    if (details.length) refByOrg[r.key.slice(REFERENCE_DETAILS_KEY.length + 1)] = details
+    const labels = parseReferenceLabelOverrides(r.value)
+    if (details.length || Object.keys(labels).length) {
+      refByOrg[r.key.slice(REFERENCE_DETAILS_KEY.length + 1)] = { details, labels }
+    }
   }
 
   // Questions List configs: one row per org+template pair, keyed "orgId:templateId".

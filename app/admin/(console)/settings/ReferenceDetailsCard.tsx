@@ -2,42 +2,21 @@
 
 import { useState, useTransition } from 'react'
 import { C } from '@/lib/theme'
-import type { ReferenceDetail } from '@/lib/call-config'
+import { COMPUTED_ROW_KINDS, type ComputedRowKind, type ReferenceDetail, type ReferenceLabelOverrides } from '@/lib/call-config'
 import { saveReferenceDetails } from './actions'
 
 /**
- * Org-level predefined reference details: label/value rows prepended to every
- * pre-dial prefill for that org's verifications, ahead of the per-deal rows
- * computed from the COI. The card also spells out that computed logic so the
- * admin can see exactly where prefilled rows come from. Renders only once an
- * org is picked.
+ * Org-level reference details config: exactly the rows that land in the
+ * agent's {{reference_details}} variable, in dispatch order. Two editable
+ * groups: the org's own label/value rows (sent first on every call), then the
+ * per-deal computed rows whose TITLES are org-configurable here while their
+ * values fill from each deal's COI/standards at call time. Renders only once
+ * an org is picked.
  */
-
-/** The three identity-core rows the pre-dial Reference details section always
- *  shows first (CallReviewForm LOOKUP_FIELDS). Their titles are fixed because
- *  each dispatches to the phone agent as its own dedicated variable
- *  (insured_name / agency_name / agent_name; renaming means a Retell agent
- *  change) — only their values are editable per call. */
-const FIXED_ROWS: { label: string; source: string }[] = [
-  { label: 'Insured name', source: 'the named insured on the COI; spoken in the agent\'s opening line' },
-  { label: 'Insurer name', source: 'the producer/agency on the COI' },
-  { label: 'Insurer contact', source: 'the insurance company contact on the COI, or the logged insurer contact' },
-]
-
-/** The per-deal rows draftFromVerification computes (lib/call-config.ts) —
- *  keep this list in sync with that function. */
-const COMPUTED_ROWS: { label: string; source: string }[] = [
-  { label: 'Policy number (one row per coverage)', source: 'each distinct policy number on the COI, labeled with its coverage type' },
-  { label: 'Insured address', source: 'the named insured address on the COI' },
-  { label: 'Certificate holder / holder address', source: 'the certificate holder box on the COI' },
-  { label: 'Vehicle description (one row each)', source: 'vehicle-titled rows in the submitted standards whose value holds the year/make/model (e.g. "Vehicle listed: 2019 International 4300"); insurers ask for it when verifying by vehicle' },
-  { label: 'VIN (one row each)', source: 'every 17-character VIN in the submitted standards (template rows, manual inputs, per-deal variables); VINs only on the COI are excluded' },
-  { label: 'USDOT number / MC number', source: 'the COI when present' },
-]
 
 export default function ReferenceDetailsCard({ orgs, byOrg }: {
   orgs: { id: string; name: string }[]
-  byOrg: Record<string, ReferenceDetail[]>
+  byOrg: Record<string, { details: ReferenceDetail[]; labels: ReferenceLabelOverrides }>
 }) {
   const [orgId, setOrgId] = useState('')
   return (
@@ -52,30 +31,34 @@ export default function ReferenceDetailsCard({ orgs, byOrg }: {
       {orgId && (
         /* Keyed by org + stored data so switching orgs remounts the editor
            with the right rows (React 19 stale-state rule). */
-        <DetailsEditor key={`${orgId}:${JSON.stringify(byOrg[orgId] ?? [])}`} orgId={orgId} stored={byOrg[orgId] ?? []} />
+        <DetailsEditor
+          key={`${orgId}:${JSON.stringify(byOrg[orgId] ?? {})}`}
+          orgId={orgId}
+          stored={byOrg[orgId]?.details ?? []}
+          storedLabels={byOrg[orgId]?.labels ?? {}}
+        />
       )}
     </div>
   )
 }
 
-function DetailsEditor({ orgId, stored }: { orgId: string; stored: ReferenceDetail[] }) {
+function DetailsEditor({ orgId, stored, storedLabels }: {
+  orgId: string
+  stored: ReferenceDetail[]
+  storedLabels: ReferenceLabelOverrides
+}) {
   const [rows, setRows] = useState<ReferenceDetail[]>(stored.length ? stored : [{ label: '', value: '' }])
+  const [labels, setLabels] = useState<Record<ComputedRowKind, string>>(() => {
+    const init = {} as Record<ComputedRowKind, string>
+    for (const { kind, defaultLabel } of COMPUTED_ROW_KINDS) init[kind] = storedLabels[kind] ?? defaultLabel
+    return init
+  })
   const [message, setMessage] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
 
   const setRow = (i: number, patch: Partial<ReferenceDetail>) => {
     setMessage(null)
     setRows(prev => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  }
-  const move = (i: number, dir: -1 | 1) => {
-    setMessage(null)
-    setRows(prev => {
-      const next = [...prev]
-      const j = i + dir
-      if (j < 0 || j >= next.length) return prev
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return next
-    })
   }
 
   const save = () => {
@@ -84,6 +67,7 @@ function DetailsEditor({ orgId, stored }: { orgId: string; stored: ReferenceDeta
       const fd = new FormData()
       fd.set('org_id', orgId)
       fd.set('details', JSON.stringify(rows))
+      fd.set('labels', JSON.stringify(labels))
       const res = await saveReferenceDetails(fd)
       if (res && 'error' in res && res.error) setMessage({ kind: 'error', text: res.error })
       else setMessage({ kind: 'ok', text: 'Saved.' })
@@ -92,59 +76,51 @@ function DetailsEditor({ orgId, stored }: { orgId: string; stored: ReferenceDeta
 
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ background: C.paper, border: `1px solid ${C.border}`, borderRadius: 9, padding: 12 }}>
-        <p style={sectionTitleStyle}>How reference details prefill on each deal</p>
-        <p style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 8px' }}>
-          The pre-dial screen always shows these three rows first. Their titles are locked because
-          each one is passed to the phone agent as its own named variable; only the value is
-          editable per call:
-        </p>
-        <ul style={{ margin: '0 0 10px', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {FIXED_ROWS.map(r => (
-            <li key={r.label} style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 600, color: C.txt }}>{r.label}</span>: {r.source}
-            </li>
+      <div>
+        <p style={sectionTitleStyle}>Org rows (sent first, every call)</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map((row, i) => (
+            <div key={i} className="fx-q-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <input
+                value={row.label}
+                placeholder="Title (e.g. Loan number)"
+                onChange={e => setRow(i, { label: e.target.value })}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <input
+                value={row.value}
+                placeholder="Value the agent can give the office"
+                onChange={e => setRow(i, { value: e.target.value })}
+                style={{ ...inputStyle, flex: 2 }}
+              />
+              <button type="button" onClick={() => { setMessage(null); setRows(prev => prev.filter((_, j) => j !== i)) }}
+                style={{ ...tinyBtn, color: C.error }} aria-label="Remove">✕</button>
+            </div>
           ))}
-        </ul>
-        <p style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.6, margin: '0 0 8px' }}>
-          Then come the rows you save here, followed by rows added automatically from the deal
-          itself (an automatic row appears only when the value exists; these all stay fully
-          editable per call, titles included):
-        </p>
-        <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {COMPUTED_ROWS.map(r => (
-            <li key={r.label} style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 600, color: C.txt }}>{r.label}</span>: {r.source}
-            </li>
-          ))}
-        </ul>
-      </div>
-      {rows.map((row, i) => (
-        <div key={i} className="fx-q-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          <input
-            value={row.label}
-            placeholder="Label (e.g. Loan number)"
-            onChange={e => setRow(i, { label: e.target.value })}
-            style={{ ...inputStyle, flex: 1 }}
-          />
-          <input
-            value={row.value}
-            placeholder="Value the agent can give the office"
-            onChange={e => setRow(i, { value: e.target.value })}
-            style={{ ...inputStyle, flex: 2 }}
-          />
-          <div className="fx-q-tools" style={{ display: 'flex', gap: 4 }}>
-            <button type="button" onClick={() => move(i, -1)} disabled={i === 0} style={tinyBtn(i === 0)} aria-label="Move up">↑</button>
-            <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1} style={tinyBtn(i === rows.length - 1)} aria-label="Move down">↓</button>
-            <button type="button" onClick={() => { setMessage(null); setRows(prev => prev.filter((_, j) => j !== i)) }}
-              style={{ ...tinyBtn(false), color: C.error }} aria-label="Remove">✕</button>
-          </div>
         </div>
-      ))}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button type="button" onClick={() => { setMessage(null); setRows(prev => [...prev, { label: '', value: '' }]) }} style={btnStyle(false)}>
+        <button type="button" onClick={() => { setMessage(null); setRows(prev => [...prev, { label: '', value: '' }]) }}
+          style={{ ...btnStyle(false), marginTop: 8 }}>
           Add row
         </button>
+      </div>
+      <div>
+        <p style={sectionTitleStyle}>Per-deal rows (titles editable, values fill from each deal)</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {COMPUTED_ROW_KINDS.map(({ kind, placeholder }) => (
+            <div key={kind} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <input
+                value={labels[kind]}
+                placeholder={placeholder}
+                onChange={e => { setMessage(null); setLabels(prev => ({ ...prev, [kind]: e.target.value })) }}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <input value="" placeholder={valueHint(kind)} disabled readOnly
+                style={{ ...inputStyle, flex: 2, opacity: 0.55, cursor: 'default' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <button type="button" onClick={save} disabled={pending} style={btnStyle(pending)}>
           {pending ? 'Saving...' : 'Save reference details'}
         </button>
@@ -156,6 +132,20 @@ function DetailsEditor({ orgId, stored }: { orgId: string; stored: ReferenceDeta
   )
 }
 
+/** Disabled value-cell placeholder: where each computed row's value comes from. */
+function valueHint(kind: ComputedRowKind): string {
+  switch (kind) {
+    case 'policy_number': return 'Each policy number on the COI (one row per coverage)'
+    case 'insured_address': return 'Named insured address on the COI'
+    case 'certificate_holder': return 'Certificate holder on the COI'
+    case 'certificate_holder_address': return 'Certificate holder address on the COI'
+    case 'vehicle': return 'Year/make/model from the submitted standards'
+    case 'vin': return 'Each VIN in the submitted standards (one row per VIN)'
+    case 'usdot': return 'USDOT number on the COI'
+    case 'mc': return 'MC number on the COI'
+  }
+}
+
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.txt2, display: 'block', marginBottom: 4 }
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13.5, fontFamily: C.sans, color: C.txt, background: C.surface, borderRadius: 7, border: `1px solid ${C.border}` }
 const sectionTitleStyle: React.CSSProperties = {
@@ -163,4 +153,4 @@ const sectionTitleStyle: React.CSSProperties = {
   color: C.txt3, margin: '0 0 8px',
 }
 const btnStyle = (pending: boolean): React.CSSProperties => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.65 : 1 })
-const tinyBtn = (disabled: boolean): React.CSSProperties => ({ padding: '2px 8px', background: C.surface, color: C.txt2, fontSize: 12, borderRadius: 6, border: `1px solid ${C.border}`, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.45 : 1 })
+const tinyBtn: React.CSSProperties = { padding: '2px 8px', background: C.surface, color: C.txt2, fontSize: 12, borderRadius: 6, border: `1px solid ${C.border}`, cursor: 'pointer' }

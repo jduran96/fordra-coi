@@ -355,6 +355,42 @@ export function collectVehicleDescriptions(
 export const REFERENCE_DETAILS_KEY = 'reference_details'
 export const referenceDetailsKey = (orgId: string) => `${REFERENCE_DETAILS_KEY}:${orgId}`
 
+/**
+ * The per-deal computed reference rows, in the order draftFromVerification
+ * emits them. Each row's TITLE is org-configurable (settings → Calling →
+ * Reference details); the VALUE always fills from the deal (COI extraction /
+ * submitted standards) at call time. `defaultLabel` is what ships without an
+ * override; the vehicle kind's default is dynamic (the resolved template
+ * variable's name, e.g. "Vehicle listed"), so its default here is blank and
+ * `placeholder` carries the example.
+ */
+export const COMPUTED_ROW_KINDS = [
+  { kind: 'policy_number', defaultLabel: 'Policy number', placeholder: 'Policy number' },
+  { kind: 'insured_address', defaultLabel: 'Insured address', placeholder: 'Insured address' },
+  { kind: 'certificate_holder', defaultLabel: 'Certificate holder', placeholder: 'Certificate holder' },
+  { kind: 'certificate_holder_address', defaultLabel: 'Certificate holder address', placeholder: 'Certificate holder address' },
+  // The vehicle default is dynamic (the template variable's own name, e.g.
+  // "Vehicle listed"), so no static default; an override replaces it.
+  { kind: 'vehicle', defaultLabel: '', placeholder: 'Vehicle listed (deal\'s variable name unless set)' },
+  { kind: 'vin', defaultLabel: 'VIN', placeholder: 'VIN' },
+  { kind: 'usdot', defaultLabel: 'USDOT number', placeholder: 'USDOT number' },
+  { kind: 'mc', defaultLabel: 'MC number', placeholder: 'MC number' },
+] as const
+export type ComputedRowKind = (typeof COMPUTED_ROW_KINDS)[number]['kind']
+export type ReferenceLabelOverrides = Partial<Record<ComputedRowKind, string>>
+
+/** Tolerant read of the stored computed-row title overrides (`labels` map). */
+export function parseReferenceLabelOverrides(value: unknown): ReferenceLabelOverrides {
+  const raw = (value as { labels?: unknown })?.labels
+  if (!raw || typeof raw !== 'object') return {}
+  const out: ReferenceLabelOverrides = {}
+  for (const { kind } of COMPUTED_ROW_KINDS) {
+    const v = (raw as Record<string, unknown>)[kind]
+    if (typeof v === 'string' && v.trim()) out[kind] = v.trim()
+  }
+  return out
+}
+
 /** Tolerant read of a stored reference-details config value. */
 export function parseReferenceDetails(value: unknown): ReferenceDetail[] {
   const raw = (value as { details?: unknown })?.details
@@ -381,6 +417,8 @@ export function draftFromVerification(input: {
   config: OrgCallConfig
   /** Org-level predefined rows (settings → Calling → Reference details). */
   orgDetails?: ReferenceDetail[]
+  /** Org-level computed-row title overrides (same settings card). */
+  labelOverrides?: ReferenceLabelOverrides
   /** Resolved per-deal template variable values (requirements provenance). */
   templateVariables?: Record<string, string>
 }): { context: CallContextFields; questions: AiCallQuestion[]; numbers: NumberCandidate[]; details: ReferenceDetail[] } {
@@ -399,34 +437,38 @@ export function draftFromVerification(input: {
   // computed row appears only when its value exists; the admin edits/adds/
   // removes rows freely per call.
   const details: ReferenceDetail[] = [...(input.orgDetails ?? [])]
+  const ov = input.labelOverrides ?? {}
   const push = (label: string, value: string | undefined) => {
     const v = (value ?? '').trim()
     if (v) details.push({ label, value: v })
   }
   const seenPolicy = new Set<string>()
+  const policyBase = ov.policy_number ?? 'Policy number'
   for (const c of coi?.coverages ?? []) {
     const num = (c.policy_number ?? '').trim()
     if (!num || seenPolicy.has(num)) continue
     seenPolicy.add(num)
     const type = (c.type ?? '').trim()
-    details.push({ label: type ? `Policy number (${type})` : 'Policy number', value: num })
+    details.push({ label: type ? `${policyBase} (${type})` : policyBase, value: num })
   }
-  push('Insured address', coi?.named_insured_address)
+  push(ov.insured_address ?? 'Insured address', coi?.named_insured_address)
   // Deal parties are per-COI facts, not org config: the certificate holder
   // (when this COI names one) rides as ordinary reference details the admin
   // can edit, replace with a loss payee row, or delete. Newer extractions
   // split the holder box into name + address; older ones have one string.
   const holderName = (coi?.certificate_holder_name ?? '').trim()
   if (holderName) {
-    push('Certificate holder', holderName)
-    push('Certificate holder address', coi?.certificate_holder_address)
+    push(ov.certificate_holder ?? 'Certificate holder', holderName)
+    push(ov.certificate_holder_address ?? 'Certificate holder address', coi?.certificate_holder_address)
   } else {
-    push('Certificate holder', coi?.certificate_holder)
+    push(ov.certificate_holder ?? 'Certificate holder', coi?.certificate_holder)
   }
-  for (const d of collectVehicleDescriptions(input.requirements, input.templateVariables)) details.push(d)
-  for (const vin of collectVins(input.requirements)) push('VIN', vin)
-  push('USDOT number', coi?.usdot_number)
-  push('MC number', coi?.mc_number)
+  for (const d of collectVehicleDescriptions(input.requirements, input.templateVariables)) {
+    details.push(ov.vehicle ? { label: ov.vehicle, value: d.value } : d)
+  }
+  for (const vin of collectVins(input.requirements)) push(ov.vin ?? 'VIN', vin)
+  push(ov.usdot ?? 'USDOT number', coi?.usdot_number)
+  push(ov.mc ?? 'MC number', coi?.mc_number)
 
   const numbers: NumberCandidate[] = []
   const seen = new Set<string>()

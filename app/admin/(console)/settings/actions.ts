@@ -8,7 +8,7 @@ import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
 import { questionsConfigKey, type ConfiguredQuestion } from '@/lib/question-config'
-import { referenceDetailsKey, type ReferenceDetail } from '@/lib/call-config'
+import { COMPUTED_ROW_KINDS, referenceDetailsKey, type ReferenceDetail, type ReferenceLabelOverrides } from '@/lib/call-config'
 
 const PROMPT_KEYS: Record<string, string> = {
   coi: CONFIG_KEYS.promptCoiExtraction,
@@ -179,9 +179,22 @@ export async function saveReferenceDetails(formData: FormData): Promise<{ ok?: b
   const halfFilled = rows.some(d =>
     !!String(d?.label ?? '').trim() !== !!String(d?.value ?? '').trim())
   if (halfFilled) return { error: 'Every row needs both a label and a value (or remove the row).' }
+  // Computed-row title overrides: only titles that differ from the built-in
+  // default are stored; a cleared/default title falls back to the default.
+  let rawLabels: Record<string, unknown>
+  try {
+    rawLabels = JSON.parse(String(formData.get('labels') || '{}'))
+  } catch {
+    return { error: 'Could not read the row titles. Please retry.' }
+  }
+  const labels: ReferenceLabelOverrides = {}
+  for (const { kind, defaultLabel } of COMPUTED_ROW_KINDS) {
+    const v = String(rawLabels?.[kind] ?? '').trim()
+    if (v && v !== defaultLabel) labels[kind] = v
+  }
   const key = referenceDetailsKey(orgId)
-  if (details.length === 0) await deleteConfig(key)
-  else await setConfig(key, { details })
+  if (details.length === 0 && Object.keys(labels).length === 0) await deleteConfig(key)
+  else await setConfig(key, { details, labels })
   revalidatePath('/admin/settings')
   return { ok: true }
 }
