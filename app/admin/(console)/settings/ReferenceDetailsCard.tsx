@@ -131,6 +131,8 @@ function DetailsEditor({ orgId, storedLabels, storedHidden }: {
 function valueHint(kind: ComputedRowKind): string {
   switch (kind) {
     case 'policy_number': return 'Each policy number on the COI (one row per coverage)'
+    case 'producer': return 'Producer (agency) name on the COI'
+    case 'producer_address': return 'Producer address on the COI (insurer address if absent)'
     case 'insured_address': return 'Named insured address on the COI'
     case 'certificate_holder': return 'Certificate holder on the COI'
     case 'certificate_holder_address': return 'Certificate holder address on the COI'

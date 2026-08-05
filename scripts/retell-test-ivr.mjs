@@ -58,6 +58,21 @@
  *            listed on the certificate?" got the pending gate question twice).
  *            Passes only if the reply is the miss line, never the pending
  *            question, with at most one "Of course." during the hold.
+ *   qualified-menu — the TrueNorth menu (VRF-1114, 2026-08-05 live failure:
+ *            "if you are a current client press one for customer service" —
+ *            no qualifier fit and the agent hung up without pressing).
+ *            Passes only if the agent presses one anyway (qualifiers never
+ *            disqualify the human-reaching option).
+ *   lookup-escalate — the GEICO speech slot that can never find the policy
+ *            number (VRF-1113). Passes only if the agent reads the number at
+ *            most twice and then asks for an agent instead of dead-ending.
+ *   auth-wall — the GEICO date-of-birth wall plus the recovery slots the
+ *            owner hit live (first character of the policy number, state).
+ *            Passes only if the agent declines the DOB with an agent ask and
+ *            answers the state from the PRODUCER address, not the insured's.
+ *   human-midivr — a human takes over mid-IVR and immediately asks a direct
+ *            question. Passes only if the reply is the short identification
+ *            plus the answer (owner copy 2026-08-05), never the full opener.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -357,6 +372,101 @@ CHARACTER 2 - Michelle, insurance department rep. Greet: "NASTC Insurance. How c
       "When the rep asks what date is listed on the certificate (which is NOT among the agent's reference details), the agent's very next reply says it does not have that and offers something else instead; it NEVER replies to her question with its own pending verification question (the per-occurrence limit or any other)",
     ],
   },
+  {
+    // VRF-1114 (TrueNorth, 2026-08-05): "if you are a current client...
+    // press one for customer service / for a quote press two" - neither
+    // qualifier fit, the agent pressed nothing and hung up. Qualifiers must
+    // never disqualify the human-reaching option.
+    key: 'qualified-menu',
+    name: 'fordra-truenorth-qualified-menu',
+    user_prompt: `You are simulating an AUTOMATED phone menu for TrueNorth insurance. You are a machine: never conversational until state 2. Follow this script exactly.
+
+STATE 1 (start here, replay on any spoken words or on silence): play "Thank you for calling TrueNorth and Truckers service team. Please remember that all phone calls are recorded for quality and training. If you are a current client or have already received your quote, please press one for customer service. If you are in need of a quote, press two."
+STATE 2 (only after the caller presses one): a HUMAN takes over: "Customer service, this is Dana. How can I help you?" From here on you are Dana, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (the policy is active, the vehicle is listed, the limit is one million dollars), then wrap up politely.
+If the caller presses two: play "Thank you for your interest in a quote. Please hold for our sales team." and replay it forever; never reach a human.
+
+Rules:
+- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn. Treat any of those as the digit pressed.
+- Never react to the meaning of anything spoken before state 2. You are a recording until then.`,
+    metrics: [
+      "The agent's very first turn (the opening line, spoken before menu detection can happen) is EXEMPT and never counts as a violation. What must hold: the agent presses one for customer service - the option that reaches a human - even though the menu frames it as being for current clients, and it never presses two for a quote, never ends the call while the menu is offering digits, and never speaks to the menu after the exempt first turn. Judge keypresses ONLY by explicit press_digit tool invocations: node_transition entries are never evidence of a press",
+      'When Dana comes on the line, the agent introduces itself and completes its verification questions with her',
+    ],
+  },
+  {
+    // VRF-1113 (GEICO, 2026-08-05): the speech slot could not find the
+    // policy number no matter how it was read (a lookup failure, confirmed
+    // by a human caller failing too). Retry once, then escalate to an
+    // agent instead of dead-ending.
+    key: 'lookup-escalate',
+    name: 'fordra-geico-lookup-escalate',
+    user_prompt: `You are simulating a large carrier's AUTOMATED speech-driven phone system. You are a machine until state 4. Follow this script exactly.
+
+STATE 1 (start): play "Thank you for calling BigCo Insurance business and commercial department. Now, using a few words, how can I help you? You can say things such as file a claim, get a quote, or verify coverage. Go ahead."
+STATE 2 (after the caller says anything): play "Sure. What's the policy number or phone number you're calling about?"
+STATE 3: whenever the caller reads any number or digits, play "Sorry, I didn't catch that. Let's try again. What's the policy number or phone number you're calling about?" This happens EVERY time digits are read: the number can never be recognized, no matter how it is read.
+STATE 4: ONLY if the caller asks for an agent, a representative, or a person, or presses zero: a HUMAN takes over: "Hi, this is Marcus. How can I help you today?" From here on you are Marcus, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
+
+Rules:
+- Never recognize any number. Never volunteer an agent yourself.
+- You are the SYSTEM until state 4: never ask to speak to anyone, never ask whether the caller can hear you, never comment on the conversation. Only the CALLER can request an agent. After playing a message, wait.
+- NEVER repeat, read back, or echo any number the caller says. Your only lines are the scripted messages above.
+- Never react to anything outside the script before state 4.`,
+    metrics: [
+      'After the system twice fails to recognize the policy number the agent read, the agent asks to speak to an agent or representative instead of reading the number a third time or ending the call',
+      'When Marcus comes on the line, the agent introduces itself and completes its verification questions with him',
+    ],
+  },
+  {
+    // VRF-1113: GEICO's date-of-birth authentication wall, plus the
+    // recovery slots the owner hit when calling in person (first character
+    // of the policy number, then the state). The state answer comes from
+    // the PRODUCER address, falling back to the insured address.
+    key: 'auth-wall',
+    name: 'fordra-authwall-dob-state',
+    user_prompt: `You are simulating a carrier's AUTOMATED speech-driven identity system. You are a machine until the final state. Follow this script exactly.
+
+STATE 1 (start): play "To protect your privacy, please say or enter your date of birth. Month, day, and year."
+STATE 2: only when the caller says it does not have that, or asks for an agent or a person: play "Okay. To route your call, what is the first digit or letter of the policy number?"
+STATE 3: when the caller gives a single letter or digit: play "Thank you. And what state are you calling about?"
+STATE 4: when the caller names a US state: a HUMAN takes over: "Thanks for waiting, this is Priya. Can I help you?" From here on you are Priya, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
+
+Rules:
+- In state 1, if the caller stays silent or gives anything that is not an I-don't-have-that or an agent request, replay state 1.
+- In states 2-3, if the answer does not fit, replay the current state's question once, then move on anyway.
+- A press_digit tool call or DTMF marker counts as the caller giving that character.
+- NEVER answer your own questions and never invent letters, digits, or states the caller did not give. After asking, wait for the caller.
+- Never react to anything outside the script before Priya.`,
+    metrics: [
+      'The agent never invents or guesses a date of birth; it says it does not have it and asks to speak with an agent',
+      "The agent answers the first-character question with N (its policy number NTL321510 starts with N) and the state question with Arizona (the state of the producer's address in its reference details), never Florida (the insured's state is only the fallback when no producer address exists)",
+    ],
+    variables: {
+      reference_details: '- Policy number (Automobile Liability): NTL321510 [last four if asked: 5 1 0 | spoken: N T L. 3 2 1 5 1 0]\n- Producer (insurance agency): Colstan & Associates\n- Producer address: 4801 E Washington St, Phoenix, AZ 85034\n- Insured address: 700 Main St, Lehigh Acres, FL 33936\n- VIN: 1XKYD49X0MJ470445 [LEAD WITH LAST FOUR: 0 4 4 5 | full spoken: 1. X K Y D. 4 9 X. 0. M J. 4 7 0 4 4 5]',
+    },
+  },
+  {
+    // The human who finally answers after an IVR often opens with a direct
+    // question and no pleasantries. The reply is the short on-behalf-of
+    // line plus the answer (owner copy, 2026-08-05) - never the full
+    // opener re-delivered.
+    key: 'human-midivr',
+    name: 'fordra-human-arrival-direct-question',
+    user_prompt: `You are simulating an AUTOMATED phone menu. You are a machine: never a human, never conversational, no matter what the caller says. A human named Sam exists BEHIND the menu and is reachable ONLY by keypress. Follow this script exactly.
+
+STATE 1 (start): play "Thank you for calling Colstan&Associates. For policy service, press one. For claims, press two."
+STATE 2 (after the caller presses one): play "Please hold."
+STATE 3 (your next turn after "Please hold."): the human takes over, and her FIRST words are a direct question with no greeting pleasantries: "Hi, this is Sam, I see you're calling about a policy - can you confirm the policy number you're calling about?" From here on you are Sam, a normal human rep: once the caller gives a number starting with N T L, say "Great, I found it. What did you need?" and then answer all their questions plausibly (policy active, vehicle listed, one million dollar limit), wrapping up politely when done.
+
+Rules:
+- The ONLY exit from state 1 is a keypress. If the caller SPEAKS in state 1 - words, questions, a self-introduction, anything at all - you are a recording that cannot hear meaning: replay state 1 verbatim and nothing else. Never answer, never acknowledge, never skip ahead to Sam.
+- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn: advance state 1 to state 2.
+- Sam speaks only in state 3, and her first line is always her scripted policy-number question.`,
+    metrics: [
+      "When Sam asks for the policy number, the agent's very next reply both briefly identifies itself (calling from Dakota Financial Titling Trust on a recorded line) and reads the policy number - it does NOT deliver the full opener asking whether she needs the insured's name to get started, and does not ask any question of its own in that reply",
+      'After Sam finds the policy, the agent proceeds with its verification questions and completes them',
+    ],
+  },
 ]
 
 /**
@@ -522,6 +632,97 @@ const DETERMINISTIC_CHECKS = {
     if (!/don'?t have/i.test(text)) v.push(`first reply to the mid-hold question was not the miss line: "${text.slice(0, 80)}"`)
     if (/per.occurrence|active|in force|certificate holder|listed on the policy/i.test(text)) {
       v.push(`answered the rep's question with a pending question: "${text.slice(0, 80)}"`)
+    }
+    return v
+  },
+  // VRF-1114: correct behavior is silent turns while the menu replays (kill-
+  // prone), then a press. Reaching Dana proves the press was 1: the script
+  // only hands off on 1.
+  'qualified-menu': list => {
+    const v = []
+    const danaIdx = list.findIndex(u => /this is Dana/i.test(speech(u)))
+    const menuish = /press|recorded for quality|thank you for calling/i
+    let agentTurns = 0
+    let lastUser = ''
+    for (const u of list.slice(0, danaIdx < 0 ? list.length : danaIdx)) {
+      if ((u.role ?? '') === 'user') lastUser = speech(u)
+      if ((u.role ?? '').includes('agent') && speech(u).trim()) {
+        agentTurns++
+        if (agentTurns > 1 && menuish.test(lastUser)) {
+          v.push(`spoke to the menu after the exempt first turn: "${speech(u).slice(0, 60)}"`)
+        }
+      }
+    }
+    if (danaIdx < 0 && !JSON.stringify(list).includes('press_digit')) {
+      v.push('never pressed a digit on the qualified menu (VRF-1114 regression)')
+    }
+    return v
+  },
+  // VRF-1113: at most two reads of the number, then an agent request.
+  'lookup-escalate': list => {
+    const v = []
+    const marcusIdx = list.findIndex(u => /this is Marcus/i.test(speech(u)))
+    const end = marcusIdx < 0 ? list.length : marcusIdx
+    const pre = list.slice(0, end)
+    const reads = pre.filter(u => (u.role ?? '').includes('agent') && speech(u).replace(/\D/g, '').includes('321510'))
+    if (reads.length === 0) v.push('never read the policy number to the system')
+    if (reads.length > 2) v.push(`read the policy number ${reads.length}x (max 2 before escalating)`)
+    if (!pre.some(u => (u.role ?? '').includes('agent') && /\b(agent|representative|person)\b/i.test(speech(u)))) {
+      v.push('never asked for an agent after the failed lookups')
+    }
+    return v
+  },
+  // VRF-1113: the DOB wall gets the miss line + agent ask, never silence or
+  // an invented date; the state slot gets the producer state (Arizona). The
+  // very first agent turn is the platform-exempt opener (begin transitions
+  // into N1 before the IVR globals can fire) — the DOB reply is whichever
+  // agent turn comes after that.
+  'auth-wall': list => {
+    const v = []
+    const dobIdx = list.findIndex(u => /date of birth/i.test(speech(u)))
+    if (dobIdx < 0) return ['DOB question never played']
+    const priyaIdx = list.findIndex(u => /this is Priya/i.test(speech(u)))
+    const pre = list.slice(0, priyaIdx < 0 ? list.length : priyaIdx)
+    const replies = pre.slice(dobIdx + 1).filter(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const missIdx = replies.findIndex(u => /don'?t have/i.test(speech(u)) && /\b(agent|representative|person)\b/i.test(speech(u)))
+    if (missIdx < 0) {
+      v.push('never gave the DOB wall the miss line plus an agent ask')
+    } else if (missIdx > 1) {
+      // Index 0 may be the exempt opener; the miss line must come right after.
+      v.push(`took ${missIdx + 1} turns to decline the DOB wall`)
+    }
+    if (pre.some(u => (u.role ?? '').includes('agent') && /\b(19|20)\d{2}\b|january|february|march|april|june|july|august|september|october|november|december/i.test(speech(u)))) {
+      v.push('spoke something date-like at the DOB wall')
+    }
+    // Identity questions are speech slots: any keypress other than 0 (the
+    // operator escape) is the run-2 press-N misfire recurring.
+    for (const u of pre) {
+      const m = JSON.stringify(u).match(/digit_to_press\\?":\\?"([^"\\]+)/)
+      if (m && m[1] !== '0') v.push(`pressed "${m[1]}" on a speech identity question`)
+    }
+    const stateIdx = pre.findIndex(u => (u.role ?? '') === 'user' && /what state/i.test(speech(u)))
+    if (stateIdx >= 0) {
+      const sReply = pre.slice(stateIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+      if (sReply) {
+        const sText = speech(sReply)
+        if (!/arizona/i.test(sText)) v.push(`state answer was not Arizona (producer state): "${sText.slice(0, 80)}"`)
+        if (/florida/i.test(sText)) v.push('answered with the insured state despite a producer address being present')
+      }
+    }
+    return v
+  },
+  // Human arrival with a direct question: the first reply is the short
+  // identification plus the answer, never the full opener.
+  'human-midivr': list => {
+    const v = []
+    const samIdx = list.findIndex(u => (u.role ?? '') === 'user' && /confirm the policy number/i.test(speech(u)))
+    if (samIdx < 0) return ["Sam's policy-number question never played"]
+    const reply = list.slice(samIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const text = reply ? speech(reply).trim() : ''
+    if (!/calling from .* on a recorded line/i.test(text)) v.push(`first reply missing the short identification: "${text.slice(0, 80)}"`)
+    if (!/n\s*[., ]?\s*t\s*[., ]?\s*l/i.test(text)) v.push(`first reply did not read the policy number: "${text.slice(0, 80)}"`)
+    if (/insured'?s name to get started|to verify a certificate of insurance/i.test(text)) {
+      v.push(`first reply delivered the full opener: "${text.slice(0, 80)}"`)
     }
     return v
   },

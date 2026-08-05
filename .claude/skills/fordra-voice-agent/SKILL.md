@@ -52,11 +52,12 @@ setting is retuned, append/update an entry here in the same format.
   (year/make/model from template variables/requirement rows, issue 17),
   VINs, USDOT/MC. Insurers verify by vehicle: keep the vehicle description
   row next to its VIN.
-- **Test harness:** `scripts/retell-test-ivr.mjs` runs sixteen scenarios
+- **Test harness:** `scripts/retell-test-ivr.mjs` runs twenty scenarios
   rebuilt from real calls (Colstan keypad IVR, human, already-verified, Avant
   callback queue, Farm Bureau message-only menu, Progressive-style AI
-  gatekeeper, plus the VRF-1110/1111/1112 hold/patience/deflection cases —
-  see the file header for the full list).
+  gatekeeper, the VRF-1110/1111/1112 hold/patience/deflection cases, plus
+  the VRF-1113/1114 qualified-menu / lookup-escalate / auth-wall /
+  human-arrival cases — see the file header for the full list).
   Silence-heavy scenarios trip the simulator's liveness kill when the agent is
   CORRECTLY silent; the harness then falls back to deterministic transcript
   checks. Run it against every draft before publish.
@@ -84,6 +85,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-04 (v23) | 1.0 | 0.7 | VRF-1111 fixes (issue 16): transfer ack once per transfer, thinking-aloud patience, hold-noise silence; voice settings unchanged |
 | 2026-08-04 (v24) | 1.0 | 0.7 | VRF-1112 fixes (issue 17): gate/N5 miss branch for details not in the list, dead-end routes to N6b channel ask; voice settings unchanged |
 | 2026-08-04 (v25) | 1.0 | 0.7 | VRF-1112 second call, fixes (issue 18): request-handling hoisted above gate/N5 headline job, mid-hold-question exception inline in the hold rule (gate/N5/N4c); voice settings unchanged |
+| 2026-08-05 (v26) | 1.0 | 0.7 | VRF-1113/1114 IVR fixes (issues 19-20): two-pass keypad selection, retry-then-escalate on failed lookups, DOB-wall agent ask, partial-identifier + producer-state answers, new node-n1h human-arrival answer-first; voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -527,18 +529,72 @@ are now silent run separators in `valueSpoken` — "9300357038-00" renders as
 email/URL-shaped values). Hints are rendered at dispatch time, so the fix
 applies to every call dispatched after deploy with no redraft needed.
 
-**Not fixed, known gaps from the same call:** (a) no mechanism to enter a
-long identifier via keypad when an IVR demands "using only your keypad" —
-the press nodes are built around single menu digits, so the agent goes
-silent; (b) no representative-escape rule — when trapped in an
-authentication slot it cannot answer (DOB, SSN), the agent silently retries
-into the dead end instead of saying "representative"/pressing 0 to reach a
-human first. Also observed, non-fatal: the opener was delivered after a
-greeting-plus-pause with no keypad cue yet (v21 hardening keys on menu
-wording), and two spurious press-1s on menus that offered no 1. The
-transcript's apparent talk-over on this call was an artifact — per-word
-timestamps showed zero overlap; the agent spoke into a 4s gap that the flat
-transcript renders as an interruption.
+**Follow-up (flow v26, 2026-08-05, after the retry call
+`call_1159b4a1d7426272f9e5ab08b3e` read the number cleanly and GEICO still
+failed — the owner then failed by voice too, so it is a lookup failure, not
+pronunciation):**
+- Navigator rule 4b: a speech slot that cannot catch/find a value from the
+  reference details gets ONE re-read, then "speak to an agent" / press 0 —
+  never a third read, never a dead-end while an agent path is untried.
+- Auth-wall (old gap b): rule 4 now says exactly "I don't have that. Could
+  I speak with an agent, please?" for DOB/SSN-style demands, instead of
+  silent retries into the hangup. Rule 6 (loop exit) and both fail edges
+  also require an agent ask before ending.
+- Partial identifiers: give exactly the requested part (first digit/letter,
+  last four) from the reference details.
+- State questions: producer's state (Producer address row) first, insured's
+  state as fallback — owner decision 2026-08-05. App side: `producer` +
+  `producer_address` computed row kinds added to `lib/call-config.ts`
+  (values from `coi.producer` / `coi.insurance_company_address`); saved
+  drafts from before that deploy lack the rows until re-drafted.
+- Human arrival mid-IVR: new node `node-n1h` — all three IVR nodes' live-
+  person edges now land there instead of re-delivering the N1 opener. If
+  the person opens with a direct question, the whole first turn is the
+  owner-approved copy: "Hi, I'm calling from {{on_behalf_of}} on a
+  recorded line. {answer}." then silence until they lead (reminder
+  follow-up: the insured-name hook). A plain greeting gets the standard
+  opener wording. N1 itself stays static_text — do not fold conditional
+  behavior into it.
+
+**Still open:** (a) no mechanism to enter a long identifier via keypad when
+an IVR demands "using only your keypad" — the press nodes are built around
+single menu digits; (b) the `begin` step transitions straight into N1 on
+the first turn, before the IVR global conditions can fire, so the opener
+still lands on robots whose greeting precedes any menu cue (non-fatal both
+times; platform-limited). The transcript's apparent talk-over on this call
+was an artifact — per-word timestamps showed zero overlap; the agent spoke
+into a 4s gap that the flat transcript renders as an interruption.
+
+## 20. Menu qualifiers disqualified every option; agent hung up without pressing (VRF-1114)
+
+**Symptom (TrueNorth, 2026-08-05, `call_23b50919247bfec32885b9e4911`,
+agent v25):** menu offered "if you are a current client or have already
+received your quote, press one for customer service; if you are in need of
+a quote, press two." The agent — neither a client nor quote-shopping —
+matched nothing, pressed NOTHING through three menu plays, then took the
+keypad node's dead-end edge (whose condition literally required "digits
+were pressed") and hung up at 56s. The opener had also been spoken over
+the menu's second play (the begin→N1 gap, issue 19 still-open item b).
+
+**Cause:** the press nodes' preference list named customer service but
+nothing said a qualifier ("if you are a current client") does not
+disqualify an option; and the fail edge fired despite its own
+digits-were-pressed wording — an LLM edge condition is not a validator, so
+the impossible branch needs to be unpickable by instruction, not just
+false in fact.
+
+**Remedy (shipped v26):** both press nodes rewritten as TWO PASSES — pass
+1 purpose match (certificates / policy verification / commercial), pass 2
+last resort ONLY when nothing fits: the option most likely to reach a
+human soonest (customer service, operator, front desk). Explicit clause:
+a qualifier NEVER disqualifies — judge options by where they LEAD, not who
+the menu says they are for (owner logic 2026-08-05: never blanket-default
+to customer service when a purpose match exists). Fail edges on both press
+nodes and the navigator now forbid firing when no digit has been pressed
+or while any digit is on offer, and require an agent ask before ending.
+Navigator rule 2 mirrors the two-pass logic for spoken menus. Test
+scenario `qualified-menu` (deterministic check: reaching Dana proves the
+press was 1; menu speech after the exempt first turn is a violation).
 
 ## Standing rules for any change here
 

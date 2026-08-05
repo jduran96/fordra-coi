@@ -369,6 +369,8 @@ export const referenceDetailsKey = (orgId: string) => `${REFERENCE_DETAILS_KEY}:
  */
 export const COMPUTED_ROW_KINDS = [
   { kind: 'policy_number', defaultLabel: 'Policy number', placeholder: 'Policy number' },
+  { kind: 'producer', defaultLabel: 'Producer (insurance agency)', placeholder: 'Producer name' },
+  { kind: 'producer_address', defaultLabel: 'Producer address', placeholder: 'Producer address' },
   { kind: 'insured_address', defaultLabel: 'Insured address', placeholder: 'Insured address' },
   { kind: 'certificate_holder', defaultLabel: 'Certificate holder', placeholder: 'Certificate holder' },
   { kind: 'certificate_holder_address', defaultLabel: 'Certificate holder address', placeholder: 'Certificate holder address' },
@@ -449,6 +451,8 @@ export function draftFromVerification(input: {
     const type = (c.type ?? '').trim()
     push('policy_number', type ? `${policyBase} (${type})` : policyBase, num)
   }
+  push('producer', ov.producer ?? 'Producer (insurance agency)', coi?.producer)
+  push('producer_address', ov.producer_address ?? 'Producer address', coi?.insurance_company_address)
   push('insured_address', ov.insured_address ?? 'Insured address', coi?.named_insured_address)
   // Deal parties are per-COI facts, not org config: the certificate holder
   // (when this COI names one) rides as ordinary reference details the admin
