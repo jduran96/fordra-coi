@@ -347,10 +347,12 @@ export function collectVehicleDescriptions(
 }
 
 /**
- * Org-level predefined reference details (settings → Calling → Reference
- * details), stored in app_config under `reference_details:<orgId>`. They are
- * prepended to every deal's prefilled reference details, ahead of the per-deal
- * facts computed from the COI/standards below.
+ * Org-level reference-details config (settings → Calling → Reference
+ * details), stored in app_config under `reference_details:<orgId>`:
+ * `labels` (computed-row title overrides) and `hidden` (row kinds the org
+ * deleted so they never prefill). Older rows may also carry a `details`
+ * array (the retired org-level static rows, removed 2026-08-05); it is
+ * ignored on read.
  */
 export const REFERENCE_DETAILS_KEY = 'reference_details'
 export const referenceDetailsKey = (orgId: string) => `${REFERENCE_DETAILS_KEY}:${orgId}`
@@ -379,6 +381,15 @@ export const COMPUTED_ROW_KINDS = [
 export type ComputedRowKind = (typeof COMPUTED_ROW_KINDS)[number]['kind']
 export type ReferenceLabelOverrides = Partial<Record<ComputedRowKind, string>>
 
+/** Tolerant read of the stored removed-row kinds (`hidden` array): computed
+ *  rows the org has deleted so they are never sent to the agent. */
+export function parseReferenceHiddenKinds(value: unknown): ComputedRowKind[] {
+  const raw = (value as { hidden?: unknown })?.hidden
+  if (!Array.isArray(raw)) return []
+  const known = new Set<string>(COMPUTED_ROW_KINDS.map(k => k.kind))
+  return [...new Set(raw.filter((k): k is ComputedRowKind => typeof k === 'string' && known.has(k)))]
+}
+
 /** Tolerant read of the stored computed-row title overrides (`labels` map). */
 export function parseReferenceLabelOverrides(value: unknown): ReferenceLabelOverrides {
   const raw = (value as { labels?: unknown })?.labels
@@ -391,21 +402,6 @@ export function parseReferenceLabelOverrides(value: unknown): ReferenceLabelOver
   return out
 }
 
-/** Tolerant read of a stored reference-details config value. */
-export function parseReferenceDetails(value: unknown): ReferenceDetail[] {
-  const raw = (value as { details?: unknown })?.details
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((d): ReferenceDetail | null => {
-      if (!d || typeof d !== 'object') return null
-      const { label, value: v } = d as Record<string, unknown>
-      if (typeof label !== 'string' || typeof v !== 'string') return null
-      const trimmed = { label: label.trim(), value: v.trim() }
-      return trimmed.label && trimmed.value ? trimmed : null
-    })
-    .filter((d): d is ReferenceDetail => !!d)
-}
-
 /** Prefill the editable context + questions + details + number panel from stored data. */
 export function draftFromVerification(input: {
   displayId: string
@@ -415,10 +411,10 @@ export function draftFromVerification(input: {
   contactChecks: ContactCheckEntry[]
   insuranceContact: { name?: string; phone?: string; email?: string } | null
   config: OrgCallConfig
-  /** Org-level predefined rows (settings → Calling → Reference details). */
-  orgDetails?: ReferenceDetail[]
-  /** Org-level computed-row title overrides (same settings card). */
+  /** Org-level computed-row title overrides (settings → Calling → Reference details). */
   labelOverrides?: ReferenceLabelOverrides
+  /** Org-level removed row kinds (same settings card): never prefilled. */
+  hiddenKinds?: ComputedRowKind[]
   /** Resolved per-deal template variable values (requirements provenance). */
   templateVariables?: Record<string, string>
 }): { context: CallContextFields; questions: AiCallQuestion[]; numbers: NumberCandidate[]; details: ReferenceDetail[] } {
@@ -432,15 +428,16 @@ export function draftFromVerification(input: {
     call_context: 'new',
   }
 
-  // Prefill reference details: the org's predefined rows first, then one row
-  // per fact found on the COI extraction or in the submitted standards — a
-  // computed row appears only when its value exists; the admin edits/adds/
+  // Prefill reference details: one row per fact found on the COI extraction
+  // or in the submitted standards — a computed row appears only when its
+  // value exists and its kind is not org-removed; the admin edits/adds/
   // removes rows freely per call.
-  const details: ReferenceDetail[] = [...(input.orgDetails ?? [])]
+  const details: ReferenceDetail[] = []
   const ov = input.labelOverrides ?? {}
-  const push = (label: string, value: string | undefined) => {
+  const hidden = new Set(input.hiddenKinds ?? [])
+  const push = (kind: ComputedRowKind, label: string, value: string | undefined) => {
     const v = (value ?? '').trim()
-    if (v) details.push({ label, value: v })
+    if (v && !hidden.has(kind)) details.push({ label, value: v })
   }
   const seenPolicy = new Set<string>()
   const policyBase = ov.policy_number ?? 'Policy number'
@@ -449,26 +446,26 @@ export function draftFromVerification(input: {
     if (!num || seenPolicy.has(num)) continue
     seenPolicy.add(num)
     const type = (c.type ?? '').trim()
-    details.push({ label: type ? `${policyBase} (${type})` : policyBase, value: num })
+    push('policy_number', type ? `${policyBase} (${type})` : policyBase, num)
   }
-  push(ov.insured_address ?? 'Insured address', coi?.named_insured_address)
+  push('insured_address', ov.insured_address ?? 'Insured address', coi?.named_insured_address)
   // Deal parties are per-COI facts, not org config: the certificate holder
   // (when this COI names one) rides as ordinary reference details the admin
   // can edit, replace with a loss payee row, or delete. Newer extractions
   // split the holder box into name + address; older ones have one string.
   const holderName = (coi?.certificate_holder_name ?? '').trim()
   if (holderName) {
-    push(ov.certificate_holder ?? 'Certificate holder', holderName)
-    push(ov.certificate_holder_address ?? 'Certificate holder address', coi?.certificate_holder_address)
+    push('certificate_holder', ov.certificate_holder ?? 'Certificate holder', holderName)
+    push('certificate_holder_address', ov.certificate_holder_address ?? 'Certificate holder address', coi?.certificate_holder_address)
   } else {
-    push(ov.certificate_holder ?? 'Certificate holder', coi?.certificate_holder)
+    push('certificate_holder', ov.certificate_holder ?? 'Certificate holder', coi?.certificate_holder)
   }
   for (const d of collectVehicleDescriptions(input.requirements, input.templateVariables)) {
-    details.push(ov.vehicle ? { label: ov.vehicle, value: d.value } : d)
+    push('vehicle', ov.vehicle ?? d.label, d.value)
   }
-  for (const vin of collectVins(input.requirements)) push(ov.vin ?? 'VIN', vin)
-  push(ov.usdot ?? 'USDOT number', coi?.usdot_number)
-  push(ov.mc ?? 'MC number', coi?.mc_number)
+  for (const vin of collectVins(input.requirements)) push('vin', ov.vin ?? 'VIN', vin)
+  push('usdot', ov.usdot ?? 'USDOT number', coi?.usdot_number)
+  push('mc', ov.mc ?? 'MC number', coi?.mc_number)
 
   const numbers: NumberCandidate[] = []
   const seen = new Set<string>()

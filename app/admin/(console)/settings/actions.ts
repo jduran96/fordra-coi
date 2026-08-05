@@ -8,7 +8,7 @@ import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
 import { questionsConfigKey, type ConfiguredQuestion } from '@/lib/question-config'
-import { COMPUTED_ROW_KINDS, referenceDetailsKey, type ReferenceDetail, type ReferenceLabelOverrides } from '@/lib/call-config'
+import { COMPUTED_ROW_KINDS, referenceDetailsKey, type ComputedRowKind, type ReferenceLabelOverrides } from '@/lib/call-config'
 
 const PROMPT_KEYS: Record<string, string> = {
   coi: CONFIG_KEYS.promptCoiExtraction,
@@ -167,34 +167,28 @@ export async function saveReferenceDetails(formData: FormData): Promise<{ ok?: b
   await requireAdmin()
   const orgId = String(formData.get('org_id') || '').trim()
   if (!orgId) return { error: 'Pick an org first.' }
-  let rows: ReferenceDetail[]
-  try {
-    rows = JSON.parse(String(formData.get('details') || '[]'))
-  } catch {
-    return { error: 'Could not read the detail rows. Please retry.' }
-  }
-  const details = rows
-    .map(d => ({ label: String(d?.label ?? '').trim(), value: String(d?.value ?? '').trim() }))
-    .filter(d => d.label && d.value)
-  const halfFilled = rows.some(d =>
-    !!String(d?.label ?? '').trim() !== !!String(d?.value ?? '').trim())
-  if (halfFilled) return { error: 'Every row needs both a label and a value (or remove the row).' }
   // Computed-row title overrides: only titles that differ from the built-in
   // default are stored; a cleared/default title falls back to the default.
   let rawLabels: Record<string, unknown>
+  let rawHidden: unknown
   try {
     rawLabels = JSON.parse(String(formData.get('labels') || '{}'))
+    rawHidden = JSON.parse(String(formData.get('hidden') || '[]'))
   } catch {
-    return { error: 'Could not read the row titles. Please retry.' }
+    return { error: 'Could not read the rows. Please retry.' }
   }
+  const known = new Map(COMPUTED_ROW_KINDS.map(k => [k.kind as string, k.defaultLabel]))
+  const hidden = Array.isArray(rawHidden)
+    ? [...new Set(rawHidden.filter((k): k is ComputedRowKind => typeof k === 'string' && known.has(k)))]
+    : []
   const labels: ReferenceLabelOverrides = {}
   for (const { kind, defaultLabel } of COMPUTED_ROW_KINDS) {
     const v = String(rawLabels?.[kind] ?? '').trim()
     if (v && v !== defaultLabel) labels[kind] = v
   }
   const key = referenceDetailsKey(orgId)
-  if (details.length === 0 && Object.keys(labels).length === 0) await deleteConfig(key)
-  else await setConfig(key, { details, labels })
+  if (hidden.length === 0 && Object.keys(labels).length === 0) await deleteConfig(key)
+  else await setConfig(key, { labels, hidden })
   revalidatePath('/admin/settings')
   return { ok: true }
 }

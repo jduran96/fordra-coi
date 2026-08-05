@@ -173,8 +173,8 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
     contactChecks: checks,
     insuranceContact: (v.insurance_contact ?? null) as { name?: string; phone?: string; email?: string } | null,
     config: callConfig,
-    orgDetails: orgRef.details,
     labelOverrides: orgRef.labels,
+    hiddenKinds: orgRef.hidden,
     templateVariables: templateVariableMap,
   })
   const draftInput = (aiDraft?.draft_input ?? null) as (Partial<CallContextFields> & { details_json?: string }) | null

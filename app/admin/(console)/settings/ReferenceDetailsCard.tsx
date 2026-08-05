@@ -2,21 +2,29 @@
 
 import { useState, useTransition } from 'react'
 import { C } from '@/lib/theme'
-import { COMPUTED_ROW_KINDS, type ComputedRowKind, type ReferenceDetail, type ReferenceLabelOverrides } from '@/lib/call-config'
+import { COMPUTED_ROW_KINDS, type ComputedRowKind, type ReferenceLabelOverrides } from '@/lib/call-config'
 import { saveReferenceDetails } from './actions'
 
 /**
- * Org-level reference details config: exactly the rows that land in the
- * agent's {{reference_details}} variable, in dispatch order. Two editable
- * groups: the org's own label/value rows (sent first on every call), then the
- * per-deal computed rows whose TITLES are org-configurable here while their
- * values fill from each deal's COI/standards at call time. Renders only once
- * an org is picked.
+ * Org-level reference details config: the rows that prefill each deal's call.
+ * Top: the always-sent identity rows (locked; each is its own Retell variable,
+ * so retitling means an agent change). Below: the per-deal computed rows —
+ * title editable per org, value fills from the deal at call time, red ✕
+ * removes the row kind from every call (restorable). Renders only once an
+ * org is picked.
  */
+
+/** Always-sent rows: dedicated dispatch variables, not part of
+ *  {{reference_details}}; shown so the admin sees the full picture here. */
+const FIXED_ROWS: { label: string; hint: string }[] = [
+  { label: 'Insured name', hint: 'Named insured on the COI' },
+  { label: 'Insurer name', hint: 'Producer/agency on the COI' },
+  { label: 'Insurer contact', hint: 'Insurance company contact on the COI' },
+]
 
 export default function ReferenceDetailsCard({ orgs, byOrg }: {
   orgs: { id: string; name: string }[]
-  byOrg: Record<string, { details: ReferenceDetail[]; labels: ReferenceLabelOverrides }>
+  byOrg: Record<string, { labels: ReferenceLabelOverrides; hidden: ComputedRowKind[] }>
 }) {
   const [orgId, setOrgId] = useState('')
   return (
@@ -34,92 +42,79 @@ export default function ReferenceDetailsCard({ orgs, byOrg }: {
         <DetailsEditor
           key={`${orgId}:${JSON.stringify(byOrg[orgId] ?? {})}`}
           orgId={orgId}
-          stored={byOrg[orgId]?.details ?? []}
           storedLabels={byOrg[orgId]?.labels ?? {}}
+          storedHidden={byOrg[orgId]?.hidden ?? []}
         />
       )}
     </div>
   )
 }
 
-function DetailsEditor({ orgId, stored, storedLabels }: {
+function DetailsEditor({ orgId, storedLabels, storedHidden }: {
   orgId: string
-  stored: ReferenceDetail[]
   storedLabels: ReferenceLabelOverrides
+  storedHidden: ComputedRowKind[]
 }) {
-  const [rows, setRows] = useState<ReferenceDetail[]>(stored.length ? stored : [{ label: '', value: '' }])
   const [labels, setLabels] = useState<Record<ComputedRowKind, string>>(() => {
     const init = {} as Record<ComputedRowKind, string>
     for (const { kind, defaultLabel } of COMPUTED_ROW_KINDS) init[kind] = storedLabels[kind] ?? defaultLabel
     return init
   })
+  const [hidden, setHidden] = useState<ComputedRowKind[]>(storedHidden)
   const [message, setMessage] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
-
-  const setRow = (i: number, patch: Partial<ReferenceDetail>) => {
-    setMessage(null)
-    setRows(prev => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  }
 
   const save = () => {
     setMessage(null)
     startTransition(async () => {
       const fd = new FormData()
       fd.set('org_id', orgId)
-      fd.set('details', JSON.stringify(rows))
       fd.set('labels', JSON.stringify(labels))
+      fd.set('hidden', JSON.stringify(hidden))
       const res = await saveReferenceDetails(fd)
       if (res && 'error' in res && res.error) setMessage({ kind: 'error', text: res.error })
       else setMessage({ kind: 'ok', text: 'Saved.' })
     })
   }
 
+  const removed = COMPUTED_ROW_KINDS.filter(k => hidden.includes(k.kind))
+
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div>
-        <p style={sectionTitleStyle}>Org rows (sent first, every call)</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {rows.map((row, i) => (
-            <div key={i} className="fx-q-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <input
-                value={row.label}
-                placeholder="Title (e.g. Loan number)"
-                onChange={e => setRow(i, { label: e.target.value })}
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <input
-                value={row.value}
-                placeholder="Value the agent can give the office"
-                onChange={e => setRow(i, { value: e.target.value })}
-                style={{ ...inputStyle, flex: 2 }}
-              />
-              <button type="button" onClick={() => { setMessage(null); setRows(prev => prev.filter((_, j) => j !== i)) }}
-                style={{ ...tinyBtn, color: C.error }} aria-label="Remove">✕</button>
-            </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {FIXED_ROWS.map(r => (
+          <div key={r.label} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <input value={r.label} disabled readOnly style={{ ...inputStyle, flex: 1, opacity: 0.55, cursor: 'default' }} />
+            <input value="" placeholder={r.hint} disabled readOnly style={{ ...inputStyle, flex: 2, opacity: 0.55, cursor: 'default' }} />
+          </div>
+        ))}
+        {COMPUTED_ROW_KINDS.filter(k => !hidden.includes(k.kind)).map(({ kind, placeholder }) => (
+          <div key={kind} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <input
+              value={labels[kind]}
+              placeholder={placeholder}
+              onChange={e => { setMessage(null); setLabels(prev => ({ ...prev, [kind]: e.target.value })) }}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <input value="" placeholder={valueHint(kind)} disabled readOnly
+              style={{ ...inputStyle, flex: 2, opacity: 0.55, cursor: 'default' }} />
+            <button type="button" onClick={() => { setMessage(null); setHidden(prev => [...prev, kind]) }}
+              style={{ ...tinyBtn, color: C.error }} aria-label="Remove">✕</button>
+          </div>
+        ))}
+      </div>
+      {removed.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: C.txt2 }}>Removed:</span>
+          {removed.map(({ kind, defaultLabel, placeholder }) => (
+            <button key={kind} type="button"
+              onClick={() => { setMessage(null); setHidden(prev => prev.filter(k => k !== kind)) }}
+              style={tinyBtn} title="Restore">
+              {(labels[kind] || defaultLabel || placeholder)} ↩
+            </button>
           ))}
         </div>
-        <button type="button" onClick={() => { setMessage(null); setRows(prev => [...prev, { label: '', value: '' }]) }}
-          style={{ ...btnStyle(false), marginTop: 8 }}>
-          Add row
-        </button>
-      </div>
-      <div>
-        <p style={sectionTitleStyle}>Per-deal rows (titles editable, values fill from each deal)</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {COMPUTED_ROW_KINDS.map(({ kind, placeholder }) => (
-            <div key={kind} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <input
-                value={labels[kind]}
-                placeholder={placeholder}
-                onChange={e => { setMessage(null); setLabels(prev => ({ ...prev, [kind]: e.target.value })) }}
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <input value="" placeholder={valueHint(kind)} disabled readOnly
-                style={{ ...inputStyle, flex: 2, opacity: 0.55, cursor: 'default' }} />
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <button type="button" onClick={save} disabled={pending} style={btnStyle(pending)}>
           {pending ? 'Saving...' : 'Save reference details'}
@@ -148,9 +143,5 @@ function valueHint(kind: ComputedRowKind): string {
 
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.txt2, display: 'block', marginBottom: 4 }
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13.5, fontFamily: C.sans, color: C.txt, background: C.surface, borderRadius: 7, border: `1px solid ${C.border}` }
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-  color: C.txt3, margin: '0 0 8px',
-}
 const btnStyle = (pending: boolean): React.CSSProperties => ({ padding: '7px 13px', background: C.surface, color: C.txt, fontSize: 13, fontWeight: 600, fontFamily: C.sans, borderRadius: 7, border: `1px solid ${C.border}`, cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.65 : 1 })
 const tinyBtn: React.CSSProperties = { padding: '2px 8px', background: C.surface, color: C.txt2, fontSize: 12, borderRadius: 6, border: `1px solid ${C.border}`, cursor: 'pointer' }
