@@ -4,11 +4,22 @@ import { C } from './theme'
  * How overdue a submission is.
  *
  * The operating rule (owner, 2026-07-28): a COI should be finished the same
- * day it lands, there is a little wiggle room, and 3+ days is a no-go. Age is
- * counted in BUSINESS days, not calendar days, because a Friday submission
- * picked up Monday is one working day old, not three — the weekend is not
- * lateness. Everything renders in Pacific time, the same clock the rest of
- * the console uses.
+ * day it lands, there is a little wiggle room, and 3+ days is a no-go.
+ *
+ * Sharpened 2026-08-04 (owner): a day-granular pill is useless for triage
+ * inside the target window, because "Today" covers both a case that landed
+ * 20 minutes ago and one that landed nine hours ago and is about to blow the
+ * business-day turnaround. So anything under two days now reads in HOURS on
+ * both the phone and the desktop queue, and only past 48 hours does it fall
+ * back to a red day count.
+ *
+ * The hour phase is wall-clock elapsed time (that is what "3 hours ago"
+ * means to a reader). The day phase still reports BUSINESS days in its
+ * tooltip, because a Friday submission picked up Monday is one working day
+ * old, not three — the weekend is not lateness.
+ *
+ * Everything renders in Pacific time, the same clock the rest of the console
+ * uses.
  */
 
 const PACIFIC = 'America/Los_Angeles'
@@ -43,13 +54,22 @@ function businessDaysBetween(from: number, to: number): number {
 
 export type SlaLevel = 'today' | 'aging' | 'overdue'
 
+/** Hours after which the pill stops counting hours and starts counting days. */
+const DAYS_AFTER_HOURS = 48
+/** Hours of grace before an open case turns amber (half the business-day target). */
+const AMBER_AFTER_HOURS = 12
+
 export interface CaseAge {
+  /** Wall-clock hours since submission, floored. */
+  hours: number
   /** Working days since submission: 0 = landed today. */
   businessDays: number
   /** Calendar days, for the tooltip (a 1-business-day case can be 3 days old). */
   calendarDays: number
   level: SlaLevel
-  /** Pill text: "Today", "1 day", "4 days". */
+  /** True while the pill counts hours (under 2 days). */
+  inHours: boolean
+  /** Pill text: "Just now", "7 hours ago", "3 days ago". */
   label: string
   color: string
 }
@@ -60,23 +80,41 @@ export function caseAge(createdAt: string, now: Date = new Date()): CaseAge {
   const to = pacificDayNumber(now)
   const businessDays = businessDaysBetween(from, to)
   const calendarDays = Math.max(0, to - from)
-  const level: SlaLevel = businessDays >= 3 ? 'overdue' : businessDays >= 1 ? 'aging' : 'today'
+  // Clamped at 0: a clock skew between the DB and the renderer must not print
+  // a negative age.
+  const hours = Math.max(0, Math.floor((now.getTime() - new Date(createdAt).getTime()) / 3_600_000))
+  const inHours = hours < DAYS_AFTER_HOURS
+  const level: SlaLevel = !inHours ? 'overdue' : hours >= AMBER_AFTER_HOURS ? 'aging' : 'today'
   return {
+    hours,
     businessDays,
     calendarDays,
     level,
-    label: businessDays === 0 ? 'Today' : `${businessDays} day${businessDays === 1 ? '' : 's'}`,
+    inHours,
+    // Past the cutoff the day count comes from the same elapsed hours the
+    // pill was just counting, so it can never disagree with itself (a Pacific
+    // calendar-day count can read 3 for a 50-hour-old case).
+    label: inHours ? hoursAgo(hours) : `${Math.floor(hours / 24)} days ago`,
     color: level === 'overdue' ? C.error : level === 'aging' ? C.warn : C.ok,
   }
 }
 
+/** "Just now" / "1 hour ago" / "9 hours ago". */
+function hoursAgo(hours: number): string {
+  if (hours < 1) return 'Just now'
+  return `${hours} hour${hours === 1 ? '' : 's'} ago`
+}
+
 /** Longer form for tooltips: "Open 4 working days (6 calendar days)". */
 export function ageTitle(age: CaseAge): string {
-  if (age.businessDays === 0) return 'Submitted today, still on the same-day target'
+  if (age.inHours) {
+    const elapsed = age.hours < 1 ? 'under an hour' : hoursAgo(age.hours).replace(' ago', '')
+    return `Submitted ${elapsed} ago${age.level === 'today' ? ', still inside the business-day target' : ''}`
+  }
   const wd = `${age.businessDays} working day${age.businessDays === 1 ? '' : 's'}`
   return age.calendarDays === age.businessDays
-    ? `Open ${wd}`
-    : `Open ${wd} (${age.calendarDays} calendar days)`
+    ? `Open ${wd}, past the business-day target`
+    : `Open ${wd} (${age.calendarDays} calendar days), past the business-day target`
 }
 
 /** How long a finished case took, for the Completed list: "closed same day". */

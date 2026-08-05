@@ -5,8 +5,10 @@ import { C } from '@/lib/theme'
 import { deriveAdminStatus, adminStatusColor } from '@/lib/admin-status'
 import { adminInitials } from '@/lib/admin-activity'
 import PaginatedTable from '@/components/PaginatedTable'
+import NotePeek from '@/components/NotePeek'
 import { pacificDateTimeParts } from '@/lib/dates'
 import { caseAge, ageTitle, turnaroundLabel } from '@/lib/sla'
+import { agencyTimezone, agencyClock, agencyClockTitle, officeColor, type AgencyLocationInput } from '@/lib/timezone'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +28,10 @@ interface Row {
   insurance_contact: unknown
   final_report: unknown
   assigned_admin: string | null
+  /** Admin-to-admin sticky note (migration 0039). Never customer-visible. */
+  admin_note: string | null
+  admin_note_at: string | null
+  admin_note_by: string | null
   orgs: { name: string } | null
 }
 
@@ -37,7 +43,7 @@ export default async function AdminQueue() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('verifications')
-    .select('id, display_id, insured_name, status, source, created_at, updated_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, assigned_admin, orgs(name)')
+    .select('id, display_id, insured_name, status, source, created_at, updated_at, published_at, case_status, coi_extracted, call_notes, manual_notes, insurance_contact, final_report, assigned_admin, admin_note, admin_note_at, admin_note_by, orgs(name)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Could not load the review queue: ${error.message}`)
 
@@ -76,20 +82,33 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
       pageSize={10}
       head={
         <tr style={{ textAlign: 'left', color: C.txt3, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Policyholder</th><th style={th()}>Source</th><th style={th()}>Status</th><th style={th()}>Admin</th>
+          <th style={th()}>ID</th><th style={th()}>Org</th><th style={th()}>Policyholder</th><th style={th()}>Source</th>
+          {/* Only the open queue: a closed case is nobody's next call. */}
+          {!showPublished && <th style={th()}>Agency time</th>}
+          <th style={th()}>Status</th><th style={th()}>Admin</th>
           <th style={th()}>{showPublished ? 'Published' : 'Submitted'}</th>
         </tr>
       }
       rows={rows.map(r => (
         <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
           <td style={td()}>
-            <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <Link href={`/admin/${r.id}`} style={{ color: C.txt, fontWeight: 600, textDecoration: 'underline', textDecorationColor: C.limeDeep, textUnderlineOffset: 3 }}>{r.display_id}</Link>
+              {/* Indicator only: the note itself would make the queue
+                  unscannable, so it lives behind hover. */}
+              {r.admin_note && <NotePeek note={r.admin_note} at={r.admin_note_at} by={r.admin_note_by ?? ''} />}
+            </span>
           </td>
           {/* Long org/carrier names truncate so Status/Admin never get squeezed
               off; the full value is on hover. */}
           <td style={{ ...td(), ...clip() }} title={r.orgs?.name ?? undefined}>{r.orgs?.name ?? '—'}</td>
           <td style={{ ...td(), ...clip() }} title={r.insured_name}>{r.insured_name || r.display_id}</td>
           <td style={{ ...td(), color: C.txt3, textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.5px' }}>{r.source}</td>
+          {!showPublished && (
+            <td style={td()}>
+              <AgencyClock row={r} />
+            </td>
+          )}
           <td style={td()}>
             <AdminStatusPill row={r} />
           </td>
@@ -99,7 +118,15 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
           <td style={{ ...td(), color: C.txt3 }}>
             {showPublished
               ? <Timestamp iso={r.published_at ?? r.updated_at ?? r.created_at} sub={turnaroundLabel(r.created_at, r.published_at ?? r.updated_at)} />
-              : <Timestamp iso={r.created_at} />}
+              : <>
+                  {/* Desktop gets the same age pill the phone has (owner,
+                      2026-08-04): a date alone does not say how long this has
+                      been sitting. The exact stamp stays underneath. */}
+                  <AgePill iso={r.created_at} />
+                  <div style={{ fontSize: 12, color: C.txt3, marginTop: 4, whiteSpace: 'nowrap' }}>
+                    {pacificDateTimeParts(r.created_at).dateTime}
+                  </div>
+                </>}
           </td>
         </tr>
       ))}
@@ -110,8 +137,9 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             display: 'block', padding: '14px 14px', borderTop: `1px solid ${C.border}`,
             textDecoration: 'none', color: C.txt,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ fontFamily: C.mono, fontSize: 12.5, fontWeight: 600, color: C.txt2 }}>{r.display_id}</span>
+              {r.admin_note && <NotePeek note={r.admin_note} at={r.admin_note_at} by={r.admin_note_by ?? ''} />}
               <span style={{ marginLeft: 'auto' }}>
                 {showPublished
                   ? <span style={{ fontSize: 12, color: C.txt3 }}>{turnaroundLabel(r.created_at, r.published_at ?? r.updated_at) ?? ''}</span>
@@ -127,6 +155,7 @@ function VerificationTable({ rows, showPublished }: { rows: Row[]; showPublished
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               <AdminStatusPill row={r} />
               <AssignedPill row={r} />
+              {!showPublished && <AgencyClock row={r} />}
             </div>
           </Link>
         )
@@ -144,9 +173,9 @@ function AdminStatusPill({ row }: { row: Row }) {
 }
 
 /**
- * Working-day age of an open case against the same-day target: green today,
- * amber at 1-2 days, red from 3. Weekends do not count (a Friday submission
- * read on Monday is one day old, not three).
+ * How long an open case has been sitting. Hours for the first two days
+ * ("7 hours ago"), then a red day count — a case that is two days old has
+ * blown the business-day target and the pill should say so loudly.
  */
 function AgePill({ iso }: { iso: string }) {
   const age = caseAge(iso)
@@ -157,6 +186,31 @@ function AgePill({ iso }: { iso: string }) {
       padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap',
     }}>
       {age.label}
+    </span>
+  )
+}
+
+/**
+ * Local time at the agency that issued the certificate, read straight out of
+ * the OCR extraction (owner, 2026-08-04). Calls have to land before the
+ * agency's own 5pm, so the clock that matters is theirs, not Pacific — this
+ * saves opening the case and the COI just to learn the queue should be worked
+ * east to west. "Closing soon" is the only state that gets a warning color;
+ * everything else stays quiet so the column does not shout.
+ */
+function AgencyClock({ row }: { row: Row }) {
+  const zone = agencyTimezone(row.coi_extracted as AgencyLocationInput | null)
+  if (!zone) return <span style={{ color: C.txt3 }}>—</span>
+  const clock = agencyClock(zone)
+  const color = officeColor(clock.office)
+  return (
+    <span title={agencyClockTitle(zone, clock)} style={{
+      display: 'inline-flex', alignItems: 'baseline', gap: 5, whiteSpace: 'nowrap', color,
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>{clock.time}</span>
+      <span style={{ fontFamily: C.mono, fontSize: 10.5, letterSpacing: '0.04em', color: C.txt3 }}>
+        {clock.abbr}{zone.approximate ? '?' : ''}
+      </span>
     </span>
   )
 }
