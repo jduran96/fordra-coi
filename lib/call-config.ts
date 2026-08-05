@@ -146,8 +146,11 @@ export function natoSpell(name: string): string {
 
 /**
  * Deterministic speakable form of an identifier: letters and digits one at a
- * time, punctuation named, groups separated by periods.
- * "NTL-321510-F1" -> "N T L. dash. 3 2 1 5 1 0. dash. F 1"
+ * time, groups separated by periods. Hyphens and slashes are silent separators
+ * — never spoken as "dash"/"slash" (VRF-1113: GEICO's IVR could not parse a
+ * policy number read with the word "dash", and human reps only type the
+ * characters anyway). "." stays spoken as "dot" for email/URL-shaped values.
+ * "NTL-321510-F1" -> "N T L. 3 2 1 5 1 0. F 1"
  */
 export function valueSpoken(raw: string): string {
   const entries = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
@@ -171,10 +174,8 @@ export function valueSpoken(raw: string): string {
         current += ch
       } else {
         flush()
-        if (ch === '-') runs.push('dash')
-        else if (ch === '/') runs.push('slash')
-        else if (ch === '.') runs.push('dot')
-        // Spaces and other separators just split runs.
+        if (ch === '.') runs.push('dot')
+        // Hyphens, slashes, spaces, and other separators just split runs.
       }
     }
     flush()

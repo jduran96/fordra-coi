@@ -46,6 +46,18 @@
  *   hold-noise — same call: an unintelligible mumble during a lookup hold.
  *            Passes only if "Of course." is spoken at most once and the
  *            mumble gets silence.
+ *   verify-readback — the rep demands a read-back of the VIN last four (a
+ *            detail the agent HAS) before answering anything, in the same
+ *            utterance that announces the policy was found (VRF-1112 second
+ *            call, 2026-08-04: two gate-question deflections + a channel-ask
+ *            misfire before the digits came out). Passes only if the digits
+ *            come out on the first ask, with no verification question or
+ *            channel ask before them.
+ *   hold-question — the rep asks a question of her own mid-hold, for a
+ *            detail not in the reference list (same call: "what is the date
+ *            listed on the certificate?" got the pending gate question twice).
+ *            Passes only if the reply is the miss line, never the pending
+ *            question, with at most one "Of course." during the hold.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -312,6 +324,39 @@ CHARACTER 2 - Michelle, insurance department rep. Greet: "NASTC Insurance. How c
       'After the rep says she cannot verify without the plate number, the agent asks for the best way to get the certificate verified with her office instead of pressing more verification questions, and ends politely after her answer',
     ],
   },
+  {
+    // VRF-1112 second call (2026-08-04, v24): the rep demanded a read-back of
+    // the VIN last four before answering anything, in the same utterance that
+    // announced the policy was found. The gate node's headline job beat rule 0
+    // twice, then the channel ask misfired, before the digits came out.
+    key: 'verify-readback',
+    name: 'fordra-progressive-verify-readback',
+    user_prompt: `You are Sam, a human rep on the commercial lines desk at Progressive Insurance. Answer the phone: "Thank you for calling Progressive commercial lines, this is Sam." When the caller explains they are verifying a certificate of insurance, say "Sure. What's the insured's name?" Whatever name they give, reply in ONE single turn: "Okay, I found the policy. Before I can verify anything for you, I need you to confirm the last four of the VIN of the vehicle." Then follow these rules exactly:
+- If the caller speaks four digits to you: reply "Perfect, that matches what I have. Go ahead with your questions." From then on answer every question plausibly and promptly (the policy is active, the vehicle with that VIN is listed, the limit is one million dollars), and wrap up politely when done.
+- If the caller responds with ANYTHING other than the digits - a verification question of its own, an offer of a different detail, a statement that it does not have it: reply "I can't answer anything until we get through verification, ma'am. I just need the last four of the VIN of the vehicle."
+- Never volunteer any policy information before the digits are given.`,
+    metrics: [
+      "When the rep asks for the last four of the VIN (which IS among its reference details), the agent's very next reply gives those four digits; it never responds to the request with a verification question of its own (policy active, certificate holder, etc.) and never asks for the best way to get the certificate verified",
+      'After the rep accepts the digits, the agent proceeds with its verification questions and completes them',
+    ],
+  },
+  {
+    // Same call: mid-hold the rep asked "what is the date listed on the
+    // certificate?" (not in the reference details); the hold rule's "restate
+    // the pending question" answered her question with the pending gate
+    // question, twice, before the miss line fired.
+    key: 'hold-question',
+    name: 'fordra-hold-question-mid-hold',
+    user_prompt: `You are Priya, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, this is Priya." When the caller says it is verifying a certificate of insurance, say "Sure, go ahead." Answer the gate questions plausibly (the policy is active, the vehicle with that VIN is listed). Then follow these rules exactly:
+- When asked the first question from the caller's question list: reply ONLY "Bear with me, I'm just waiting on my document system to load up so I can look at the certificate."
+- On your NEXT turn, whatever the caller did or said, ask ONLY: "What is the date listed on the certificate of insurance that was sent over to you?"
+- If the caller says it does not have that in front of it, or offers something else instead: reply "No worries, I found it on my end. The per-occurrence limit is one million dollars." From then on answer any remaining questions promptly and plausibly, and wrap up politely when done.
+- If the caller instead responds to your date question with a question of its own: reply "I asked you a question first, ma'am." and repeat your date question.`,
+    metrics: [
+      'Between the rep saying "Bear with me" and her date question, the agent speaks at most a single "Of course."',
+      "When the rep asks what date is listed on the certificate (which is NOT among the agent's reference details), the agent's very next reply says it does not have that and offers something else instead; it NEVER replies to her question with its own pending verification question (the per-occurrence limit or any other)",
+    ],
+  },
 ]
 
 /**
@@ -450,6 +495,36 @@ const DETERMINISTIC_CHECKS = {
     }
     return v
   },
+  // VRF-1112 second call: a request for a detail the agent HAS must be
+  // answered with that detail on the first ask — never with a verification
+  // question, never with the channel ask.
+  'verify-readback': list => {
+    const v = []
+    const askIdx = list.findIndex(u => (u.role ?? '') === 'user' && /last four of the VIN/i.test(speech(u)))
+    if (askIdx < 0) return ['VIN read-back request never played']
+    const reply = list.slice(askIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const text = reply ? speech(reply).trim() : ''
+    if (!text.replace(/\D/g, '').includes('0445')) v.push(`first reply did not give the last four (0 4 4 5): "${text.slice(0, 80)}"`)
+    if (/active|in force|certificate holder|listed on the policy|best way/i.test(text)) {
+      v.push(`deflected the read-back request: "${text.slice(0, 80)}"`)
+    }
+    return v
+  },
+  // Same call: a rep question mid-hold gets the miss line, never the pending
+  // question; at most one "Of course." during the hold itself.
+  'hold-question': list => {
+    const v = []
+    silentWindow(list, v, /bear with me/i, /date listed on the certificate/i, /^of course[.!]?$/i, 'document hold', 1)
+    const askIdx = list.findIndex(u => (u.role ?? '') === 'user' && /date listed on the certificate/i.test(speech(u)))
+    if (askIdx < 0) { v.push('mid-hold date question never played'); return v }
+    const reply = list.slice(askIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const text = reply ? speech(reply).trim() : ''
+    if (!/don'?t have/i.test(text)) v.push(`first reply to the mid-hold question was not the miss line: "${text.slice(0, 80)}"`)
+    if (/per.occurrence|active|in force|certificate holder|listed on the policy/i.test(text)) {
+      v.push(`answered the rep's question with a pending question: "${text.slice(0, 80)}"`)
+    }
+    return v
+  },
   'ai-gatekeeper': list => {
     const v = []
     const humanIdx = list.findIndex(u => /my name is Sam/i.test(speech(u)))
@@ -468,7 +543,7 @@ const createdIds = []
 const engine = { type: 'conversation-flow', conversation_flow_id: flowId, version }
 
 // --only=key1,key2 runs a subset (re-rolling a flaky scenario without
-// burning a full 14-simulation batch).
+// burning a full 16-simulation batch).
 const only = typeof flags.only === 'string' ? new Set(flags.only.split(',')) : null
 const selected = only ? SCENARIOS.filter(s => only.has(s.key)) : SCENARIOS
 if (only && selected.length !== only.size) {

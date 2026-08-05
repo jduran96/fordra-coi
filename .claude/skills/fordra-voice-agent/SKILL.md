@@ -52,9 +52,11 @@ setting is retuned, append/update an entry here in the same format.
   (year/make/model from template variables/requirement rows, issue 17),
   VINs, USDOT/MC. Insurers verify by vehicle: keep the vehicle description
   row next to its VIN.
-- **Test harness:** `scripts/retell-test-ivr.mjs` runs six scenarios rebuilt
-  from real calls (Colstan keypad IVR, human, already-verified, Avant callback
-  queue, Farm Bureau message-only menu, Progressive-style AI gatekeeper).
+- **Test harness:** `scripts/retell-test-ivr.mjs` runs sixteen scenarios
+  rebuilt from real calls (Colstan keypad IVR, human, already-verified, Avant
+  callback queue, Farm Bureau message-only menu, Progressive-style AI
+  gatekeeper, plus the VRF-1110/1111/1112 hold/patience/deflection cases —
+  see the file header for the full list).
   Silence-heavy scenarios trip the simulator's liveness kill when the agent is
   CORRECTLY silent; the harness then falls back to deterministic transcript
   checks. Run it against every draft before publish.
@@ -81,6 +83,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-04 (v22) | 1.0 | 0.7 | settings-only (flow byte-identical to v21): `reminder_trigger_ms` 45000 → 60000 — owner call after VRF-1111 showed real holds run past 45s and the reminder cannot be exercised in the simulator |
 | 2026-08-04 (v23) | 1.0 | 0.7 | VRF-1111 fixes (issue 16): transfer ack once per transfer, thinking-aloud patience, hold-noise silence; voice settings unchanged |
 | 2026-08-04 (v24) | 1.0 | 0.7 | VRF-1112 fixes (issue 17): gate/N5 miss branch for details not in the list, dead-end routes to N6b channel ask; voice settings unchanged |
+| 2026-08-04 (v25) | 1.0 | 0.7 | VRF-1112 second call, fixes (issue 18): request-handling hoisted above gate/N5 headline job, mid-hold-question exception inline in the hold rule (gate/N5/N4c); voice settings unchanged |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -461,6 +464,81 @@ to the node's default job: ask the next question.
 - Test scenario `missing-detail` (Progressive-style rep demands a license
   plate number, which is never in the details): deterministic check asserts
   the miss line, no deflection, and the channel ask after the dead end.
+
+## 18. Rep questions still deflected on v24: node-entry swallow + mid-hold questions (VRF-1112, second call)
+
+**Symptom (Progressive, 2026-08-04 21:00, `call_43cd1c1f9263a8d32e544b70bc8`,
+agent v24 — the same evening the issue-17 fix shipped):** the call succeeded
+overall, but the barrelling recurred twice: (a) the rep said "I have the
+policy. I need you to verify the last four of the VIN" and got TWO gate
+questions plus a misfired N6b channel ask before the agent finally read back
+"1 4 0 0" on her third ask; (b) later, mid-hold ("Bear with me, my document
+system is loading"), she asked "What date is listed on the certificate?" and
+got silence twice, then the pending gate question TWICE, before the miss line
+fired on her fourth ask.
+
+**Cause (two independent gaps that issue 17's rule-0 clause loses to):**
+(a) her request arrived in the same utterance that satisfied N4c's
+policy-found edge to node-gate; on node entry, gate's headline job ("Ask
+these blocker questions first") sits above rule 0 and won the first two
+turns — the transition swallowed the outstanding request (the issue-16
+placement lesson again: below-the-fold rules lose to the headline job). The
+N6b hop was collateral: "can't answer until verification" matched the v24
+cannot-verify-without-information edge. (b) the hold rule says a hold ends
+ONLY on substantive information, and on return "otherwise restate the
+pending question" — a mid-hold question is neither info nor an answer, so
+the agent obeyed the hold rule literally; the never-deflect clause lived in
+rule 0, not inline in the hold rule it needed to override.
+
+**Remedy (flow v25, 2026-08-04):**
+- gate + N5: a hoisted block right after the SILENCE CHECK — "FIRST, before
+  any question of yours: if their latest utterance asks YOU for information
+  — including the very utterance that brought the call to this step — handle
+  it under rule 0 below." N4c deliberately NOT hoisted: answering requests
+  already IS its headline job.
+- gate + N5 + N4c hold rule, inline at its trigger sentences: a hold also
+  ends when they ask you a question, and "if they ask you a question, answer
+  it under rule 0 / like any detail request — NEVER restate the pending
+  question as a reply to a question they asked you".
+- No new spoken copy (reuses the rule-0 detail read-outs, the v24 miss line,
+  "Of course."), no settings changes.
+- Test scenarios `verify-readback` (read-back demand for a detail the agent
+  HAS, fused with the policy-found utterance) and `hold-question` (mid-hold
+  question for a detail NOT in the list), both with deterministic checks on
+  the first reply after the request.
+
+## 19. GEICO IVR could not parse the policy number: spoken "dash" (VRF-1113)
+
+**Symptom (GEICO commercial line, 2026-08-05, `call_456a6a87aa5f61895917d5df2aa`,
+agent v25):** the IVR asked for a policy number; the agent read
+"9 3 0 0 3 5 7 0 3 8 dash 0 0"; GEICO's recognizer failed twice ("Sorry I
+didn't catch that"), demanded keypad-only entry, and the call funneled into a
+policyholder date-of-birth authentication wall it could never pass. Dead end,
+nothing verified.
+
+**Cause:** `valueSpoken()` in `lib/call-config.ts` named punctuation — hyphens
+became the literal word "dash" (slashes "slash") in the `reference_details`
+spoken hints, and the agent recites those hints verbatim. IVR speech slots
+expect digits only, and human reps only type the characters anyway.
+
+**Remedy (app-only, shipped 2026-08-05, no flow change):** hyphens and slashes
+are now silent run separators in `valueSpoken` — "9300357038-00" renders as
+"9 3 0 0 3 5 7 0 3 8. 0 0". "." is still spoken as "dot" (load-bearing for
+email/URL-shaped values). Hints are rendered at dispatch time, so the fix
+applies to every call dispatched after deploy with no redraft needed.
+
+**Not fixed, known gaps from the same call:** (a) no mechanism to enter a
+long identifier via keypad when an IVR demands "using only your keypad" —
+the press nodes are built around single menu digits, so the agent goes
+silent; (b) no representative-escape rule — when trapped in an
+authentication slot it cannot answer (DOB, SSN), the agent silently retries
+into the dead end instead of saying "representative"/pressing 0 to reach a
+human first. Also observed, non-fatal: the opener was delivered after a
+greeting-plus-pause with no keypad cue yet (v21 hardening keys on menu
+wording), and two spurious press-1s on menus that offered no 1. The
+transcript's apparent talk-over on this call was an artifact — per-word
+timestamps showed zero overlap; the agent spoke into a 4s gap that the flat
+transcript renders as an interruption.
 
 ## Standing rules for any change here
 
