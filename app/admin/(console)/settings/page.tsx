@@ -21,6 +21,10 @@ import { CALL_CONFIG_KEY } from '@/lib/config'
 import { parseReferenceHiddenKinds, parseReferenceLabelOverrides, REFERENCE_DETAILS_KEY, type ComputedRowKind, type OrgCallConfig, type ReferenceLabelOverrides } from '@/lib/call-config'
 import { parseQuestionsConfig, QUESTIONS_CONFIG_KEY, type ConfiguredQuestion } from '@/lib/question-config'
 import { NOTIFICATION_EMAILS_KEY, DEFAULT_NOTIFICATION_EMAILS } from '@/lib/notify'
+import { EMAIL_DRAFT_KEY, parseEmailDraftConfig, type EmailDraftConfig } from '@/lib/email-draft-config'
+import { EMAIL_ACCOUNT_PUBLIC_COLUMNS, type EmailAccountPublic } from '@/lib/email-shared'
+import EmailAccountsCard from './EmailAccountsCard'
+import EmailDraftsCard from './EmailDraftsCard'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,15 +32,16 @@ const TABS = [
   { key: 'standards', label: 'Standards' },
   { key: 'ocr', label: 'OCR' },
   { key: 'calling', label: 'Calling' },
+  { key: 'emails', label: 'Emails' },
   { key: 'notifications', label: 'Notifications' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
 export default async function AdminSettings({ searchParams }: {
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; error?: string }>
 }) {
   await requireAdmin()
-  const rawTab = (await searchParams).tab
+  const { tab: rawTab, error: oauthError } = await searchParams
   const tab: TabKey = TABS.some(t => t.key === rawTab) ? (rawTab as TabKey) : 'standards'
 
   const cfg = await getExtractionConfig()
@@ -88,6 +93,20 @@ export default async function AdminSettings({ searchParams }: {
   for (const r of qCfgRows ?? []) {
     const parsed = parseQuestionsConfig(r.value)
     if (parsed) questionsByKey[r.key.slice(QUESTIONS_CONFIG_KEY.length + 1)] = parsed.questions
+  }
+
+  // Connected sending mailboxes (public columns only, never tokens) and the
+  // per-org+template email draft templates.
+  const { data: accountRows, error: accountsError } = await svc
+    .from('email_accounts').select(EMAIL_ACCOUNT_PUBLIC_COLUMNS).order('created_at')
+  if (accountsError) throw new Error(`Could not load email accounts: ${accountsError.message}`)
+  const { data: draftCfgRows, error: draftCfgError } = await svc
+    .from('app_config').select('key, value').like('key', `${EMAIL_DRAFT_KEY}:%`)
+  if (draftCfgError) throw new Error(`Could not load email draft configs: ${draftCfgError.message}`)
+  const emailDraftsByKey: Record<string, EmailDraftConfig> = {}
+  for (const r of draftCfgRows ?? []) {
+    const parsed = parseEmailDraftConfig(r.value)
+    if (parsed) emailDraftsByKey[r.key.slice(EMAIL_DRAFT_KEY.length + 1)] = parsed
   }
 
   const prompts = [
@@ -226,6 +245,31 @@ export default async function AdminSettings({ searchParams }: {
               orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
               templates={(templates ?? []) as unknown as RequirementTemplate[]}
               byKey={questionsByKey}
+            />
+          </section>
+        </div>
+      )}
+
+      {tab === 'emails' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {oauthError && (
+            <p style={{ fontSize: 13, fontWeight: 600, color: C.error, background: C.surface, border: `1px solid ${C.error}`, borderRadius: 9, padding: '10px 14px', margin: 0 }}>
+              {oauthError}
+            </p>
+          )}
+          <section>
+            <SectionTitle>Accounts</SectionTitle>
+            <EmailAccountsCard
+              orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+              accounts={(accountRows ?? []) as unknown as EmailAccountPublic[]}
+            />
+          </section>
+          <section>
+            <SectionTitle>Drafts</SectionTitle>
+            <EmailDraftsCard
+              orgs={(orgs ?? []).map(o => ({ id: o.id, name: o.name }))}
+              templates={(templates ?? []) as unknown as RequirementTemplate[]}
+              byKey={emailDraftsByKey}
             />
           </section>
         </div>

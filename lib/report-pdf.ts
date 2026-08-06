@@ -20,7 +20,7 @@ interface ReportItem {
   requirement?: { coverage_type?: string; minimum_limit?: string; notes?: string | null }
   status?: 'met' | 'not_met' | 'uncertain'
   evidence?: string
-  insurer_confirmation?: 'call' | 'email'
+  insurer_confirmation?: 'call' | 'email' | 'both'
 }
 interface Report { met?: ReportItem[]; not_met?: ReportItem[]; uncertain?: ReportItem[]; narrative_summary?: string }
 
@@ -116,14 +116,22 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         if ((it.evidence ?? '').trim()) {
           doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(it.evidence!.trim(), { width: width - 90, lineGap: 2 })
         }
-        if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email') {
+        if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email' || it.insurer_confirmation === 'both') {
           doc.moveDown(0.15)
           // Helvetica (WinAnsi) has no ✓ glyph: draw the check as strokes.
+          // 'both' gets a double check, mirroring the web report.
           const cy = doc.y
-          doc.save().strokeColor(STATUS_COLOR.met).lineWidth(1.4).lineCap('round').lineJoin('round')
-            .moveTo(56, cy + 4).lineTo(58.4, cy + 6.4).lineTo(63, cy + 1.4).stroke().restore()
+          const both = it.insurer_confirmation === 'both'
+          const checks = both ? [0, 5] : [0]
+          const pen = doc.save().strokeColor(STATUS_COLOR.met).lineWidth(1.4).lineCap('round').lineJoin('round')
+          for (const dx of checks) {
+            pen.moveTo(56 + dx, cy + 4).lineTo(58.4 + dx, cy + 6.4).lineTo(63 + dx, cy + 1.4).stroke()
+          }
+          pen.restore()
           doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK)
-            .text(`VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`, 56 + 12, cy, { width: width - 102, characterSpacing: 0.8 })
+            .text(
+              both ? 'CONFIRMED BY CALL AND EMAIL' : `VERIFIED WITH INSURER VIA ${it.insurer_confirmation === 'call' ? 'CALL' : 'EMAIL'}`,
+              56 + (both ? 17 : 12), cy, { width: width - 107, characterSpacing: 0.8 })
           doc.x = 56
         } else {
           // The explicit negative state (owner call 2026-07-29): a small red

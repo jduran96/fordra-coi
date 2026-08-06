@@ -35,6 +35,9 @@ const EVENT_LABEL: Record<string, string> = {
   // method, or a published AI call). Feed-only via recordEvent, never emitted
   // to webhook endpoints.
   'call.made': 'Call made',
+  // Recorded when an email thread lands in the contact log. Feed-only, same
+  // contract as call.made.
+  'email.sent': 'Email sent',
 }
 
 const closeInTime = (a: string, b: string, ms = 5000) =>

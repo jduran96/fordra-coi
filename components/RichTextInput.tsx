@@ -60,7 +60,10 @@ export default function RichTextInput({ name, value, onChange }: {
         .fordra-rte .tiptap { min-height: 96px; padding: 9px 11px; font-size: 14px; font-family: inherit; color: ${C.txt}; line-height: 1.6; outline: none; }
         .fordra-rte .tiptap p { margin: 0 0 6px; }
         .fordra-rte .tiptap p:last-child { margin-bottom: 0; }
-        .fordra-rte .tiptap ul, .fordra-rte .tiptap ol { margin: 0 0 6px; padding-left: 22px; }
+        /* Tailwind preflight (globals.css) resets list-style to none
+           globally; restore the markers or bullets/numbers type invisibly. */
+        .fordra-rte .tiptap ul { list-style: disc outside; margin: 0 0 6px; padding-left: 22px; }
+        .fordra-rte .tiptap ol { list-style: decimal outside; margin: 0 0 6px; padding-left: 22px; }
         .fordra-rte .tiptap li p { margin: 0; }
       `}</style>
       <div className="fordra-rte" style={{ fontFamily: C.sans, cursor: 'text' }}

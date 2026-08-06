@@ -24,3 +24,11 @@ body {
 @keyframes fordra-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Sanitized rich-text output (contact-note summaries, email bodies):
+   Tailwind's preflight strips list markers globally, so any container
+   rendering stored summary_html opts back in with this class. */
+.fx-rich ul { list-style: disc outside; padding-left: 22px; margin: 0 0 6px; }
+.fx-rich ol { list-style: decimal outside; padding-left: 22px; margin: 0 0 6px; }
+.fx-rich p { margin: 0 0 6px; }
+.fx-rich p:last-child, .fx-rich ul:last-child, .fx-rich ol:last-child { margin-bottom: 0; }

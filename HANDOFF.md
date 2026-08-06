@@ -3,7 +3,53 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-08-04 — admin queue triage: hour-granular age, sticky notes, agency timezone)
+## ⏱️ START HERE (as of 2026-08-06 — email verification outreach: Gmail send/receive, Emails tabs, confirmed-by checkboxes)
+
+**2026-08-06, on `main`:** the email outreach channel, parallel to AI calls.
+Admins send verification-question emails from a per-org connected Gmail
+mailbox, read replies inside Fordra (manual refresh only, no cron/push yet),
+reply in-thread, and publish full threads into the Insurer Contact Log.
+Owner-tested end to end on localhost before this push.
+
+- **Data:** migration `0040_email_outreach.sql` — `email_accounts` (per-org
+  mailbox, one per org, OAuth tokens AES-256-GCM encrypted with env
+  `EMAIL_TOKEN_KEY`), `email_threads` (audit-first: frozen `payload` written
+  before the provider call), `email_messages` (dedupe on
+  `(thread_id, provider_message_id)`), RPC `admin_publish_email_note`. All
+  service-role only, mirroring `ai_calls` (0032). No `my_verifications`
+  changes: logged threads become plain ContactNotes (`contact_method`
+  'email', `agent` 'ai') and ride existing publish gating, expanders, PDF.
+- **Provider abstraction:** `lib/email-provider.ts` (interface) +
+  `lib/gmail.ts` (raw-fetch Gmail: OAuth, hand-rolled MIME incl.
+  multipart/alternative HTML bodies, threads.get). Microsoft Graph for M365
+  orgs = one new module later. Sync in `lib/email-sync.ts` is cron-ready.
+  OAuth routes: `app/api/admin/email-oauth/google/{start,callback}` (CSRF
+  state cookie). Client-safe pure module: `lib/email-shared.ts`
+  (`formatThreadText`, `stripQuotedReply`, `{org_name}`/`{policy_numbers}`
+  tokens).
+- **Surfaces:** settings → Emails tab (Accounts connect/disconnect + Drafts
+  per org+standard: subject/rich-text body/cc/carrier-cc, Variables chips,
+  View standard modal); verification → Emails tab between Calls and Analysis
+  (Context with policy numbers, Draft with token prefill + send-time token
+  substitution + attachment checkboxes over uploaded docs + 15 MB guard,
+  Threads with reply-received marker, thread pop-up = single card newest
+  first with quoted history stripped, reply composer, log/refresh-log);
+  `/admin/calls` renamed nav "AI" with Calls|Emails sub-tabs + per-row View
+  peek pop-ups. Draft config keys: `email_draft:<orgId>:<templateId>`.
+- **Assessment change:** `insurer_confirmation` now `'call' | 'email' |
+  'both'` (checkboxes in AssessmentForm; double green check "Confirmed by
+  call and email" on web report + PDF when both). Analysis reads email
+  evidence ONLY from logged threads (contact log), and its prompt may now
+  emit "both". Passed-requires-confirmation guard accepts all three.
+- **Gotchas:** Google OAuth consent screen currently in **Testing** mode —
+  refresh tokens expire after 7 days until the app is published+verified or
+  the customer's Workspace admin trusts the client id; connected mailboxes
+  then need Reconnect. `EMAIL_TOKEN_KEY` must be IDENTICAL in every
+  environment (shared DB — a different key cannot decrypt stored tokens).
+  Tailwind preflight strips list markers: rich-text renderers need the
+  `.fx-rich` class (globals.css), the Tiptap editor has its own fix.
+
+## Previous (as of 2026-08-04 — admin queue triage: hour-granular age, sticky notes, agency timezone)
 
 **2026-08-04, on `quesoDev`:** three admin-only quality-of-life changes from the
 owner. None of them touch how customers upload, submit, or read anything, and

@@ -31,8 +31,12 @@ import { feedEntries } from '@/lib/activity-feed'
 import AiCallLauncher from './AiCallLauncher'
 import AgentQuestionsEditor from './AgentQuestionsEditor'
 import RunAnalysisButton from './RunAnalysisButton'
+import EmailDraftCard, { type EmailDraftDefaults } from './EmailDraftCard'
+import EmailThreadsPanel from './EmailThreadsPanel'
 import { type AiCall } from '@/lib/ai-calls'
-import { getCallConfig, getReferenceDetails } from '@/lib/config'
+import { getCallConfig, getEmailDraftConfig, getReferenceDetails } from '@/lib/config'
+import { applyQuestionTokens } from '@/lib/question-config'
+import { applyTokensToHtml, EMAIL_ACCOUNT_PUBLIC_COLUMNS, ORG_NAME_TOKEN, parseEmailList, POLICY_NUMBERS_TOKEN, type EmailAccountPublic, type EmailMessage, type EmailThread } from '@/lib/email-shared'
 import { draftFromVerification, CONTEXT_FIELD_NAMES, type CallContextFields } from '@/lib/call-config'
 import type { COIExtracted, Requirement as RequirementRow } from '@/lib/types'
 
@@ -61,6 +65,7 @@ interface COI {
   additional_insured?: string
   loss_payee?: string
   other_named_parties?: string
+  coverages?: { policy_number?: string }[]
 }
 
 function gapItems(g: Gap | null | undefined): GapItem[] {
@@ -198,6 +203,81 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
       return Array.isArray(parsed) ? parsed : callPrefill.details
     } catch {
       return callPrefill.details
+    }
+  })()
+
+  // Email outreach (email_threads/email_messages, migration 0040): the draft
+  // card is the send gate, the panel lists sent threads. The org's connected
+  // mailbox comes over public columns only — token columns stay server-side.
+  const { data: emailAccountRow } = await supabase
+    .from('email_accounts')
+    .select(EMAIL_ACCOUNT_PUBLIC_COLUMNS)
+    .eq('org_id', v.org_id as string)
+    .maybeSingle()
+  const emailAccount = (emailAccountRow ?? null) as EmailAccountPublic | null
+  const { data: emailThreadRows, error: emailThreadsErr } = await supabase
+    .from('email_threads')
+    .select('*')
+    .eq('verification_id', id)
+    .order('created_at', { ascending: false })
+  if (emailThreadsErr) throw new Error(`Could not load email threads: ${emailThreadsErr.message}`)
+  const allEmailThreads = (emailThreadRows ?? []) as EmailThread[]
+  const emailThreads = allEmailThreads.filter(t => t.status !== 'draft')
+  const emailDraftThread = allEmailThreads.find(t => t.status === 'draft') ?? null
+  const emailMessagesByThread: Record<string, EmailMessage[]> = {}
+  if (emailThreads.length) {
+    const { data: messageRows } = await supabase
+      .from('email_messages')
+      .select('*')
+      .in('thread_id', emailThreads.map(t => t.id))
+      .order('sent_at', { ascending: true })
+    for (const m of (messageRows ?? []) as EmailMessage[]) {
+      (emailMessagesByThread[m.thread_id] ??= []).push(m)
+    }
+  }
+  // Every policy number the OCR read off the COI, for the Context boxes and
+  // the {policy_numbers} draft token.
+  const policyNumbers = [...new Set(
+    (coi?.coverages ?? []).map(c => (c.policy_number ?? '').trim()).filter(Boolean),
+  )]
+  // The {tokens} usable in email drafts for this deal: the standard's
+  // per-deal variables plus the always-available ones. Send-time substitution
+  // in emails/actions.ts builds the same map.
+  const emailTokenValues: Record<string, string> = {
+    ...templateVariableMap,
+    [ORG_NAME_TOKEN]: (v.orgs as { name?: string } | null)?.name ?? '',
+    [POLICY_NUMBERS_TOKEN]: policyNumbers.join(', '),
+  }
+  const emailTokens = Object.keys(emailTokenValues)
+  // Draft prefill: the saved draft wins; otherwise the org+standard template
+  // (settings → Emails → Drafts) with per-deal tokens substituted, recipient
+  // from the saved insurer contact then the COI's producer email.
+  const emailDraftDefaults: EmailDraftDefaults = await (async () => {
+    if (emailDraftThread) {
+      return {
+        to: parseEmailList(emailDraftThread.to_emails).join(', '),
+        cc: parseEmailList(emailDraftThread.cc_emails).join(', '),
+        subject: emailDraftThread.subject ?? '',
+        body: emailDraftThread.body_text ?? '',
+        attachmentIds: (emailDraftThread.attachments ?? []).map(a => a.document_id),
+      }
+    }
+    const cfg = v.template_id && v.org_id
+      ? await getEmailDraftConfig(v.org_id as string, v.template_id as string)
+      : null
+    const savedContact = (v.insurance_contact ?? {}) as { email?: string }
+    const carrierEmail = contactValue(coi?.insurance_company_email)
+    const to = contactValue(savedContact.email) || carrierEmail || ''
+    const cc = [...(cfg?.cc ?? [])]
+    if (cfg?.include_carrier_email && carrierEmail && carrierEmail !== to && !cc.includes(carrierEmail)) {
+      cc.push(carrierEmail)
+    }
+    return {
+      to,
+      cc: cc.join(', '),
+      subject: applyQuestionTokens(cfg?.subject ?? '', emailTokenValues),
+      body: applyTokensToHtml(cfg?.body ?? '', emailTokenValues),
+      attachmentIds: [],
     }
   })()
 
@@ -517,11 +597,14 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
           <SectionTitle>Context</SectionTitle>
           <div style={{ marginTop: 10 }}>
             <div style={card()}>
-              {templateVariables.length > 0 ? (
+              {(templateVariables.length > 0 || policyNumbers.length > 0) ? (
                 <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
                   {templateVariables.map(([key, val]) => (
                     <FactRow key={key} label={humanizeToken(key)} value={val?.trim() || '—'} />
                   ))}
+                  {policyNumbers.length > 0 && (
+                    <FactRow label="Policy number(s)" value={policyNumbers.join(', ')} />
+                  )}
                 </dl>
               ) : (
                 <Muted>No variable inputs from submitter.</Muted>
@@ -540,6 +623,64 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
               key={JSON.stringify(callPrefill.questions)}
               verificationId={id}
               questions={callPrefill.questions}
+              caseIsClosed={caseIsClosed}
+            />
+          </div>
+        </section>
+        </div>
+        ) },
+
+        { label: 'Emails', content: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        {/* Submitter-entered template variables, repeated from the Submission
+            tab so values can be copy/pasted while editing the draft. */}
+        <section>
+          <SectionTitle>Context</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <div style={card()}>
+              {(templateVariables.length > 0 || policyNumbers.length > 0) ? (
+                <dl className="fx-facts" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 7 }}>
+                  {templateVariables.map(([key, val]) => (
+                    <FactRow key={key} label={humanizeToken(key)} value={val?.trim() || '—'} />
+                  ))}
+                  {policyNumbers.length > 0 && (
+                    <FactRow label="Policy number(s)" value={policyNumbers.join(', ')} />
+                  )}
+                </dl>
+              ) : (
+                <Muted>No variable inputs from submitter.</Muted>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* The exact email the admin approves before anything sends. Keyed by
+            its prefill so a save/send remounts with fresh defaults (React 19
+            stale-state rule). */}
+        <section>
+          <SectionTitle>Draft</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <EmailDraftCard
+              key={JSON.stringify({ emailDraftDefaults, account: emailAccount?.id ?? null })}
+              verificationId={id}
+              account={emailAccount}
+              defaults={emailDraftDefaults}
+              attachmentOptions={docsWithUrls.map(d => ({ document_id: d.id, file_name: d.file_name }))}
+              tokens={emailTokens}
+              caseIsClosed={caseIsClosed}
+            />
+          </div>
+        </section>
+
+        {/* Sent threads: replies pull on demand (Refresh + auto-refresh when a
+            thread opens); the amber marker flags a reply awaiting an answer. */}
+        <section>
+          <SectionTitle>Threads</SectionTitle>
+          <div style={{ marginTop: 10 }}>
+            <EmailThreadsPanel
+              verificationId={id}
+              threads={emailThreads}
+              messagesByThread={emailMessagesByThread}
               caseIsClosed={caseIsClosed}
             />
           </div>
@@ -650,7 +791,7 @@ export default async function AdminDetail({ params }: { params: Promise<{ id: st
                 {/* Summary: sanitized rich text for new notes, plain text for
                     legacy { text } entries. */}
                 {n.summary_html ? (
-                  <div style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, overflowWrap: 'anywhere' }}
+                  <div className="fx-rich" style={{ fontSize: 13.5, color: C.txt, lineHeight: 1.6, overflowWrap: 'anywhere' }}
                     dangerouslySetInnerHTML={{ __html: n.summary_html }} />
                 ) : (n.summary_text || n.text) ? (
                   <div style={{ fontSize: 13.5, color: C.txt, whiteSpace: 'pre-wrap', lineHeight: 1.6, overflowWrap: 'anywhere' }}>{n.summary_text || n.text}</div>

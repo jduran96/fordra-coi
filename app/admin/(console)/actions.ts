@@ -447,7 +447,7 @@ interface AssessmentItem {
   requirement: { coverage_type: string; minimum_limit: string; notes: string | null }
   status: 'met' | 'not_met' | 'uncertain'
   evidence: string
-  insurer_confirmation?: 'call' | 'email'
+  insurer_confirmation?: 'call' | 'email' | 'both'
 }
 
 /**
@@ -502,11 +502,14 @@ export async function saveAssessment(verificationId: string, formData: FormData)
     const status: AssessmentItem['status'] = raw === 'met' || raw === 'not_met' ? raw : 'uncertain'
     const evidence = String(formData.get(`req_${i}_evidence`) || '').trim()
     // Omitted entirely when not confirmed, so legacy readers and the
-    // automated-report path never see the key.
-    const conf = String(formData.get(`req_${i}_insurer_confirmation`) || '')
+    // automated-report path never see the key. Two independent checkboxes;
+    // both checked collapses to 'both'.
+    const confCall = formData.get(`req_${i}_confirmed_call`) != null
+    const confEmail = formData.get(`req_${i}_confirmed_email`) != null
+    const conf = confCall && confEmail ? 'both' : confCall ? 'call' : confEmail ? 'email' : ''
     report[status].push({
       requirement, status, evidence,
-      ...(conf === 'call' || conf === 'email' ? { insurer_confirmation: conf } : {}),
+      ...(conf ? { insurer_confirmation: conf as 'call' | 'email' | 'both' } : {}),
     })
   }
 

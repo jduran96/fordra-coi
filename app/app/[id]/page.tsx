@@ -269,7 +269,7 @@ function CallNotesCard({ notes }: { notes: ContactNote[] }) {
                 <div style={{ margin: '0 0 10px' }}>
                   <Expando>
                     {n.summary_html ? (
-                      <div style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '8px 0 0', overflowWrap: 'anywhere' }}
+                      <div className="fx-rich" style={{ fontSize: 13.5, color: C.txt2, lineHeight: 1.65, margin: '8px 0 0', overflowWrap: 'anywhere' }}
                         dangerouslySetInnerHTML={{ __html: n.summary_html }} />
                     ) : (
                       <p style={{ fontSize: 13.5, color: C.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.65, margin: '8px 0 0' }}>

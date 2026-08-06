@@ -33,7 +33,7 @@ export interface CheckItem {
   requirement: { coverage_type?: string; minimum_limit?: string; notes?: string | null }
   status: 'met' | 'not_met' | 'uncertain'
   evidence?: string
-  insurer_confirmation?: 'call' | 'email'
+  insurer_confirmation?: 'call' | 'email' | 'both'
 }
 export interface CoiDocFile {
   url: string
@@ -651,12 +651,18 @@ export default function CoiSplitReview({
             )}
             {item.insurer_confirmation ? (
               <p style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                  stroke={C.ok} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
+                {/* Double check when both channels confirmed, single otherwise. */}
+                {(item.insurer_confirmation === 'both' ? [0, 1] : [0]).map(k => (
+                  <svg key={k} width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                    stroke={C.ok} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"
+                    style={k > 0 ? { marginLeft: -10 } : undefined}>
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                ))}
                 <span style={{ fontSize: 12, fontWeight: 700, color: C.txt, whiteSpace: 'nowrap' }}>
-                  Verified with insurer via {item.insurer_confirmation === 'call' ? 'call' : 'email'}
+                  {item.insurer_confirmation === 'both'
+                    ? 'Confirmed by call and email'
+                    : `Verified with insurer via ${item.insurer_confirmation === 'call' ? 'call' : 'email'}`}
                 </span>
               </p>
             ) : (

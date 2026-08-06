@@ -193,7 +193,7 @@ export interface GapItem {
   /** Admin-set only: this detail was confirmed directly with the insurer.
    *  Key is omitted entirely when not confirmed; the automated pipeline
    *  never writes it. */
-  insurer_confirmation?: 'call' | 'email';
+  insurer_confirmation?: 'call' | 'email' | 'both';
 }
 
 export interface GapAnalysis {

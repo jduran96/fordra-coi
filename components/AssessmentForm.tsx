@@ -8,7 +8,7 @@ import { ConditionChip } from '@/components/RequirementsEditor'
 import { useAnalysisBodyVisible } from '@/components/AdminTabs'
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
-interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string; insurer_confirmation?: 'call' | 'email' }
+interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string; insurer_confirmation?: 'call' | 'email' | 'both' }
 
 /**
  * The admin's requirement-by-requirement review. Rows are client-state so the
@@ -121,11 +121,24 @@ export default function AssessmentForm({
                 <option value="not_met">Failed</option>
                 <option value="uncertain">Warning</option>
               </select>
-              <select name={`req_${i}_insurer_confirmation`} defaultValue={item.insurer_confirmation ?? ''} disabled={closed} style={input()}>
-                <option value="">Not confirmed with insurer</option>
-                <option value="call">Confirmed by call</option>
-                <option value="email">Confirmed by email</option>
-              </select>
+              {/* Confirmation channels are independent: a requirement can be
+                  confirmed by call, by email, or both (double check on the
+                  customer report). Unchecked both = not confirmed. */}
+              <div style={{ ...input(), display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.txt3 }}>Confirmed by:</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: closed ? 'default' : 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" name={`req_${i}_confirmed_call`}
+                    defaultChecked={item.insurer_confirmation === 'call' || item.insurer_confirmation === 'both'}
+                    disabled={closed} style={{ accentColor: C.ok }} />
+                  call
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: closed ? 'default' : 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" name={`req_${i}_confirmed_email`}
+                    defaultChecked={item.insurer_confirmation === 'email' || item.insurer_confirmation === 'both'}
+                    disabled={closed} style={{ accentColor: C.ok }} />
+                  email
+                </label>
+              </div>
             </div>
             <textarea
               name={`req_${i}_evidence`}

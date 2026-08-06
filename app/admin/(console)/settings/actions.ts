@@ -8,6 +8,7 @@ import { NOTIFICATION_EMAILS_KEY } from '@/lib/notify'
 import type { Requirement } from '@/lib/types'
 import { normalizeRequirementRows } from '@/lib/templates'
 import { questionsConfigKey, type ConfiguredQuestion } from '@/lib/question-config'
+import { emailDraftKey, EMAIL_RE } from '@/lib/email-draft-config'
 import { COMPUTED_ROW_KINDS, referenceDetailsKey, type ComputedRowKind, type ReferenceLabelOverrides } from '@/lib/call-config'
 
 const PROMPT_KEYS: Record<string, string> = {
@@ -153,6 +154,45 @@ export async function saveQuestionsConfig(formData: FormData): Promise<{ ok?: bo
   const key = questionsConfigKey(orgId, templateId)
   if (questions.length === 0) await deleteConfig(key)
   else await setConfig(key, { questions })
+  revalidatePath('/admin/settings')
+  return { ok: true }
+}
+
+/**
+ * Save one org+template email draft template (settings → Emails → Drafts):
+ * the subject/body/cc that prefill the Emails-tab draft on every verification
+ * submitted against that standard. An all-blank submission clears the config
+ * so the pair goes back to a hand-written draft.
+ */
+export async function saveEmailDraftConfig(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin()
+  const orgId = String(formData.get('org_id') || '').trim()
+  const templateId = String(formData.get('template_id') || '').trim()
+  if (!orgId || !templateId) return { error: 'Pick an org and a standard first.' }
+  const subject = String(formData.get('subject') || '').trim()
+  const body = String(formData.get('body') || '').trim()
+  const ccRaw = String(formData.get('cc') || '').trim()
+  const includeCarrier = String(formData.get('include_carrier_email') || '') === 'true'
+  const cc = ccRaw ? ccRaw.split(',').map(e => e.trim()).filter(Boolean) : []
+  const bad = cc.find(e => !EMAIL_RE.test(e))
+  if (bad) return { error: `"${bad}" is not a valid email address.` }
+  const key = emailDraftKey(orgId, templateId)
+  if (!subject && !body && !cc.length && !includeCarrier) await deleteConfig(key)
+  else await setConfig(key, { subject, body, cc, ...(includeCarrier ? { include_carrier_email: true } : {}) })
+  revalidatePath('/admin/settings')
+  return { ok: true }
+}
+
+/**
+ * Disconnect one org's sending mailbox (settings → Emails → Accounts). Wipes
+ * the stored tokens; existing threads keep their history (account_id goes
+ * null) but can no longer refresh or reply until a mailbox is reconnected.
+ */
+export async function deleteEmailAccount(orgId: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin()
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('email_accounts').delete().eq('org_id', orgId)
+  if (error) return { error: `Could not disconnect the mailbox: ${error.message}` }
   revalidatePath('/admin/settings')
   return { ok: true }
 }

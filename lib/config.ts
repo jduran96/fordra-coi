@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { DEFAULT_CALL_CONFIG, parseReferenceHiddenKinds, parseReferenceLabelOverrides, referenceDetailsKey, type ComputedRowKind, type OrgCallConfig, type ReferenceLabelOverrides } from '@/lib/call-config'
 import { parseQuestionsConfig, questionsConfigKey, type QuestionsListConfig } from '@/lib/question-config'
+import { emailDraftKey, parseEmailDraftConfig, type EmailDraftConfig } from '@/lib/email-draft-config'
 
 /**
  * Admin-editable runtime config, stored in the `app_config` table.
@@ -87,6 +88,19 @@ export async function getQuestionsConfig(orgId: string, templateId: string): Pro
     .select('value').eq('key', questionsConfigKey(orgId, templateId)).maybeSingle()
   if (error) throw new Error(`Could not load the questions config: ${error.message}`)
   return parseQuestionsConfig(data?.value)
+}
+
+/**
+ * Per-org, per-template email draft template (settings → Emails → Drafts).
+ * Null when the pair has no saved config; the Emails tab then starts from an
+ * empty draft for the admin to write by hand.
+ */
+export async function getEmailDraftConfig(orgId: string, templateId: string): Promise<EmailDraftConfig | null> {
+  const svc = createServiceClient()
+  const { data, error } = await svc.from('app_config')
+    .select('value').eq('key', emailDraftKey(orgId, templateId)).maybeSingle()
+  if (error) throw new Error(`Could not load the email draft config: ${error.message}`)
+  return parseEmailDraftConfig(data?.value)
 }
 
 export async function setConfig(key: string, value: unknown): Promise<void> {
