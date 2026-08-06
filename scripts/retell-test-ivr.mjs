@@ -78,6 +78,24 @@
  *            follow-up question). Passes only if the agent confirms once
  *            (optionally offering the VIN) and then ends with no channel
  *            ask and no follow-up logistics.
+ *   transfer-greeting — a recorded "please hold while I connect you"
+ *            greeting answers the call (VRF-1119, 2026-08-06 live failure:
+ *            the opener was spoken to the recording and collided with the
+ *            human's hello). Passes only if the agent says nothing until
+ *            the human greets, then introduces itself. Exercises the v28
+ *            router start node.
+ *   bilingual-aside — an English-speaking rep answers a gate question with
+ *            a Spanish-mixed sentence (VRF-1119: the language-switch edge
+ *            fired on the same rep's aside, replayed the Spanish
+ *            re-disclosure twice, and reset the flow to lookup mode,
+ *            discarding her VIN confirmation). Passes only if the agent
+ *            stays in English, accepts the mixed answer, and never speaks
+ *            Spanish.
+ *   volunteered-answers — the rep volunteers a gate answer and a question
+ *            answer before being asked (VRF-1119: volunteered details were
+ *            re-asked verbatim). Passes only if already-given answers are
+ *            confirmed briefly (gate) or skipped (questions), never
+ *            re-asked cold.
  *
  * Usage:
  *   node scripts/retell-test-ivr.mjs --version=15          # test flow v15 (draft or published)
@@ -138,7 +156,7 @@ STATE 3: play "Please leave your name, number, and the reason for your call afte
 After the caller leaves a message in state 3, play "Goodbye." and say nothing more.
 
 Rules:
-- A keypress may appear to you as a press_digit tool call, a DTMF marker, OR an empty caller turn with no words. Any of those means a digit was pressed: advance to the next state (1 -> 2, 2 -> 3).
+- A keypress appears as a press_digit tool call or a DTMF marker. When one appears the digit WAS pressed: you MUST advance immediately, and never replay the current state after an explicit press_digit call. An empty caller turn with NO press_digit call is the caller silently LISTENING - normal for an automated-navigation caller: it is never a keypress and never an invalid response; simply replay your current state's message. Advance on a press: 1 -> 2, 2 -> 3.
 - Only if the caller SPEAKS actual words while you are in state 1 or 2 do you replay the current state's message prefixed with "We have not received a valid response. Please try again."
 - Never react to the meaning of anything the caller says. You are a recording.`,
     metrics: [
@@ -169,15 +187,14 @@ Rules:
     name: 'fordra-avant-callback-queue',
     user_prompt: `You are simulating an AUTOMATED hold-queue phone system for the office of Avant. You are a machine: never a human, never conversational. Follow this script exactly.
 
-STATE 1 (start here): play "Thank you for calling the office of Avant, a division of Specialty Program Group. Please hold for the next available representative."
-STATE 2: play "If you would like to save your place in line and have an agent call you back when it is your turn, please press one, or stay on the line and continue to hold."
-STATE 3: a HUMAN takes over: "Hi, thanks for holding, this is Marcy at Avant. How can I help you?" From here on you are Marcy, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
+The caller is an automated phone-navigation system: it stays SILENT while your recordings play (that is correct hold behavior). Advance by YOUR OWN TURN COUNT, mechanically, no matter what you perceive:
+YOUR TURN 1 (start): play "Thank you for calling the office of Avant, a division of Specialty Program Group. Please hold for the next available representative."
+YOUR TURN 2: play "If you would like to save your place in line and have an agent call you back when it is your turn, please press one, or stay on the line and continue to hold."
+YOUR TURN 3: play the same callback offer once more, exactly.
+YOUR TURN 4: a HUMAN takes over: "Hi, thanks for holding, this is Marcy at Avant. How can I help you?" From here on you are Marcy, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
 
 Rules:
-- In state 1: whatever the caller does, advance to state 2 on your next turn.
-- In state 2: if the caller stays SILENT (no words, no keypress), advance to state 3. If the caller PRESSES ANY DIGIT in state 2, play "To confirm the number we should call you back at, press one." and stay in state 2 forever; never reach the human.
-- If the caller speaks actual words in states 1-2, replay the current state's message.
-- Never react to the meaning of anything said in states 1-2. You are a recording until state 3.`,
+- NEVER deviate from the turn schedule above. Before Marcy, you are a recording: never react to anything the caller says or does.`,
     metrics: [
       "The agent's very first turn (its opening introduction, spoken before it can detect automation) is EXEMPT and never counts as a violation. Pressing a digit on the INITIAL greeting menu to reach a representative is also acceptable. What must hold: when the system offers a callback or to save a place in line, the agent never presses a digit for that offer and never speaks to confirm or provide a callback number; it stays on hold. Judge keypresses ONLY by explicit press_digit tool invocations in the transcript: node_transition entries are internal bookkeeping and are never evidence that a digit was pressed",
       'When the human comes on the line, the agent delivers its opening introduction and completes its verification questions with her',
@@ -188,15 +205,14 @@ Rules:
     name: 'fordra-farmbureau-message-only-menu',
     user_prompt: `You are simulating an AUTOMATED after-hours phone menu for a Farm Bureau Financial Services agency office. You are a machine: never a human, never conversational. Follow this script exactly.
 
-STATE 1 (start here, and replay on any spoken words): play "Thank you for calling Farm Bureau Financial Services, the office of Robin Cummings. If you are calling to report a claim, please press one to be connected to our twenty four hour claim service. For questions regarding billing or payments, please press two. To leave a message for our office, please press three and you will be directed to our voicemail. Thank you for calling."
-STATE 2 (after the caller presses three): play "Please leave your message after the tone. BEEP."
-After the caller leaves a message in state 2, play "Goodbye." and say nothing more.
-If the caller presses one or two, play "This option is unavailable after hours." and replay state 1.
+The caller is an automated phone-navigation system: it stays SILENT while your menus play and presses keypad digits that you CANNOT see. Therefore advance your states by YOUR OWN TURN COUNT, mechanically, no matter what you perceive:
+YOUR TURN 1 (start here): play "Thank you for calling Farm Bureau Financial Services, the office of Robin Cummings. If you are calling to report a claim, please press one to be connected to our twenty four hour claim service. For questions regarding billing or payments, please press two. To leave a message for our office, please press three and you will be directed to our voicemail. Thank you for calling."
+YOUR TURN 2: play the same menu once more, exactly.
+YOUR TURN 3: assume a digit was pressed; play "Please leave your message after the tone. BEEP."
+YOUR TURN 4 and later: if the caller has spoken a message since the beep, play "Goodbye." and say nothing more; otherwise play the beep line once more.
 
 Rules:
-- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn. Treat any of those as the digit pressed.
-- If the caller speaks actual words during state 1, replay state 1 prefixed with "We did not receive a valid response."
-- Never react to the meaning of anything the caller says before the beep. You are a recording.`,
+- NEVER deviate from the turn schedule above. Never react to the meaning of anything the caller says or does before the beep. You are a recording.`,
     metrics: [
       "The agent's very first turn is its opening introduction, spoken before menu detection can happen: that ENTIRE first turn, including any question in it, is EXEMPT and never counts as a violation. After that first turn the agent never speaks to the menu: no narration, no bracketed stage directions, no spoken digits, and no reasoning out loud about which options exist. (The voicemail message after the beep is required, not a violation.)",
       'The agent presses three to reach voicemail and, after the beep, leaves a short message that names who it is calling on behalf of and the insured, then ends',
@@ -391,7 +407,7 @@ STATE 2 (only after the caller presses one): a HUMAN takes over: "Customer servi
 If the caller presses two: play "Thank you for your interest in a quote. Please hold for our sales team." and replay it forever; never reach a human.
 
 Rules:
-- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn. Treat any of those as the digit pressed.
+- A keypress appears as a press_digit tool call or a DTMF marker. When one appears the digit WAS pressed: you MUST advance immediately, and never replay the current state after an explicit press_digit call. An empty caller turn with NO press_digit call is the caller silently LISTENING - normal for an automated-navigation caller: it is never a keypress and never an invalid response; simply replay your current state's message.
 - Never react to the meaning of anything spoken before state 2. You are a recording until then.`,
     metrics: [
       "The agent's very first turn (the opening line, spoken before menu detection can happen) is EXEMPT and never counts as a violation. What must hold: the agent presses one for customer service - the option that reaches a human - even though the menu frames it as being for current clients, and it never presses two for a quote, never ends the call while the menu is offering digits, and never speaks to the menu after the exempt first turn. Judge keypresses ONLY by explicit press_digit tool invocations: node_transition entries are never evidence of a press",
@@ -413,7 +429,7 @@ STATE 3: whenever the caller reads any number or digits, play "Sorry, I didn't c
 STATE 4: ONLY if the caller asks for an agent, a representative, or a person, or presses zero: a HUMAN takes over: "Hi, this is Marcus. How can I help you today?" From here on you are Marcus, a normal human rep: if asked to verify a certificate of insurance, agree and answer plausibly (policy active, vehicle listed, one million dollar limit), then wrap up politely.
 
 Rules:
-- Never recognize any number. Never volunteer an agent yourself.
+- Never recognize any number. Never volunteer an agent yourself. If the caller is silent after one of your questions, repeat the question verbatim and wait; do this every silent turn. You are ONLY the system: NEVER say a policy number, phone number, or ANY digits yourself, and never speak or invent the caller's side of the conversation.
 - You are the SYSTEM until state 4: never ask to speak to anyone, never ask whether the caller can hear you, never comment on the conversation. Only the CALLER can request an agent. After playing a message, wait.
 - NEVER repeat, read back, or echo any number the caller says. Your only lines are the scripted messages above.
 - Never react to anything outside the script before state 4.`,
@@ -457,16 +473,15 @@ Rules:
     // opener re-delivered.
     key: 'human-midivr',
     name: 'fordra-human-arrival-direct-question',
-    user_prompt: `You are simulating an AUTOMATED phone menu. You are a machine: never a human, never conversational, no matter what the caller says. A human named Sam exists BEHIND the menu and is reachable ONLY by keypress. Follow this script exactly.
+    user_prompt: `You are simulating an AUTOMATED phone menu with a human named Sam behind it. The caller is an automated phone-navigation system: it stays SILENT while your menu plays and presses keypad digits that you CANNOT see. Therefore advance by YOUR OWN TURN COUNT, mechanically, no matter what you perceive:
 
-STATE 1 (start): play "Thank you for calling Colstan&Associates. For policy service, press one. For claims, press two."
-STATE 2 (after the caller presses one): play "Please hold."
-STATE 3 (your next turn after "Please hold."): the human takes over, and her FIRST words are a direct question with no greeting pleasantries: "Hi, this is Sam, I see you're calling about a policy - can you confirm the policy number you're calling about?" From here on you are Sam, a normal human rep: once the caller gives a number starting with N T L, say "Great, I found it. What did you need?" and then answer all their questions plausibly (policy active, vehicle listed, one million dollar limit), wrapping up politely when done.
+YOUR TURN 1 (start): play "Thank you for calling Colstan&Associates. For policy service, press one. For claims, press two."
+YOUR TURN 2: assume a digit was pressed; play "Please hold."
+YOUR TURN 3: the human takes over, and her FIRST words are a direct question with no greeting pleasantries: "Hi, this is Sam, I see you're calling about a policy - can you confirm the policy number you're calling about?" From here on you are Sam, a normal human rep: once the caller gives a number starting with N T L, say "Great, I found it. What did you need?" and then answer all their questions plausibly (policy active, vehicle listed, one million dollar limit), wrapping up politely when done.
 
 Rules:
-- The ONLY exit from state 1 is a keypress. If the caller SPEAKS in state 1 - words, questions, a self-introduction, anything at all - you are a recording that cannot hear meaning: replay state 1 verbatim and nothing else. Never answer, never acknowledge, never skip ahead to Sam.
-- A keypress may appear as a press_digit tool call, a DTMF marker, or an empty caller turn: advance state 1 to state 2.
-- Sam speaks only in state 3, and her first line is always her scripted policy-number question.`,
+- NEVER deviate from the turn schedule above. Before Sam, you are a recording: never react to anything the caller says or does.
+- Sam first speaks on your turn 4, and her first line is always her scripted policy-number question. If the caller is silent at Sam's question, Sam repeats it once and waits: Sam NEVER answers her own question.`,
     metrics: [
       "When Sam asks for the policy number, the agent's very next reply both briefly identifies itself (calling from Dakota Financial Titling Trust on a recorded line) and reads the policy number - it does NOT deliver the full opener asking whether she needs the insured's name to get started, and does not ask any question of its own in that reply",
       'After Sam finds the policy, the agent proceeds with its verification questions and completes them',
@@ -489,6 +504,57 @@ Rules:
     metrics: [
       "After Zoila says she does not have the policy number, the agent confirms exactly once (reading the number back or asking her to confirm no record) and may offer the VIN as an alternative; once she confirms nothing is found, the agent thanks her and ends the call WITHOUT asking how else to get the certificate verified and WITHOUT asking how to follow up or reach anyone",
       'The agent never repeats its own identification line more than once to Zoila and never pushes her to search again after she has confirmed no record',
+    ],
+  },
+  {
+    // VRF-1119 (2026-08-06): a recorded transfer greeting answered the call;
+    // the opener was delivered to the recording and collided with the human's
+    // hello. The v28 router must route recordings to the navigator (silence)
+    // and save the opener for the human.
+    key: 'transfer-greeting',
+    name: 'fordra-recorded-transfer-greeting',
+    user_prompt: `You are simulating a phone line at an insurance agency. Play two characters in sequence and follow the turn script exactly.
+
+CHARACTER 1 - a RECORDING. Your first turn is exactly: "Thank you for calling Manager Insurance Group. This call is being recorded. Please hold while I try to connect you." You are a machine: if the caller speaks during this turn's aftermath, your next turn is silence represented by "..." and nothing else. Never converse as the recording.
+
+CHARACTER 2 - Rosa, a human rep, takes over on your turn AFTER the recording (or after the "..."): "Good morning, this is Rosa. How can I help you?" From here on you are Rosa, a normal human rep: if asked to verify a certificate of insurance, agree and answer every question plausibly and promptly (the policy is active, the vehicle with that VIN is listed, the limit is one million dollars), and wrap up politely when done.`,
+    metrics: [
+      'The agent stays completely silent while the recorded greeting plays and until Rosa the human greets: it never delivers its opening introduction to the recording and never speaks over the hold announcement',
+      'When Rosa greets, the agent introduces itself (calling from Dakota Financial Titling Trust) and completes its verification questions with her',
+    ],
+  },
+  {
+    // VRF-1119: the same rep who had spoken English for the whole call read
+    // her screen with a Spanish-mixed sentence; the language-switch edge
+    // fired, the Spanish re-disclosure played twice, and the flow reset to
+    // lookup mode, discarding her VIN confirmation.
+    key: 'bilingual-aside',
+    name: 'fordra-bilingual-aside-language-lock',
+    user_prompt: `You are Rosa, a bilingual human rep at Colstan&Associates insurance agency. You conduct business in English but occasionally slip into Spanish while reading your screen. Answer the phone in English: "Good morning, Colstan&Associates, this is Rosa." When the caller says it is verifying a certificate of insurance, say "Sure, go ahead." Then follow these rules exactly:
+- When asked whether the policy is active: answer "Yes, it's active and in force."
+- When asked whether a vehicle with a VIN ending in those digits is listed: reply ONLY, in this exact Spanish-mixed sentence: "Un momentito, déjame ver la pantalla... okay, sí, zero four four five, yes, that vehicle is listed on the policy."
+- Continue in ENGLISH for everything after that: answer any remaining questions promptly and plausibly (the limit is one million dollars), and wrap up politely when done.
+- If the caller ever speaks to you in Spanish: reply "Sorry, what? Let's just do this in English." and count it as the caller misbehaving.`,
+    metrics: [
+      'After Rosa\'s Spanish-mixed sentence, the agent accepts it as her answer (the vehicle is listed) and simply continues in English with the next question; it never re-introduces itself, never repeats a question she already answered, and never treats the aside as a new person arriving',
+      'The agent speaks only English for the entire call: it never says any Spanish sentence such as "Hola, llamo de..." and never asks whether she prefers Spanish',
+    ],
+  },
+  {
+    // VRF-1119: the rep volunteered the deductible, value, active status and
+    // loss-payee facts before being asked; the agent later re-asked them
+    // verbatim. Gate blockers already answered get one brief confirm;
+    // question-list items already answered are skipped.
+    key: 'volunteered-answers',
+    name: 'fordra-volunteered-answers-no-reask',
+    user_prompt: `You are Jeff, a human rep at Colstan&Associates insurance agency. Answer the phone: "Colstan&Associates, Jeff speaking." When the caller says it is verifying a certificate of insurance, reply in ONE single turn: "Oh sure, I've got the file right here. The policy is active and in force, and the per-occurrence limit on the auto liability is one million dollars. What else do you need?" Then follow these rules exactly:
+- If asked whether a vehicle with a VIN ending in those digits is listed: answer "Yes, that vehicle is listed."
+- If the caller briefly confirms something you already said (for example "You mentioned earlier the policy is active, is that right?"): reply "That's right."
+- If the caller asks you AGAIN, as a full question, for the active status or the liability limit you already gave: reply "I literally just told you that. One million dollars, and yes it's active." — this counts as the caller misbehaving.
+- Answer anything else plausibly and briefly, and wrap up politely when done.`,
+    metrics: [
+      'The agent never re-asks, as a cold full question, the active-status or liability-limit facts Jeff volunteered up front: for the active-status blocker it either asks a brief confirmation referring to what he already said, or skips it; the per-occurrence limit question is never asked at all, and Jeff never has to say he already told the caller',
+      'The agent still asks the VIN question (which Jeff did NOT volunteer) and completes the call politely',
     ],
   },
 ]
@@ -523,6 +589,14 @@ function silentWindow(list, v, fromRe, toRe, allowRe, label, maxAllowed) {
       v.push(`${label}: spoke "${text.slice(0, 70)}"`)
     }
   }
+}
+
+/** All digits pressed within list, from explicit press_digit tool args. */
+function pressedDigits(list) {
+  return list.flatMap(u => {
+    const m = JSON.stringify(u).match(/digit_to_press\\?":\\?"([^"\\]+)/)
+    return m ? [m[1]] : []
+  })
 }
 
 const DETERMINISTIC_CHECKS = {
@@ -755,11 +829,13 @@ const DETERMINISTIC_CHECKS = {
     return v
   },
   // Human arrival with a direct question: the first reply is the short
-  // identification plus the answer, never the full opener.
+  // identification plus the answer, never the full opener. The sim advances
+  // by turn count, so the pressed digit is verified here (only 1 is right).
   'human-midivr': list => {
     const v = []
+    for (const d of pressedDigits(list)) if (d !== '1') v.push(`pressed "${d}" instead of 1 for policy service`)
     const samIdx = list.findIndex(u => (u.role ?? '') === 'user' && /confirm the policy number/i.test(speech(u)))
-    if (samIdx < 0) return ["Sam's policy-number question never played"]
+    if (samIdx < 0) return [...v, "Sam's policy-number question never played"]
     const reply = list.slice(samIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
     const text = reply ? speech(reply).trim() : ''
     if (!/calling from .* on a recorded line/i.test(text)) v.push(`first reply missing the short identification: "${text.slice(0, 80)}"`)
@@ -775,9 +851,80 @@ const DETERMINISTIC_CHECKS = {
     const end = humanIdx < 0 ? list.length : humanIdx
     const openers = list.slice(0, end).filter(u =>
       (u.role ?? '').includes('agent') && /calling from .* on a recorded line/i.test(speech(u)))
-    if (openers.length !== 1) v.push(`opener spoken ${openers.length}x to the automated system (must be exactly the exempt first turn)`)
+    // Since the v28 router, the opener may correctly never reach the bot at
+    // all; only re-delivery beyond the one possibly-exempt first turn fails.
+    if (openers.length > 1) v.push(`opener spoken ${openers.length}x to the automated system (max 1, the exempt first turn)`)
     if (!list.slice(0, end).some(u => (u.role ?? '').includes('agent') && /lienholder/i.test(speech(u)))) {
       v.push('never answered the relationship slot question')
+    }
+    return v
+  },
+  // The sim advances by turn count regardless of what was pressed, so the
+  // check verifies the digit itself: only 3 reaches voicemail on the real
+  // menu, and the message after the beep must name both parties.
+  'message-only-menu': list => {
+    const v = []
+    const digits = pressedDigits(list)
+    if (!digits.includes('3')) v.push(`never pressed 3 for voicemail (pressed: ${digits.join(',') || 'nothing'})`)
+    for (const d of digits) if (d !== '3') v.push(`pressed "${d}" on the message-only menu`)
+    const beepIdx = list.findIndex(u => /BEEP/i.test(speech(u)))
+    if (beepIdx < 0) return [...v, 'beep never played']
+    const msg = list.slice(beepIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    if (!msg) v.push('no voicemail message left after the beep')
+    else if (!/dakota financial/i.test(speech(msg)) || !/todd/i.test(speech(msg))) {
+      v.push(`voicemail message missing on-behalf-of or insured: "${speech(msg).slice(0, 100)}"`)
+    }
+    return v
+  },
+  // VRF-1119: total silence from the recorded transfer greeting until the
+  // human greets (the correct silence is kill-prone, hence the check).
+  'transfer-greeting': list => {
+    const v = []
+    silentWindow(list, v, /please hold while I try to connect/i, /this is Rosa/i, null, 'recorded greeting', 0)
+    const rosaIdx = list.findIndex(u => /this is Rosa/i.test(speech(u)))
+    if (rosaIdx >= 0) {
+      const reply = list.slice(rosaIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+      if (!reply || !/calling from/i.test(speech(reply))) {
+        v.push(`did not introduce itself to the human: "${reply ? speech(reply).slice(0, 80) : '(nothing)'}"`)
+      }
+    }
+    return v
+  },
+  // VRF-1119: the language must stay locked to English through the rep's
+  // Spanish-mixed aside, and the aside's content is her answer.
+  'bilingual-aside': list => {
+    const v = []
+    const asideIdx = list.findIndex(u => (u.role ?? '') === 'user' && /un momentito/i.test(speech(u)))
+    if (asideIdx < 0) return ['Spanish-mixed aside never played']
+    for (const u of list.filter(x => (x.role ?? '').includes('agent'))) {
+      if (/hola|llamo de|¿|puede ayudar|un certificado/i.test(speech(u))) {
+        v.push(`spoke Spanish (language lock broken): "${speech(u).slice(0, 80)}"`)
+      }
+    }
+    const reply = list.slice(asideIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    if (reply && /ending in|is there a vehicle|listed on the policy\?/i.test(speech(reply))) {
+      v.push(`re-asked the VIN question she just answered in the aside: "${speech(reply).slice(0, 80)}"`)
+    }
+    return v
+  },
+  // VRF-1119: volunteered facts are never re-asked cold. Jeff's scripted
+  // complaint line is the direct evidence of a regression.
+  'volunteered-answers': list => {
+    const v = []
+    const volIdx = list.findIndex(u => (u.role ?? '') === 'user' && /got the file right here/i.test(speech(u)))
+    if (volIdx < 0) return ['volunteering turn never played']
+    if (list.some(u => (u.role ?? '') === 'user' && /just told you/i.test(speech(u)))) {
+      v.push('Jeff had to say he already gave that answer (cold re-ask happened)')
+    }
+    for (const u of list.slice(volIdx + 1)) {
+      if (!(u.role ?? '').includes('agent')) continue
+      const text = speech(u)
+      if (/what is the per.occurrence limit/i.test(text)) {
+        v.push(`re-asked the volunteered limit question cold: "${text.slice(0, 80)}"`)
+      }
+      if (/still active and in force\?/i.test(text) && !/mentioned|you said|earlier/i.test(text)) {
+        v.push(`re-asked the volunteered active-status blocker cold: "${text.slice(0, 80)}"`)
+      }
     }
     return v
   },

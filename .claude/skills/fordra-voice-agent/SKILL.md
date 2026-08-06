@@ -52,12 +52,14 @@ setting is retuned, append/update an entry here in the same format.
   (year/make/model from template variables/requirement rows, issue 17),
   VINs, USDOT/MC. Insurers verify by vehicle: keep the vehicle description
   row next to its VIN.
-- **Test harness:** `scripts/retell-test-ivr.mjs` runs twenty-one scenarios
+- **Test harness:** `scripts/retell-test-ivr.mjs` runs twenty-four scenarios
   rebuilt from real calls (Colstan keypad IVR, human, already-verified, Avant
   callback queue, Farm Bureau message-only menu, Progressive-style AI
-  gatekeeper, the VRF-1110/1111/1112 hold/patience/deflection cases, plus
+  gatekeeper, the VRF-1110/1111/1112 hold/patience/deflection cases,
   the VRF-1113/1114 qualified-menu / lookup-escalate / auth-wall /
-  human-arrival cases — see the file header for the full list).
+  human-arrival cases, plus the VRF-1119 transfer-greeting /
+  bilingual-aside / volunteered-answers cases — see the file header for
+  the full list).
   Silence-heavy scenarios trip the simulator's liveness kill when the agent is
   CORRECTLY silent; the harness then falls back to deterministic transcript
   checks. Run it against every draft before publish.
@@ -87,6 +89,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-04 (v25) | 1.0 | 0.7 | VRF-1112 second call, fixes (issue 18): request-handling hoisted above gate/N5 headline job, mid-hold-question exception inline in the hold rule (gate/N5/N4c); voice settings unchanged |
 | 2026-08-05 (v26) | 1.0 | 0.7 | VRF-1113/1114 IVR fixes (issues 19-20): two-pass keypad selection, retry-then-escalate on failed lookups, DOB-wall agent ask, partial-identifier + producer-state answers, new node-n1h human-arrival answer-first; voice settings unchanged |
 | 2026-08-05 (v27) | 1.0 | 0.7 | VRF-1113 third call, fixes (issue 21): n1h repeat-only-the-value, strong-identifier not-found confirm-then-goodbye (N4c/gate + broadened NW edges), `not_found_identifier` post-call field; voice settings unchanged |
+| 2026-08-06 (v28) | 1.0 | **0.6** | VRF-1119 fixes (issue 22): the issue-2 clipping tradeoff finally bit (noise cut the same question twice), so sensitivity dropped per that plan; plus router start node, language lock, already-answered rules |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -123,6 +126,11 @@ responsiveness at 1.0 — it is not part of this tradeoff). If clipping persists
 at 0.6, revisit `backchannel_frequency` (0.6) too: the agent's own backchannels
 during rep speech can also confuse turn-taking. Retune via a fresh draft
 (createVersion), never the dashboard.
+
+**It bit (VRF-1119, 2026-08-06):** background noise — not rep speech; per-word
+timestamps showed zero overlap — clipped "The last four digits" mid-sentence
+TWICE in a row, and the digits never came out. Sensitivity dropped to 0.6 in
+v28 per the plan above. Next lever if it recurs: backchannel_frequency.
 
 ## 3. Latency floor is structural, ~1.2-1.6s
 
@@ -554,15 +562,16 @@ pronunciation):**
   owner-approved copy: "Hi, I'm calling from {{on_behalf_of}} on a
   recorded line. {answer}." then silence until they lead (reminder
   follow-up: the insured-name hook). A plain greeting gets the standard
-  opener wording. N1 itself stays static_text — do not fold conditional
-  behavior into it.
+  opener wording. (N1 stayed static_text through v27; SUPERSEDED in v28 —
+  see issue 22: the static N1 is gone, and the start node speaks the
+  opener conditionally with an exact-text guard.)
 
 **Still open:** (a) no mechanism to enter a long identifier via keypad when
 an IVR demands "using only your keypad" — the press nodes are built around
-single menu digits; (b) the `begin` step transitions straight into N1 on
-the first turn, before the IVR global conditions can fire, so the opener
-still lands on robots whose greeting precedes any menu cue (non-fatal both
-times; platform-limited). The transcript's apparent talk-over on this call
+single menu digits; (b) RESOLVED in v28 — the begin→N1 first-turn race
+(opener delivered to robots/recordings before the IVR global conditions
+could fire) is closed by the router start node (issue 22). The
+transcript's apparent talk-over on this call
 was an artifact — per-word timestamps showed zero overlap; the agent spoke
 into a 4s gap that the flat transcript renders as an interruption.
 
@@ -653,6 +662,122 @@ skip_response_edge before making a terminal node conversational.
   never explain why, never mention verification independence. If that
   phrasing reappears from another node, hunt for the same
   principle-verbalization pattern.
+
+## 22. Bilingual aside hijacked the call: language flip-flop + flow reset to lookup mode (VRF-1119)
+
+**Symptom (bilingual Miami agency, 2026-08-06, `call_6d44929a5f02e554a38fe2acc8e`,
+agent v27, 6:33, rep hung up):** five failures in one call — (a) the opener
+was spoken right as a recorded Spanish transfer greeting ("Espere mientras
+intento conectarle") ended, colliding with the human's "Buenos días"; (b) the
+rep volunteered the deductible, value, active status, and loss-payee facts
+early, and the agent later re-asked them verbatim; (c) background noise
+clipped "The last four digits" twice (see issue 2's "it bit" note); (d) after
+three minutes of English, the rep read her screen with one Spanish-mixed
+sentence — containing her VIN CONFIRMATION ("Zero five four three one one" =
+tail 4311) — and the gate→N4bes language edge fired on it: the Spanish
+re-disclosure (American-accented, Sloane has no Spanish) played TWICE, and
+N4bes's only forward edge reset the flow to N4c lookup mode, discarding the
+confirmation (post-call analysis: "VIN not confirmed"); (e) N4c then looped
+"Anything else you need to find the policy?" six times — the rep's read-back
+confirmations ("Yes. Policy number is correct.") kept matching "yes, I need
+something else" — until she gave up.
+
+**Cause:** (a) the begin→N1 race (issue 19 still-open item b) — N1's static
+opener fires when the first utterance ends, whatever it was; (b) no
+already-answered rule existed on gate/N5; (d) global rule 13 said "mirror the
+callee — switch if they answer in an enabled language" and the es edges'
+"new, different person" wording did not exclude the same rep code-switching;
+N4bes always routed forward to N4c regardless of call progress; (e) N4c had
+no rule that a read-back confirmation means the lookup is DONE.
+
+**Remedy (v28, 2026-08-06, flow + settings, no app change):**
+- **Opener + router start node** (`node-router`, now `start_node_id`;
+  static N1 REMOVED): a prompt node that speaks the opener copy VERBATIM
+  (exact-text + once-per-call instruction) to a live person or when
+  unsure, and outputs NOTHING to any automated answerer (menu,
+  recording, hold/transfer message, voicemail, conversational AI); its
+  robot edges route to the press/navigator nodes, and it inherited all
+  seven of N1's outbound edges, each prefixed with the guard "ONLY if
+  the opening line has already been spoken on this call." (without the
+  guard, a receptionist's "How can I help you?" matched the
+  agree-to-help edge on the greeting itself and skipped the recorded-
+  line disclosure entirely). **This supersedes the issue-19 "N1 stays
+  static_text" rule** — forced by platform mechanics discovered
+  2026-08-06: a conversation node's NORMAL edges never fire on the
+  utterance that entered it, only on the next one (only global
+  conditions chain same-turn), so a silent routing node would add one
+  full utterance of dead air to every live-human pickup. A conditional
+  opener node is the only zero-dead-air design that also keeps the
+  opener away from recordings. The opener copy itself is byte-identical
+  to the old N1 text.
+- **Language lock** (global rule 13 rewritten): the call's language is
+  established by what the office actually CONVERSES in during the first
+  exchanges (a greeting word alone does not count), then LOCKS; a
+  sentence/aside/word in another language never switches it — values
+  inside mixed speech are answers to the pending question. Post-lock
+  switches only on an explicit request or a NEW person who cannot
+  continue. All four →N4bes edges carry the same-person exclusion inline.
+- **Progress-aware re-disclosure returns:** N4bes AND N4b got an edge to
+  node-gate ("policy already located — never restart the lookup") ahead
+  of their N4c edge.
+- **Already-answered rules:** gate rule 2 — a blocker already stated gets
+  ONE confirm, owner-approved copy "You mentioned earlier that {detail}.
+  Is that right?", never a cold re-ask; N5 rule 2 broadened — answers
+  volunteered at ANY point (even before N5) skip their questions, partial
+  ones get asked only for the missing part.
+- **N4c confirm guard:** a read-back confirmation is NEVER "yes, I need
+  more" — lookup is DONE; inline in rule 1 plus a broadened N4c→gate edge
+  (fires on confirmations and on the rep reading out policy details).
+- **Settings:** interruption_sensitivity 0.7 → 0.6 (issue 2's planned
+  remedy).
+- **Not fixed:** Sloane's American-accented Spanish — owner decision
+  2026-08-06 to keep Sloane for now; the language lock makes mid-call
+  Spanish rare. If genuine Spanish-first calls matter, revisit with an
+  ElevenLabs multilingual voice (candidates: 11labs-Marissa, 11labs-Kate,
+  11labs-Hailey-Latin-America-Spanish-localized; previews in
+  `client.voice.list()`).
+- Test scenarios `transfer-greeting`, `bilingual-aside`,
+  `volunteered-answers`; the `ai-gatekeeper` deterministic check now
+  allows ZERO openers to the bot (with the router, the opener may
+  correctly never reach it).
+
+**More fixes surfaced by the v28 harness runs (same publish):**
+- The opener-router spoke a literal "[No response.]" on its first silent
+  turn even though the never-emit clause was in its instruction — buried
+  mid-paragraph. Hoisting an EMPTY OUTPUT CONTRACT block to the very top
+  of the instruction fixed it (primacy again; the clause must LEAD any
+  node that stays silent).
+- The SILENCE CHECK's hold bullet ("anything during a hold → nothing")
+  muted a rep's mid-hold question — the ask-you-a-question exception
+  lived only in the hold rule below and lost to the top block. The
+  exception is now INLINE in the bullet on gate/N5/N4c, and the hold
+  rule says a NEW hold starts a fresh "Of course." count (an earlier
+  hold's ack was suppressing the next hold's).
+- Press-node fail edges fired on a speech-slot system with ZERO digits
+  pressed (the VRF-1114 impossible-branch pattern), hanging up instead
+  of returning to the navigator whose rule 4b owns the ask-for-an-agent
+  escalation. Fail edges + press globals now say NEVER when the system
+  asks a question to be answered in words, even a retry — the
+  voice-question edge back to the navigator always wins.
+- Navigator→press edge misfired on VOICE menus ("you can say things
+  such as file a claim...") — it hopped to the silence-only keypad node
+  right after the navigator's first slot answer, muting the agent at the
+  next spoken question, 4 runs in a row. Appending an exclusion to the
+  edge prompt did NOT fix it (the issue-16 placement lesson applies to
+  EDGE conditions too); rewriting the edge discriminator-FIRST ("ONLY
+  when the system offered KEYPAD digits... NEVER when it asks the
+  caller to SAY anything") did.
+- **Harness sim rework (router fallout):** the simulated-callee LLM
+  cannot perceive silent agent turns or press_digit tool calls, so with
+  the router's silent call start the old perception-based sim scripts
+  ("advance when a digit is pressed") stalled on their first state
+  forever and killed every keypad scenario. `message-only-menu`,
+  `human-midivr`, and `callback-queue` sims now advance by TURN COUNT,
+  mechanically, and the deterministic checks verify the actually-pressed
+  digits from press_digit tool args instead (`pressedDigits()`). Keep
+  new keypad sims turn-count-based, and keep at most ONE silent agent
+  beat before a scene the checks need (the liveness kill fires on the
+  second consecutive unanswered utterance).
 
 ## Standing rules for any change here
 
