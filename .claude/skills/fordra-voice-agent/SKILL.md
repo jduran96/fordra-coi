@@ -90,6 +90,7 @@ setting is retuned, append/update an entry here in the same format.
 | 2026-08-05 (v26) | 1.0 | 0.7 | VRF-1113/1114 IVR fixes (issues 19-20): two-pass keypad selection, retry-then-escalate on failed lookups, DOB-wall agent ask, partial-identifier + producer-state answers, new node-n1h human-arrival answer-first; voice settings unchanged |
 | 2026-08-05 (v27) | 1.0 | 0.7 | VRF-1113 third call, fixes (issue 21): n1h repeat-only-the-value, strong-identifier not-found confirm-then-goodbye (N4c/gate + broadened NW edges), `not_found_identifier` post-call field; voice settings unchanged |
 | 2026-08-06 (v28) | 1.0 | **0.6** | VRF-1119 fixes (issue 22): the issue-2 clipping tradeoff finally bit (noise cut the same question twice), so sensitivity dropped per that plan; plus router start node, language lock, already-answered rules |
+| 2026-08-06 (v29) | 1.0 | 0.6 | flow-only, VRF-1114 second call (issue 23): gate→N5 fires the moment blockers resolve (idle wrap-up killed nine questions), identity questions routed to G1 not G2 |
 
 Unchanged: voice `retell-Sloane`, backchannel on at 0.6 ("mm-hmm", "okay"),
 `stt_mode: accurate`, noise-cancellation denoising.
@@ -778,6 +779,44 @@ no rule that a read-back confirmation means the lookup is DONE.
   new keypad sims turn-count-based, and keep at most ONE silent agent
   beat before a scene the checks need (the liveness kill fires on the
   second consecutive unanswered utterance).
+
+## 23. Gate idled after blockers resolved; "nothing further" killed nine questions (VRF-1114, second call)
+
+**Symptom (TrueNorth, 2026-08-06, `call_912194208b20769a3ec3bc9de3d`, agent
+v27, 4:04):** with all blockers resolved (the third inferred - the rep FOUND
+the policy by the VIN's last six), the agent said gate rule 1's "Great, thank
+you.", then answered the rep's "Did you need anything else?" with "Nothing
+further, thank you." while NINE N5 questions waited one node ahead; the
+gate→N5 transition fired only three turns later, into a closed conversation.
+Then her parting "Is this a real person or not?" matched G2 (objections &
+opt-out), got the terminal "Understood. A colleague will follow up." and a
+hangup, instead of G1's approved digital-assistant answer.
+
+**Cause:** (a) rule/edge race - gate rule 1 gave the model something to SAY
+("Great, thank you.") in exactly the state where the gate→N5 edge should
+fire, and the node prompt wins over an edge; worse, the edge's wording
+("every blocker question was answered affirmatively") did not cover a
+blocker answered by INFERENCE, so the rule matched while the edge did not.
+The gate node cannot see {{questions}} (N5's variable), so "nothing further"
+was honest from its viewpoint. (b) G2's condition ("challenges why an AI is
+calling") swallowed a curiosity QUESTION that G1 owns.
+
+**Remedy (v29, flow-only):** the gate→N5 pass edge fires IMMEDIATELY when
+every blocker is resolved - aloud, earlier in the call, or self-evident from
+the lookup - and ALWAYS on an "anything else needed?" ask after resolution;
+gate rule 1's spoken line is DELETED and replaced with a never-declare-
+completion guard ("this step cannot see the next step's questions"). The
+list-empty case is already covered mechanically by the `edge-gate-empty`
+equation edge ({{gate_questions}} == "" → N5). G1's global condition now
+names is-this-a-real-person questions at any point in the call; G2's
+explicitly excludes them. Lesson: when a node must EXIT on a state, no
+instruction may give it something to say in that same state - delete the
+speaking rule, don't just add the edge. Test scenario `gate-pivot`
+(deterministic: the reply to "anything else?" is a question, never a
+wrap-up; the identity question gets the digital-assistant line). Note: in
+sim the identity branch is hard to exercise - the agent correctly says the
+N9 goodbye and hangs up the moment the last question is answered, beating
+the sim's scripted identity ask.
 
 ## Standing rules for any change here
 

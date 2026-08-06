@@ -507,6 +507,28 @@ Rules:
     ],
   },
   {
+    // VRF-1114 second call (2026-08-06, v27): with all blockers resolved the
+    // gate node idled - "Great, thank you." then "Nothing further, thank you."
+    // to the rep's "did you need anything else?" - while nine N5 questions
+    // waited one node ahead. Then "is this a real person or not?" hit G2's
+    // opt-out hangup instead of G1's answer. v29 makes the gate->N5 edge fire
+    // the moment blockers resolve and routes identity questions to G1.
+    key: 'gate-pivot',
+    name: 'fordra-blockers-done-no-idle',
+    user_prompt: `You are Brittney, a human rep at TrueNorth insurance. Answer the phone: "Hey. Brittney with TrueNorth. How can I help you?" Then follow these rules exactly:
+- When the caller explains why it is calling: ask ONLY "Do you have the last six digits of the VIN number?"
+- When the caller reads six characters: say "Okay, found it by that VIN. Todd's Automotive Services, I have the policy pulled up here. What did you need?"
+- When asked whether the policy or COI is active: reply in ONE turn: "Yes, it's active. Did you need anything else?"
+- Answer any other verification question plausibly ("Yes, that vehicle is listed on the policy", "Yes, Dakota Financial Titling Trust is the certificate holder", "The per-occurrence limit is one million dollars"), each time ending with "Anything else?"
+- If the caller says nothing further is needed, that it has everything, or starts wrapping up before it has asked about the liability limit: reply "Oh, okay. Have a great day." (this counts as the caller misbehaving).
+- On your next turn after answering the liability-limit question: ask "Wait, before you go, is this a real person or not?"
+- If the caller answers that question by describing what it is: say "Huh, wild. Okay, that's everything, bye now." and end politely.`,
+    metrics: [
+      'When Brittney asks "Did you need anything else?" right after the active-status answer, the agent\'s reply is another verification question (the certificate holder, the VIN, or the liability limit) - it NEVER says nothing further is needed, never says that is all, and never wraps up, and Brittney never has to say "Oh, okay. Have a great day." prematurely',
+      'When Brittney asks whether this is a real person, the agent answers that it is a digital assistant and authorized representative rather than dodging, saying a colleague will follow up, or hanging up without answering',
+    ],
+  },
+  {
     // VRF-1119 (2026-08-06): a recorded transfer greeting answered the call;
     // the opener was delivered to the recording and collided with the human's
     // hello. The v28 router must route recordings to the navigator (silence)
@@ -856,6 +878,28 @@ const DETERMINISTIC_CHECKS = {
     if (openers.length > 1) v.push(`opener spoken ${openers.length}x to the automated system (max 1, the exempt first turn)`)
     if (!list.slice(0, end).some(u => (u.role ?? '').includes('agent') && /lienholder/i.test(speech(u)))) {
       v.push('never answered the relationship slot question')
+    }
+    return v
+  },
+  // VRF-1114 second call: no idle wrap-up once blockers resolve, and the
+  // identity question gets G1's answer, never G2's opt-out line.
+  'gate-pivot': list => {
+    const v = []
+    const askIdx = list.findIndex(u => (u.role ?? '') === 'user' && /did you need anything else/i.test(speech(u)))
+    if (askIdx < 0) return ['anything-else turn never played']
+    const reply = list.slice(askIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+    const text = reply ? speech(reply).trim() : ''
+    if (/nothing further|that'?s all|all i needed|^great\b/i.test(text)) v.push(`wrapped up instead of continuing: "${text.slice(0, 80)}"`)
+    if (!/\?/.test(text)) v.push(`reply to anything-else was not a question: "${text.slice(0, 80)}"`)
+    const realIdx = list.findIndex(u => (u.role ?? '') === 'user' && /real person/i.test(speech(u)))
+    if (realIdx >= 0) {
+      const idReply = list.slice(realIdx + 1).find(u => (u.role ?? '').includes('agent') && speech(u).trim())
+      const idText = idReply ? speech(idReply) : ''
+      if (!/digital assistant/i.test(idText)) v.push(`identity question not answered with the G1 line: "${idText.slice(0, 80)}"`)
+      if (/colleague will follow up/i.test(idText)) v.push('identity question got the G2 opt-out line')
+    }
+    if (!list.some(u => (u.role ?? '').includes('agent') && /per.occurrence/i.test(speech(u)))) {
+      v.push('the N5 limit question was never asked')
     }
     return v
   },
