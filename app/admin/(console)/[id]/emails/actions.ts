@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/auth-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { adminInitials } from '@/lib/admin-activity'
 import { downloadDocument } from '@/lib/storage'
+import { connectorByProvider } from '@/lib/email-connectors'
 import { providerFor, type EmailAccountRow } from '@/lib/email-provider'
 import { syncEmailThread, syncVerificationThreads } from '@/lib/email-sync'
 import { applyTokensToHtml, formatThreadText, ORG_NAME_TOKEN, parseEmailList, POLICY_NUMBERS_TOKEN, type EmailMessage, type EmailThread } from '@/lib/email-shared'
@@ -34,10 +35,6 @@ async function caseClosed(supabase: ReturnType<typeof createServiceClient>, veri
 }
 
 const CLOSED_ERROR = 'This case is closed. Click Edit Status in the Assessment section to reopen it first.'
-
-// Gmail rejects ~25 MB messages and base64 inflates ~1.33x; a lower guard
-// also keeps the serverless send action inside its memory budget.
-const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
 async function logActivity(
   supabase: ReturnType<typeof createServiceClient>,
@@ -213,6 +210,7 @@ export async function approveAndSendEmail(verificationId: string, formData: Form
     .maybeSingle()
   if (!accountRow) return { error: 'No mailbox is connected for this org yet. Connect one in Settings, Emails tab.' }
   const account = accountRow as EmailAccountRow
+  const maxAttachmentBytes = connectorByProvider(account.provider)?.maxAttachmentBytes ?? 15 * 1024 * 1024
 
   const docs = await attachableDocs(supabase, verificationId, fields.attachmentIds)
   if (!docs) return { error: 'Could not match the picked attachments to this verification. Please retry.' }
@@ -230,8 +228,8 @@ export async function approveAndSendEmail(verificationId: string, formData: Form
       return { error: `Could not read the attachment "${d.file_name}". Nothing was sent.` }
     }
     totalBytes += file.bytes.byteLength
-    if (totalBytes > MAX_ATTACHMENT_BYTES) {
-      return { error: 'The attachments are too large to email (15 MB limit). Uncheck one and retry.' }
+    if (totalBytes > maxAttachmentBytes) {
+      return { error: `The attachments are too large to email (${Math.floor(maxAttachmentBytes / 1024 / 1024)} MB limit). Uncheck one and retry.` }
     }
     attachmentFiles.push({
       filename: d.file_name,

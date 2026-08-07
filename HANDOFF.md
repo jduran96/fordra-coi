@@ -3,7 +3,64 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-08-06 — {..._lastN} tokens, exception-clause analysis, verdict-first summaries)
+## ⏱️ START HERE (as of 2026-08-06 — Microsoft email connector + provider registry)
+
+**2026-08-06, on `main` (after the VRF-1120 fixes below):** email outreach now
+connects Microsoft (Outlook / M365 / outlook.com) mailboxes alongside Gmail,
+and adding a future vendor is one provider module + one registry entry.
+
+- **New `lib/microsoft-graph.ts`:** Graph implementation of the
+  `EmailProvider` seam. Sends via the JSON **draft flow** (create draft →
+  attach → send), NOT MIME `sendMail`: the draft response carries `id`,
+  `conversationId`, `internetMessageId` up front (sendMail returns an empty
+  202), and replies go through `createReply` so Exchange writes the threading
+  headers (Graph JSON only accepts custom headers prefixed `x-`, so
+  In-Reply-To can never be set directly). Attachments: <3 MB simple POST,
+  bigger via `createUploadSession` + ≤4 MB chunked PUTs. **Every Graph call
+  sends `Prefer: IdType="ImmutableId"`** — without it message ids change on
+  the Drafts→Sent Items move and sync dedupe breaks. Thread fetch filters on
+  `conversationId` (no `$orderby` — InefficientFilter; client-side sort),
+  pages past the 10-item default, prefers text bodies, skips `isDraft` rows,
+  stores `in_reply_to: null` (Graph list reads don't return it; nothing
+  consumes it for Microsoft threads).
+- **New `lib/email-connectors.ts`:** the registry (`segment` = OAuth route
+  path piece, `provider` = email_accounts.provider). Gmail keeps segment
+  `google` so the redirect URI registered with Google never changes.
+  Per-connector `maxAttachmentBytes` (both 15 MB; serverless RAM is the real
+  ceiling) now feeds the send action's guard. Client-safe mirror
+  `EMAIL_CONNECT_OPTIONS`/`EMAIL_PROVIDER_LABELS` lives in
+  `lib/email-shared.ts` for the settings card (Connect Gmail / Connect Outlook
+  buttons + provider label on the connected row; the Microsoft provider is
+  labeled "Outlook" everywhere user-facing, "Microsoft" in error copy, owner
+  approved 2026-08-07). Connecting the other provider replaces the org's
+  mailbox after an inline "Switch to X?" confirm click.
+- **New `lib/email-oauth.ts`:** shared OAuth plumbing — state cookie (payload
+  now includes `provider`, so a flow started for one vendor can't complete
+  against another's callback), `redirectUriFor`, `tokenRequest`, and the
+  hoisted refresh core. **Microsoft rotates refresh tokens on every refresh**;
+  the shared helper persists a returned refresh token (no-op for Google).
+  `invalid_grant` literal match flips status 'error' for both vendors.
+- **Routes:** `app/api/admin/email-oauth/[provider]/{start,callback}` replace
+  the hardcoded `google/` pair (same URLs for Gmail; Microsoft is
+  `/microsoft/`). `lib/gmail.ts` slimmed onto the shared helpers
+  (behavior-neutral; `htmlToText` moved to `lib/email-shared.ts`).
+- **Env (new):** `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`,
+  optional `MICROSOFT_OAUTH_TENANT` (default `common` = both M365 org and
+  personal accounts). Azure app registration: sign-in audience
+  `AzureADandPersonalMicrosoftAccount`, web redirect URIs for
+  `/api/admin/email-oauth/microsoft/callback` (prod + localhost),
+  `api.requestedAccessTokenVersion=2`, delegated scopes User.Read +
+  Mail.ReadWrite + Mail.Send + offline_access (dynamic consent; no
+  consent-screen publishing and no 7-day Testing-mode token death, unlike
+  Google). One mailbox per org unchanged; connecting the other provider
+  replaces the row (`onConflict: 'org_id'`).
+- **Not yet live-tested against a real Microsoft mailbox** (needs the Azure
+  registration + env vars). Watch during first test: conversationId stability
+  across draft→sent→reply, ImmutableId on personal outlook.com mailboxes, and
+  `$expand=attachments` alongside the conversationId filter (code falls back
+  to per-message attachment fetches if it errors).
+
+## Previous (as of 2026-08-06 — {..._lastN} tokens, exception-clause analysis, verdict-first summaries)
 
 **2026-08-06, on `main` (later the same day as the email outreach push):** four
 admin-path fixes from running Dakota deals (VRF-1120).

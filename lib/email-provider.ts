@@ -1,13 +1,14 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { connectorByProvider } from '@/lib/email-connectors'
 import type { EmailMessageAttachment } from '@/lib/email-shared'
-import { gmailProvider } from '@/lib/gmail'
 
 /**
  * Provider abstraction for the email outreach feature: everything upstream
- * (send action, sync, settings) talks to this interface, so adding Microsoft
- * Graph for M365 orgs later means one new module implementing send() and
- * fetchThread(), nothing else. Gmail is the only implementation today.
+ * (send action, sync, settings) talks to this interface. Implementations live
+ * in lib/gmail.ts and lib/microsoft-graph.ts and register in
+ * lib/email-connectors.ts — adding a vendor means one new module implementing
+ * send() and fetchThread() plus a registry entry, nothing else.
  */
 
 /** The full email_accounts row, tokens included. Server-side only — the UI
@@ -68,6 +69,7 @@ export interface EmailProvider {
 }
 
 export function providerFor(account: Pick<EmailAccountRow, 'provider'>): EmailProvider {
-  if (account.provider === 'gmail') return gmailProvider
-  throw new Error(`No email provider implementation for '${account.provider}'`)
+  const impl = connectorByProvider(account.provider)?.impl
+  if (!impl) throw new Error(`No email provider implementation for '${account.provider}'`)
+  return impl
 }

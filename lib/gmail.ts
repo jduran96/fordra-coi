@@ -1,9 +1,9 @@
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { decryptSecret, encryptSecret } from '@/lib/email-crypto'
+import { accessTokenFor, redirectUriFor, tokenRequest, type RefreshConfig, type TokenResponse } from '@/lib/email-oauth'
 import type { EmailAccountRow, EmailProvider, FetchedMessage, OutgoingEmail, SendResult } from '@/lib/email-provider'
-import type { EmailMessageAttachment } from '@/lib/email-shared'
+import { htmlToText, type EmailMessageAttachment } from '@/lib/email-shared'
 
 /**
  * Gmail implementation of the email provider (lib/email-provider.ts): OAuth
@@ -18,11 +18,8 @@ import type { EmailMessageAttachment } from '@/lib/email-shared'
  * after 7 days) and the customer's Workspace admin should trust the client id.
  */
 
-/** HttpOnly cookie carrying the OAuth CSRF nonce + target org between the
- *  start and callback routes (app/api/admin/email-oauth/google/). */
-export const OAUTH_STATE_COOKIE = 'fordra-email-oauth-state'
-
 const OAUTH_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly'
+const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const API = 'https://gmail.googleapis.com/gmail/v1'
 
 function clientId(): string {
@@ -36,16 +33,11 @@ function clientSecret(): string {
   return secret
 }
 
-export function gmailRedirectUri(): string {
-  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://app.fordra.com'
-  return `${base}/api/admin/email-oauth/google/callback`
-}
-
 /** The consent-screen URL the settings Connect button points at. */
 export function gmailAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: clientId(),
-    redirect_uri: gmailRedirectUri(),
+    redirect_uri: redirectUriFor('google'),
     response_type: 'code',
     scope: OAUTH_SCOPES,
     // offline + consent force a refresh token on every connect, so
@@ -57,34 +49,12 @@ export function gmailAuthUrl(state: string): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
 }
 
-interface TokenResponse {
-  access_token: string
-  refresh_token?: string
-  expires_in: number
-  scope?: string
-}
-
-async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(body),
-    signal: AbortSignal.timeout(10000),
-  })
-  const text = await res.text()
-  if (!res.ok) {
-    // Google's error JSON is safe to surface (no tokens in it).
-    throw new Error(`Google token endpoint responded ${res.status}: ${text.slice(0, 300)}`)
-  }
-  return JSON.parse(text) as TokenResponse
-}
-
 export async function exchangeCode(code: string): Promise<TokenResponse> {
-  return tokenRequest({
+  return tokenRequest('Google', TOKEN_URL, {
     code,
     client_id: clientId(),
     client_secret: clientSecret(),
-    redirect_uri: gmailRedirectUri(),
+    redirect_uri: redirectUriFor('google'),
     grant_type: 'authorization_code',
   })
 }
@@ -101,45 +71,22 @@ export async function fetchGmailProfile(accessToken: string): Promise<{ emailAdd
   return { emailAddress: data.emailAddress }
 }
 
-/**
- * A live access token for the account: the stored one when still valid,
- * otherwise refreshed and re-persisted (encrypted). A dead refresh token
- * (invalid_grant — revoked, or an expired Testing-mode grant) flips the
- * account to status 'error' so the settings card shows Reconnect.
- */
-export async function accessTokenFor(svc: SupabaseClient, account: EmailAccountRow): Promise<string> {
-  const expiresAt = account.access_token_expires_at ? new Date(account.access_token_expires_at).getTime() : 0
-  if (account.access_token_enc && expiresAt > Date.now() + 60_000) {
-    return decryptSecret(account.access_token_enc)
-  }
-  let token: TokenResponse
-  try {
-    token = await tokenRequest({
-      refresh_token: decryptSecret(account.refresh_token_enc),
-      client_id: clientId(),
-      client_secret: clientSecret(),
-      grant_type: 'refresh_token',
-    })
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    if (message.includes('invalid_grant')) {
-      await svc.from('email_accounts').update({
-        status: 'error',
-        error: 'Google rejected the saved credential. Reconnect the mailbox in Settings.',
-        updated_at: new Date().toISOString(),
-      }).eq('id', account.id)
-    }
-    throw e
-  }
-  await svc.from('email_accounts').update({
-    access_token_enc: encryptSecret(token.access_token),
-    access_token_expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString(),
-    status: 'connected',
-    error: null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', account.id)
-  return token.access_token
+/** Refresh via the shared core (lib/email-oauth.ts); an expired Testing-mode
+ *  grant surfaces as invalid_grant like any revocation. */
+const GOOGLE_REFRESH: RefreshConfig = {
+  label: 'Google',
+  tokenUrl: TOKEN_URL,
+  params: refreshToken => ({
+    refresh_token: refreshToken,
+    client_id: clientId(),
+    client_secret: clientSecret(),
+    grant_type: 'refresh_token',
+  }),
+  invalidGrantMessage: 'Google rejected the saved credential. Reconnect the mailbox in Settings.',
 }
+
+const gmailAccessTokenFor = (svc: SupabaseClient, account: EmailAccountRow): Promise<string> =>
+  accessTokenFor(svc, account, GOOGLE_REFRESH)
 
 // ---------------------------------------------------------------------------
 // MIME building (hand-rolled RFC 2822: text/plain + base64 attachment parts.
@@ -247,19 +194,6 @@ function decodeBody(data: string): string {
   return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
 }
 
-/** Good-enough HTML-to-text for HTML-only replies (Outlook, phones). */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 function walkParts(part: GmailPart | undefined, out: { text?: string; html?: string; attachments: EmailMessageAttachment[] }): void {
   if (!part) return
   if (part.filename) {
@@ -313,7 +247,7 @@ function toFetchedMessage(m: GmailMessage, accountEmail: string): FetchedMessage
 
 export const gmailProvider: EmailProvider = {
   async send(svc, account, msg): Promise<SendResult> {
-    const token = await accessTokenFor(svc, account)
+    const token = await gmailAccessTokenFor(svc, account)
     const { mime, messageIdHeader } = buildMime(account, msg)
     const res = await fetch(`${API}/users/me/messages/send`, {
       method: 'POST',
@@ -331,7 +265,7 @@ export const gmailProvider: EmailProvider = {
   },
 
   async fetchThread(svc, account, providerThreadId): Promise<FetchedMessage[]> {
-    const token = await accessTokenFor(svc, account)
+    const token = await gmailAccessTokenFor(svc, account)
     const res = await fetch(`${API}/users/me/threads/${providerThreadId}?format=full`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),

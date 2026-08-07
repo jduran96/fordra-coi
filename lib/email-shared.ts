@@ -16,6 +16,20 @@ import { pacificDateAtTime } from '@/lib/dates'
 
 export type EmailThreadStatus = 'draft' | 'approved' | 'sent' | 'failed'
 
+/**
+ * The connectable mailbox vendors, in settings-card display order. Must mirror
+ * EMAIL_CONNECTORS in lib/email-connectors.ts (server-only, so the card cannot
+ * read it directly): `segment` is the OAuth route path piece, `provider` the
+ * email_accounts.provider value.
+ */
+export const EMAIL_CONNECT_OPTIONS = [
+  { segment: 'google', provider: 'gmail', label: 'Gmail' },
+  { segment: 'microsoft', provider: 'microsoft', label: 'Outlook' },
+] as const
+
+export const EMAIL_PROVIDER_LABELS: Record<string, string> =
+  Object.fromEntries(EMAIL_CONNECT_OPTIONS.map(o => [o.provider, o.label]))
+
 /** email_accounts minus every token column: the only shape the UI ever sees. */
 export interface EmailAccountPublic {
   id: string
@@ -130,6 +144,19 @@ export function stripQuotedReply(text: string): string {
   if (cut > 0 && /^On .{0,200}$/.test(lines[cut - 1]?.trim() ?? '') && cut < lines.length) cut -= 1
   const stripped = lines.slice(0, cut).join('\n').trim()
   return stripped || text.trim()
+}
+
+/** Good-enough HTML-to-text for HTML-only mail bodies (Outlook, phones). */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 const escapeHtml = (s: string): string =>
