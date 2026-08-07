@@ -3,7 +3,56 @@
 > Operational snapshot for future sessions. For the *design rationale* and roadmap, see
 > `BUILD_PLAN.md`. This file is the **what exists right now and how to run it**.
 
-## ⏱️ START HERE (as of 2026-08-06 — email verification outreach: Gmail send/receive, Emails tabs, confirmed-by checkboxes)
+## ⏱️ START HERE (as of 2026-08-06 — {..._lastN} tokens, exception-clause analysis, verdict-first summaries)
+
+**2026-08-06, on `main` (later the same day as the email outreach push):** four
+admin-path fixes from running Dakota deals (VRF-1120).
+
+- **Derived `{<key>_lastN}` tokens** (`deriveLastNValues`,
+  `lib/question-config.ts`): last N alphanumeric chars of a template variable,
+  any N — `{vin_number_last4}`, or bare `{vin_lastN}` which falls back to any
+  vin-ish variable, then the deal's single submitted-standards VIN
+  (`collectVins`). Resolved in `questionsFromConfig` (extraction/regenerate),
+  again at dispatch in `loadAgentQuestions` (call actions — spoken style,
+  space-padded for TTS), and in `approveAndSendEmail` (plain style).
+  Unresolvable tokens still hit the existing pre-dial/pre-send fill blocks.
+  Ends the hand-edited "LAST4INPUT" placeholder on every Dakota deal. The
+  question-GENERATION prompt now also emits a literal {vin_last4} instead of
+  computing digits itself (it miscounted on VRF-1121: wrote 3333 for a VIN
+  ending 2333), and `resolveQuestionListTokens` (lib/extraction.ts) resolves
+  tokens across generated entries in every path that stores a question list.
+- **Exception clauses judged correctly** (`lib/claude.ts`): the parsing prompt
+  now carries conditional/exception wording verbatim into notes, and the
+  assessment prompt learned that an exception RELAXES a rule (base fails +
+  exception condition holds = uncertain/warning, owner rule 2026-08-06; only
+  failing base AND exception is not_met; never read backwards) plus
+  percent-of-another-amount math (15% of purchase amount etc.; referenced
+  amount absent = uncertain, not not_met). Reference a Variable row inside a
+  description ("under 15% of {asset_sale_price}") to feed the amount in —
+  `resolveTemplate` already substitutes into notes; the Description cell now
+  has a tooltip saying so.
+- **Terse evidence + fixed summary format** (assessment prompt): evidence is
+  one casual direct sentence, no em dashes, no "satisfying your requirement"
+  filler. narrative_summary leads with exactly "Verification passed." /
+  "Verification found issues." (uncertain only) / "Verification failed."
+  (any not_met), then one sentence — passes credit calls/emails, never OCR.
+- No `app_config` prompt overrides existed at ship time (checked), so the new
+  defaults apply everywhere immediately. Settings → Calling helper copy is now
+  just the variables list (owner request).
+- **Deterministic "Contact check" gap row** (`lib/contact-check-gap.ts`):
+  runAssessmentPipeline appends a last row judged by CODE from the
+  `contact_checks` history — both producer phone+email verified online = met
+  ("Both phone and email found online."), one = uncertain, neither = not_met; no
+  history yet = uncertain. "Found" means verified; a differs status is not
+  found and the evidence says so. The model never judges it (any copy it emits
+  is filtered) but hears the outcome so narrative_summary reflects it. The
+  row carries NO insurer-confirmation state: `isContactCheckItem()` exempts it
+  from the check/x badges on the customer report + PDF and hides the
+  confirmed-by checkboxes on the admin form. Hovering the customer card
+  lights the producer phone/email on the COI (new 'contact' rule in
+  CoiSplitReview). Contact-log per-note found/not-found tags are unchanged.
+
+## Previous (as of 2026-08-06 — email verification outreach: Gmail send/receive, Emails tabs, confirmed-by checkboxes)
 
 **2026-08-06, on `main`:** the email outreach channel, parallel to AI calls.
 Admins send verification-question emails from a per-org connected Gmail

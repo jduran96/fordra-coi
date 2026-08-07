@@ -3,6 +3,7 @@ import { pacificDate, pacificDateAtTime, pacificDateTime } from '@/lib/dates'
 import { parseStandardLine } from '@/lib/templates'
 import { orderBySubmitted, orderFromText } from '@/lib/gap-order'
 import { contactValue } from '@/lib/contact-notes'
+import { isContactCheckItem } from '@/lib/contact-check-gap'
 import type { ContactNote, OnlineListingStatus } from '@/lib/types'
 
 /**
@@ -116,7 +117,10 @@ export function buildReportPdf(v: ReportPdfInput): Promise<Buffer> {
         if ((it.evidence ?? '').trim()) {
           doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text(it.evidence!.trim(), { width: width - 90, lineGap: 2 })
         }
-        if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email' || it.insurer_confirmation === 'both') {
+        if (isContactCheckItem(it.requirement)) {
+          // The Contact check row is web-verified, not insurer-confirmed:
+          // neither the check badge nor the "not confirmed" x applies.
+        } else if (it.insurer_confirmation === 'call' || it.insurer_confirmation === 'email' || it.insurer_confirmation === 'both') {
           doc.moveDown(0.15)
           // Helvetica (WinAnsi) has no ✓ glyph: draw the check as strokes.
           // 'both' gets a double check, mirroring the web report.

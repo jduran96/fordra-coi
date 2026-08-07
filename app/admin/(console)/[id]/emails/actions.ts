@@ -9,11 +9,12 @@ import { providerFor, type EmailAccountRow } from '@/lib/email-provider'
 import { syncEmailThread, syncVerificationThreads } from '@/lib/email-sync'
 import { applyTokensToHtml, formatThreadText, ORG_NAME_TOKEN, parseEmailList, POLICY_NUMBERS_TOKEN, type EmailMessage, type EmailThread } from '@/lib/email-shared'
 import { EMAIL_RE } from '@/lib/email-draft-config'
-import { applyQuestionTokens, QUESTION_TOKEN_RE, templateVariableValues } from '@/lib/question-config'
+import { applyQuestionTokens, deriveLastNValues, QUESTION_TOKEN_RE, templateVariableValues } from '@/lib/question-config'
+import { collectVins } from '@/lib/call-config'
 import { sanitizeSummaryHtml, summaryPlainText } from '@/lib/sanitize-note'
 import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
 import { recordEvent } from '@/lib/webhooks'
-import type { ContactCheckEntry, ContactNote } from '@/lib/types'
+import type { ContactCheckEntry, ContactNote, Requirement } from '@/lib/types'
 
 /**
  * Email outreach actions. Every mutation begins with requireAdmin():
@@ -172,7 +173,7 @@ export async function approveAndSendEmail(verificationId: string, formData: Form
   const fields = parseDraftFields(formData)
 
   const { data: v } = await supabase.from('verifications')
-    .select('org_id, display_id, requirements, coi_extracted, orgs(name)')
+    .select('org_id, display_id, requirements, requirements_normalized, coi_extracted, orgs(name)')
     .eq('id', verificationId)
     .maybeSingle()
   if (!v) return { error: 'Could not load this verification. Please retry.' }
@@ -180,12 +181,18 @@ export async function approveAndSendEmail(verificationId: string, formData: Form
   // Resolve per-deal {tokens} at send time too, so tokens typed by hand on
   // the deal page (or left over from the template) fill from the deal's own
   // variables; only genuinely unknown tokens block. Same map as the page's
-  // prefill: template variables + org name + COI policy numbers.
+  // prefill: template variables + org name + COI policy numbers, plus derived
+  // {..._lastN} tokens (plain style: emails are read, not spoken).
   const coverages = ((v.coi_extracted ?? null) as { coverages?: { policy_number?: string }[] } | null)?.coverages ?? []
-  const tokenValues: Record<string, string> = {
+  const baseValues: Record<string, string> = {
     ...templateVariableValues(v.requirements),
     [ORG_NAME_TOKEN]: (v.orgs as { name?: string } | null)?.name ?? '',
     [POLICY_NUMBERS_TOKEN]: [...new Set(coverages.map(c => (c.policy_number ?? '').trim()).filter(Boolean))].join(', '),
+  }
+  const emailReqs = (Array.isArray(v.requirements_normalized) ? v.requirements_normalized : []) as Requirement[]
+  const tokenValues: Record<string, string> = {
+    ...baseValues,
+    ...deriveLastNValues([fields.subject, fields.body], baseValues, { vins: collectVins(emailReqs) }),
   }
   const subject = applyQuestionTokens(fields.subject, tokenValues)
   const bodyHtml = sanitizeSummaryHtml(applyTokensToHtml(fields.body, tokenValues))

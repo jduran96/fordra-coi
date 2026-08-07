@@ -6,7 +6,8 @@ import type { Requirement } from '@/lib/types'
  * configured text prefills the verification's master question list instead of
  * an OCR generation pass, so repeat deals on the same standard skip the
  * hand-editing. Question text may embed {tokens}: tokens matching the
- * template's per-deal variables substitute automatically (e.g. {vin_number});
+ * template's per-deal variables substitute automatically (e.g. {vin_number}),
+ * and {<key>_lastN} derives the last N characters of one (e.g. {vin_last4});
  * any other {token} is left in the text for the admin to fill in the Call tab
  * before dialing (dispatch blocks while one remains).
  *
@@ -76,6 +77,48 @@ export function applyQuestionTokens(question: string, values: Record<string, str
     (acc, [k, val]) => acc.replaceAll(`{${k}}`, val.trim()),
     question,
   )
+}
+
+/** A derived {<key>_lastN} token: last N alphanumeric characters of another
+ *  value, e.g. {vin_number_last4} from the {vin_number} variable. */
+const DERIVED_LAST_N_RE = /\{([a-z0-9_]+)_last(\d{1,2})\}/gi
+
+/**
+ * Values for the {<key>_lastN} tokens found in `texts`, resolved on top of the
+ * base variable values (VRF-1120: "VIN ending in {vin_last4}" used to be a
+ * hand-edited placeholder on every Dakota deal). Any N works. The base key
+ * resolves from the matching template variable; bare {vin_lastN} additionally
+ * falls back to any vin-ish variable, then to the deal's submitted-standards
+ * VIN when there is exactly ONE (pass collectVins output as opts.vins).
+ * Unresolvable tokens are simply omitted, so they stay in the text and the
+ * existing pre-dial/pre-send blocks ask the admin to fill them.
+ * opts.spoken space-pads the characters ("1 2 3 4") so TTS reads them as
+ * digits on calls; leave it off for text surfaces like email.
+ */
+export function deriveLastNValues(
+  texts: (string | undefined)[],
+  values: Record<string, string>,
+  opts: { vins?: string[]; spoken?: boolean } = {},
+): Record<string, string> {
+  const derived: Record<string, string> = {}
+  const byLowerKey = new Map(Object.entries(values).map(([k, v]) => [k.toLowerCase(), v ?? '']))
+  for (const text of texts) {
+    for (const m of (text ?? '').matchAll(DERIVED_LAST_N_RE)) {
+      const token = m[0].slice(1, -1)
+      if (derived[token] !== undefined || byLowerKey.has(token.toLowerCase())) continue
+      const base = m[1].toLowerCase()
+      let source = (byLowerKey.get(base) ?? '').trim()
+      if (!source && base === 'vin') {
+        source = ([...byLowerKey.entries()].find(([k, v]) => k.includes('vin') && v.trim())?.[1]
+          ?? (opts.vins?.length === 1 ? opts.vins[0] : '')).trim()
+      }
+      const alnum = source.replace(/[^a-z0-9]/gi, '')
+      if (!alnum) continue
+      const lastN = alnum.slice(-Number(m[2])).toUpperCase()
+      derived[token] = opts.spoken ? lastN.split('').join(' ') : lastN
+    }
+  }
+  return derived
 }
 
 const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9{}]+/g, ' ').trim()

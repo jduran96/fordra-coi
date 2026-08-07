@@ -131,6 +131,7 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
               value={row.notes ?? ''}
               onChange={v => updateRow(i, { notes: v })}
               placeholder="Required"
+              title={'A description can reference a Variable row, e.g. "deductible under 15% of {asset_sale_price}"; the per-deal value fills in on each verification.'}
               style={inputS}
             />
             <div style={{ display: 'flex', gap: 4, paddingTop: 9 }}>
@@ -174,11 +175,12 @@ export default function RequirementsEditor({ rows, onChange, minRows = 0, reorde
 }
 
 /** One-line notes cell that grows with its content instead of scrolling sideways. */
-function AutoGrowTextarea({ value, onChange, placeholder, style }: {
+function AutoGrowTextarea({ value, onChange, placeholder, style, title }: {
   value: string
   onChange: (next: string) => void
   placeholder?: string
   style: React.CSSProperties
+  title?: string
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
@@ -197,7 +199,7 @@ function AutoGrowTextarea({ value, onChange, placeholder, style }: {
   }, [value])
   return (
     <textarea
-      ref={ref} rows={1} value={value} placeholder={placeholder}
+      ref={ref} rows={1} value={value} placeholder={placeholder} title={title}
       onChange={e => onChange(e.target.value)}
       style={{ ...style, resize: 'none', overflow: 'hidden', display: 'block' }}
     />

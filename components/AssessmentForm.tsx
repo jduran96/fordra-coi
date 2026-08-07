@@ -6,6 +6,7 @@ import PendingButton from '@/components/PendingButton'
 import EditorModal from '@/components/EditorModal'
 import { ConditionChip } from '@/components/RequirementsEditor'
 import { useAnalysisBodyVisible } from '@/components/AdminTabs'
+import { isContactCheckItem } from '@/lib/contact-check-gap'
 
 interface Requirement { coverage_type?: string; minimum_limit?: string; notes?: string | null }
 interface Item { requirement: Requirement; status: 'met' | 'not_met' | 'uncertain'; evidence?: string; insurer_confirmation?: 'call' | 'email' | 'both' }
@@ -123,7 +124,10 @@ export default function AssessmentForm({
               </select>
               {/* Confirmation channels are independent: a requirement can be
                   confirmed by call, by email, or both (double check on the
-                  customer report). Unchecked both = not confirmed. */}
+                  customer report). Unchecked both = not confirmed. The
+                  Contact check row is web-verified, not insurer-confirmed:
+                  no channels apply. */}
+              {isContactCheckItem(item.requirement) ? null : (
               <div style={{ ...input(), display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.txt3 }}>Confirmed by:</span>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.txt2, cursor: closed ? 'default' : 'pointer', userSelect: 'none' }}>
@@ -139,6 +143,7 @@ export default function AssessmentForm({
                   email
                 </label>
               </div>
+              )}
             </div>
             <textarea
               name={`req_${i}_evidence`}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '@/lib/theme'
 import type { COICoverage, COIExtracted, FieldLocation } from '@/lib/types'
+import { isContactCheckItem } from '@/lib/contact-check-gap'
 
 /**
  * Split review: the customer's ACTUAL submitted certificate beside the
@@ -79,11 +80,14 @@ type Rule =
   | { type: 'coverage'; index: number }
   | { type: 'dates' }
   | { type: 'search' }
+  /** The deterministic Contact check row: light the producer phone/email. */
+  | { type: 'contact' }
 
 /** Classify a requirement check into how its document location is found. */
 function ruleFor(item: CheckItem, coverages: COICoverage[]): Rule {
   const r = norm(item.requirement?.coverage_type)
   if (!r) return { type: 'search' }
+  if (isContactCheckItem(item.requirement)) return { type: 'contact' }
   // Identity / party checks first: their wording often also mentions a coverage.
   if (r.includes('certificate holder')) return { type: 'region', key: 'certificate_holder' }
   if (r.includes('additional insured')) return { type: 'region', key: 'additional_insured' }
@@ -566,6 +570,19 @@ function resolveChecks(
         // the card is still interactive and points at the right place.
         return valueInRemarks(item) ? remarksRegion() : []
       }
+      case 'contact': {
+        // Light the agency phone and email themselves (each anchored
+        // separately so both values box); the producer region is the fallback.
+        if (hasText) {
+          const anchored = [coi.insurance_company_phone, coi.insurance_company_email]
+            .filter(Boolean)
+            .flatMap(needle => anchorByNeedles([needle], textByPage, linesByPage, fl.producer))
+          if (anchored.length) return anchored
+          const region = anchorByNeedles(regionNeedles.producer, textByPage, linesByPage, fl.producer)
+          if (region.length) return region
+        }
+        return fl.producer ? [fl.producer] : []
+      }
     }
   })
 }
@@ -649,7 +666,7 @@ export default function CoiSplitReview({
             {item.evidence && (
               <p style={{ fontSize: 13, color: C.txt2, lineHeight: 1.6, margin: '6px 0 0' }}>{item.evidence}</p>
             )}
-            {item.insurer_confirmation ? (
+            {isContactCheckItem(item.requirement) ? null : item.insurer_confirmation ? (
               <p style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {/* Double check when both channels confirmed, single otherwise. */}
                 {(item.insurer_confirmation === 'both' ? [0, 1] : [0]).map(k => (

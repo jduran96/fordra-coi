@@ -6,9 +6,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { adminInitials } from '@/lib/admin-activity'
 import { createAiVerificationCall, stopCall, configuredAgentId } from '@/lib/retell'
 import {
-  buildDynamicVariables, defaultQuestionsFromAgentQuestions, normalizeE164, validateDispatch,
+  buildDynamicVariables, collectVins, defaultQuestionsFromAgentQuestions, normalizeE164, validateDispatch,
   type AiCallQuestion, type CallContextFields, type ReferenceDetail, CONTEXT_FIELD_NAMES,
 } from '@/lib/call-config'
+import { applyQuestionTokens, deriveLastNValues, templateVariableValues } from '@/lib/question-config'
 import {
   ACTIVE_STATUSES, syncAiCall, summaryHtmlFromAnalysis,
   type AiCall,
@@ -18,7 +19,7 @@ import { formatTranscriptText } from '@/lib/call-transcript'
 import { contactValue, noteCheckFromRegistry } from '@/lib/contact-notes'
 import { generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig } from '@/lib/config'
-import { questionsFromConfig } from '@/lib/extraction'
+import { questionsFromConfig, resolveQuestionListTokens } from '@/lib/extraction'
 import { recordEvent } from '@/lib/webhooks'
 import type { COIExtracted, ContactCheckEntry, Requirement } from '@/lib/types'
 
@@ -149,7 +150,10 @@ export async function regenerateAgentQuestions(verificationId: string): Promise<
       requirements,
       coiExtracted: v.coi_extracted ?? null,
       promptOverride: cfg.promptInsurerQuestions,
-    }) ?? await generateInsurerQuestions(requirements, (v.coi_extracted ?? null) as COIExtracted | null, cfg.promptInsurerQuestions)
+    }) ?? resolveQuestionListTokens(
+      await generateInsurerQuestions(requirements, (v.coi_extracted ?? null) as COIExtracted | null, cfg.promptInsurerQuestions),
+      v.requirements, requirements,
+    )
     const { error: werr } = await supabase.from('verifications')
       .update({ agent_questions: questions })
       .eq('id', verificationId)
@@ -171,11 +175,32 @@ async function loadAgentQuestions(
   verificationId: string,
 ): Promise<AiCallQuestion[] | null> {
   const { data, error } = await supabase.from('verifications')
-    .select('agent_questions')
+    .select('agent_questions, requirements, requirements_normalized')
     .eq('id', verificationId)
     .maybeSingle()
   if (error || !data) return null
-  return defaultQuestionsFromAgentQuestions(data.agent_questions)
+  const questions = defaultQuestionsFromAgentQuestions(data.agent_questions)
+  if (!questions) return null
+  // Resolve per-deal {tokens} again at load time: a list saved before the
+  // deal's variables landed (or with a derived {..._lastN} token) fills in
+  // here; only genuinely unknown tokens survive to the pre-dial block.
+  const baseValues = templateVariableValues(data.requirements)
+  const reqs = (Array.isArray(data.requirements_normalized) ? data.requirements_normalized : []) as Requirement[]
+  const tokenTexts = questions.flatMap(q => [q.text, q.followUp?.condition, q.followUp?.text])
+  const values = {
+    ...baseValues,
+    ...deriveLastNValues(tokenTexts, baseValues, { vins: collectVins(reqs), spoken: true }),
+  }
+  return questions.map(q => ({
+    ...q,
+    text: applyQuestionTokens(q.text, values),
+    ...(q.followUp ? {
+      followUp: {
+        condition: applyQuestionTokens(q.followUp.condition, values),
+        text: applyQuestionTokens(q.followUp.text, values),
+      },
+    } : {}),
+  }))
 }
 
 /** Save the review form as the verification's draft (one draft row per verification). */

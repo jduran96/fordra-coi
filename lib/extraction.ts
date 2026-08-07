@@ -2,9 +2,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { downloadDocument } from '@/lib/storage'
 import { extractCOIFields, extractTextFromFile, parseRequirements, parseRequirementLines, assessVerification, generateInsurerQuestions } from '@/lib/claude'
 import { getExtractionConfig, getQuestionsConfig } from '@/lib/config'
-import { isCuratedQuestionList } from '@/lib/call-config'
+import { collectVins, isCuratedQuestionList } from '@/lib/call-config'
 import { dispositionLabel, TERMINAL_STATUSES, type AiCall } from '@/lib/ai-call-shared'
-import { applyQuestionTokens, templateVariableValues, uncoveredRequirements } from '@/lib/question-config'
+import { applyQuestionTokens, deriveLastNValues, templateVariableValues, uncoveredRequirements } from '@/lib/question-config'
+import { contactCheckGapItem, isContactCheckItem } from '@/lib/contact-check-gap'
 import type { ContactNote, FinalReport, GapAnalysis, Requirement } from '@/lib/types'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -65,6 +66,36 @@ async function questionsFor(
   }
 }
 
+type QuestionEntry = string | { text: string; blocker?: boolean; followUp?: { condition: string; text: string } }
+
+/**
+ * Resolve per-deal {tokens} (template variables + derived {..._lastN}) across
+ * a whole question list, generated entries included: the generation prompt now
+ * emits a literal {vin_last4} instead of computing digits itself (the model
+ * miscounted on VRF-1121), so every stored list must pass through here.
+ * Spoken style — these lists dial. Unknown tokens survive to the pre-dial block.
+ */
+export function resolveQuestionListTokens(
+  list: QuestionEntry[],
+  storedRequirements: unknown,
+  requirements: Requirement[],
+): QuestionEntry[] {
+  const base = templateVariableValues(storedRequirements)
+  const texts = list.flatMap(q =>
+    typeof q === 'string' ? [q] : [q.text, q.followUp?.condition, q.followUp?.text])
+  const values = { ...base, ...deriveLastNValues(texts, base, { vins: collectVins(requirements), spoken: true }) }
+  return list.map(q => typeof q === 'string' ? applyQuestionTokens(q, values) : {
+    ...q,
+    text: applyQuestionTokens(q.text, values),
+    ...(q.followUp ? {
+      followUp: {
+        condition: applyQuestionTokens(q.followUp.condition, values),
+        text: applyQuestionTokens(q.followUp.text, values),
+      },
+    } : {}),
+  })
+}
+
 /**
  * Question list from the org+template Questions List config (settings →
  * Calling) when one exists: the configured questions with per-deal {tokens}
@@ -86,21 +117,17 @@ export async function questionsFromConfig(input: {
   try {
     const config = await getQuestionsConfig(input.orgId, input.templateId)
     if (!config) return null
-    const values = templateVariableValues(input.storedRequirements)
     // Object entries so the admin's configured blocker flags and ordering
     // survive verbatim (a configured list therefore counts as curated, like a
     // hand-edited one: extraction re-runs keep it; Regenerate re-applies it).
+    // Token substitution happens once over the FULL list at the end, so the
+    // generated extras (which may carry {vin_last4}) resolve too.
     const configured = config.questions
       .filter(q => q.question)
       .map(q => ({
-        text: applyQuestionTokens(q.question, values),
+        text: q.question,
         ...(q.blocker ? { blocker: true as const } : {}),
-        ...(q.followUp ? {
-          followUp: {
-            condition: applyQuestionTokens(q.followUp.condition, values),
-            text: applyQuestionTokens(q.followUp.text, values),
-          },
-        } : {}),
+        ...(q.followUp ? { followUp: { condition: q.followUp.condition, text: q.followUp.text } } : {}),
       }))
     if (!configured.length) return null
     // The config replaces generation only for the rows it covers; the rest
@@ -113,7 +140,7 @@ export async function questionsFromConfig(input: {
     // (prepending the hardcoded "still active and in force?" duplicated the
     // admin's own policy-active blocker, owner report 2026-07-29). The
     // generated extras above already have theirs sliced off too.
-    return [...configured, ...extras]
+    return resolveQuestionListTokens([...configured, ...extras], input.storedRequirements, input.requirements)
   } catch (e) {
     console.error('questions config lookup failed; falling back to generation', e)
     return null
@@ -219,14 +246,18 @@ export async function runExtractionPipeline(verificationId: string): Promise<voi
   // the explicit way back (owner decision 2026-07-28). On generation failure,
   // keep the old questions rather than wiping them.
   if (!isCuratedQuestionList(v.agent_questions)) {
-    const regenerated = await questionsFromConfig({
+    let regenerated = await questionsFromConfig({
       orgId: (v.org_id as string | null) ?? null,
       templateId: (v.template_id as string | null) ?? null,
       storedRequirements: v.requirements,
       requirements,
       coiExtracted,
       promptOverride: cfg.promptInsurerQuestions,
-    }) ?? await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
+    })
+    if (!regenerated) {
+      const generated = await questionsFor(requirements, coiExtracted, cfg.promptInsurerQuestions)
+      regenerated = generated ? resolveQuestionListTokens(generated, v.requirements, requirements) : null
+    }
     if (regenerated) update.agent_questions = regenerated
   }
 
@@ -287,7 +318,7 @@ export async function runAssessmentPipeline(verificationId: string): Promise<voi
   const cfg = await getExtractionConfig()
   const { data: v, error: verr } = await supabase
     .from('verifications')
-    .select('id, coi_extracted, requirements_normalized, call_notes')
+    .select('id, coi_extracted, requirements_normalized, call_notes, contact_checks')
     .eq('id', verificationId)
     .single()
   if (verr || !v) throw new Error(`Could not load the verification: ${verr?.message ?? 'not found'}`)
@@ -308,8 +339,15 @@ export async function runAssessmentPipeline(verificationId: string): Promise<voi
     .order('created_at', { ascending: true })
   if (cerr) throw new Error(`Could not load the AI call history: ${cerr.message}`)
   const attempts = callAttemptsText((callRows ?? []) as Parameters<typeof callAttemptsText>[0])
-  const log = [contactLogText(notes), attempts ? `Call attempts (AI dialer, including ones that did not land):\n${attempts}` : '']
-    .filter(Boolean).join('\n\n')
+  // The deterministic Contact check row (owner ask 2026-08-06): judged by
+  // code from the online-check history, never by the model — but the model
+  // hears the outcome so narrative_summary can reflect a red/yellow row.
+  const contactRow = contactCheckGapItem(v.contact_checks)
+  const log = [
+    contactLogText(notes),
+    attempts ? `Call attempts (AI dialer, including ones that did not land):\n${attempts}` : '',
+    `Online contact check (pre-judged by the system; do NOT include it in your arrays, but count it toward the narrative_summary verdict as a ${contactRow.status === 'met' ? 'pass' : contactRow.status === 'not_met' ? 'failure' : 'warning'}): ${contactRow.evidence}`,
+  ].filter(Boolean).join('\n\n')
   const report = ensureAllRequirementsJudged(
     await assessVerification(requirements, v.coi_extracted as Parameters<typeof assessVerification>[1], log, cfg.promptAssessment),
     requirements,
@@ -327,6 +365,14 @@ export async function runAssessmentPipeline(verificationId: string): Promise<voi
       evidence: `${(i.evidence ?? '').trim().replace(/\.$/, '')}. Not yet confirmed with the insurer.`.replace(/^\. /, ''),
     }))]
   }
+
+  // Append the Contact check row LAST (after the demotion guard: its "met"
+  // needs no insurer confirmation — web verification is neither channel).
+  // Drop any copy the model produced despite instructions before appending.
+  for (const key of ['met', 'not_met', 'uncertain'] as const) {
+    report[key] = report[key].filter(i => !isContactCheckItem(i.requirement))
+  }
+  report[contactRow.status] = [...report[contactRow.status], { ...contactRow }]
 
   const { error: werr } = await supabase.from('verifications').update({
     gap_analysis: { met: report.met, not_met: report.not_met, uncertain: report.uncertain },

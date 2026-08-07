@@ -162,11 +162,10 @@ function QuestionsEditor({ orgId, template, stored }: {
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       {(template.variables ?? []).length > 0 && (
         <p style={{ fontSize: 12.5, color: C.txt2, lineHeight: 1.6, margin: 0 }}>
-          Per-deal tokens on this standard, filled automatically on each verification:{' '}
+          Variables:{' '}
           {(template.variables ?? []).map((v, i) => (
             <span key={v.key}>{i > 0 && ', '}<code style={codeStyle}>{`{${v.key}}`}</code> ({v.label})</span>
           ))}.
-          Any other <code style={codeStyle}>{'{token}'}</code> you type stays in the question for the admin to fill before dialing.
         </p>
       )}
       {rows.map((row, i) => (
